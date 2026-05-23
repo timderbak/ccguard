@@ -1,0 +1,78 @@
+# Пример политики ccguard. Поля документированы здесь, схема — Policy в
+# src/ccguard/schemas/policy.py.
+
+meta:
+  schema_version: 1
+  revision: 1                    # инкрементируется при каждом изменении содержимого
+  name: default                  # на будущее multi-policy, MVP игнорирует
+  updated_at: "2026-05-23T12:00:00Z"
+
+# Поведение хука при недоступной/битой policy:
+#   open   — разрешать (не ломаем разработчика, дыра в безопасности)
+#   closed — блокировать всё (безопасно, но один баг ложит всех)
+block_fail_mode: open
+
+mcp_servers:
+  severity: warn
+  # Серверы, явно разрешённые. Если deny_all_unknown=true, остальные блокируются.
+  allowlist_names:
+    - filesystem
+    - memory
+  # Серверы, явно запрещённые в runtime (хук блокирует mcp__<name>__*).
+  denylist_names:
+    - shell-mcp
+    - unsafe-eval
+  # URL-паттерны для http/sse MCP. Проверяются на этапе scan (static).
+  allowlist_url_patterns: []
+  denylist_url_patterns:
+    - "http://*"                 # запрещаем не-TLS MCP
+  deny_all_unknown: false
+
+network:
+  severity: block
+  allowlist_hosts:
+    - api.anthropic.com
+    - "*.github.com"
+  denylist_hosts:
+    - pastebin.com
+    - "*.requestbin.net"
+    - "*.ngrok.io"
+  deny_all_unknown: false        # true = режим whitelist
+
+commands:
+  severity: block
+  # Регексы команд, которые блокируются в Bash.
+  denylist_patterns:
+    - "\\brm\\s+-rf\\s+/"
+    - "\\bdd\\s+.*of=/dev/"
+    - ":\\(\\)\\s*\\{\\s*:\\|:&\\s*\\};:"   # fork bomb
+    - "\\bnc\\b.*-e\\s+/bin/(sh|bash)"
+  # Если allowlist_patterns непуст — режим whitelist (всё, что не в списке — deny).
+  allowlist_patterns: []
+  # Встроенные «всегда deny» (применяются всегда, поверх denylist).
+  always_deny:
+    - "\\becho\\s+.*>>\\s*~/.bashrc"
+    - "\\becho\\s+.*>>\\s*~/.zshrc"
+    - "\\becho\\s+.*>>\\s*~/.profile"
+    - "\\bcurl\\s+.*\\|\\s*(sh|bash)\\b"
+    - "\\bwget\\s+.*\\|\\s*(sh|bash)\\b"
+
+skills:
+  severity: warn
+  # Имена скиллов, явно разрешённых.
+  allowlist_names:
+    - claude-code-default
+  # Хэши папок скиллов, которым доверяем (sha256 в hex).
+  trusted_dir_hashes: []
+  deny_all_unknown: false
+  # Заглушка под cosign-подпись в v2, MVP игнорирует.
+  signature: {}
+
+hooks:
+  severity: warn
+  # Команды хуков, разрешённые в settings.json (substring или абсолютный путь).
+  allowlist_commands:
+    - /root/.ccguard/bin/ccguard-enforce
+    - /opt/ccguard/bin/ccguard-enforce-bin
+  # Если true, любой хук, не входящий в allowlist_commands, поднимет finding.
+  deny_unknown: true

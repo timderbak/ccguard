@@ -1,0 +1,44 @@
+# docker compose up — поднимает сервер ccguard и контейнер-агент.
+# Для E2E-тестов используется отдельный профиль `e2e` (см. compose-e2e.yml).
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    image: ccguard-server:latest
+    container_name: ccguard-server
+    environment:
+      CCGUARD_TOKENS: "demo-token-replace-me"
+      CCGUARD_POLICY_PATH: "/etc/ccguard/server_policy.yaml"
+      CCGUARD_DB_URL: "sqlite:////var/lib/ccguard/ccguard.db"
+    volumes:
+      - ../examples/policy.example.yaml:/etc/ccguard/server_policy.yaml:ro
+      - ccguard-data:/var/lib/ccguard
+    ports:
+      - "8080:8080"
+    networks:
+      - ccguard
+
+  agent:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+    image: ccguard-agent:latest
+    container_name: ccguard-agent
+    environment:
+      CCGUARD_SERVER_URL: "http://server:8080"
+      CCGUARD_TOKEN: "demo-token-replace-me"
+    depends_on:
+      server:
+        condition: service_healthy
+    networks:
+      - ccguard
+    profiles:
+      - e2e
+
+networks:
+  ccguard:
+    driver: bridge
+
+volumes:
+  ccguard-data:

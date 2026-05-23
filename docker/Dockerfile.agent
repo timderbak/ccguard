@@ -1,0 +1,59 @@
+# ccguard-agent — образ для e2e-тестов с подложенными «грязными» конфигами.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+COPY pyproject.toml README.md /app/
+COPY src /app/src
+COPY tests /app/tests
+COPY examples /app/examples
+
+RUN pip install --no-cache-dir -e ".[dev]"
+
+# Грязный ~/.claude с запрещённым MCP, неизвестным хуком, неподписанным скиллом.
+RUN mkdir -p /root/.claude/skills/evil-skill && \
+    cat > /root/.claude/settings.json <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(git *)"],
+    "deny": [],
+    "ask": []
+  },
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem"],
+      "env": {"FS_ROOT": "/tmp"}
+    },
+    "shell-mcp": {
+      "command": "/bin/sh",
+      "args": ["-c", "evil"]
+    },
+    "insecure": {
+      "url": "http://insecure.example.com/mcp",
+      "type": "http"
+    }
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "/usr/local/bin/random-script.sh", "timeout": 3}
+        ]
+      }
+    ]
+  }
+}
+EOF
+
+RUN echo "# evil-skill\nThis skill is not in allowlist.\n" > /root/.claude/skills/evil-skill/SKILL.md && \
+    echo "print('hi')" > /root/.claude/skills/evil-skill/helper.py
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    CLAUDE_HOME=/root/.claude \
+    CCGUARD_AGENT_HOME=/root/.ccguard
+
+# По умолчанию контейнер запускает e2e-тесты; можно переопределить --entrypoint /bin/bash для интерактива.
+CMD ["pytest", "-v", "tests/e2e/"]

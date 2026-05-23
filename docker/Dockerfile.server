@@ -1,0 +1,40 @@
+# ccguard-server — FastAPI + SQLite, минимальный slim-образ.
+FROM python:3.12-slim AS builder
+
+WORKDIR /build
+
+COPY pyproject.toml README.md /build/
+COPY src /build/src
+
+RUN pip install --no-cache-dir --upgrade pip build && \
+    python -m build --wheel --no-isolation || pip wheel --no-cache-dir --no-deps -w dist .
+
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+# Зависимости только runtime (без dev-extras).
+COPY --from=builder /build/dist/*.whl /tmp/
+RUN pip install --no-cache-dir /tmp/*.whl && rm /tmp/*.whl
+
+# Не-root юзер.
+RUN useradd -r -u 1001 -m -d /home/ccguard ccguard && \
+    mkdir -p /var/lib/ccguard /etc/ccguard && \
+    chown -R ccguard:ccguard /var/lib/ccguard /etc/ccguard
+
+USER ccguard
+WORKDIR /var/lib/ccguard
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    CCGUARD_DB_URL=sqlite:////var/lib/ccguard/ccguard.db \
+    CCGUARD_POLICY_PATH=/etc/ccguard/server_policy.yaml \
+    CCGUARD_HOST=0.0.0.0 \
+    CCGUARD_PORT=8080
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health').status==200 else 1)"
+
+CMD ["ccguard-server"]

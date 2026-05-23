@@ -1,0 +1,14 @@
+# Пример конфига сервера ccguard. Все поля опциональны (есть дефолты).
+
+tokens:
+  - value: "dev-token-replace-me"
+    label: "dev"
+  # Дополнительные токены — для разных команд/окружений.
+  # - value: "..."
+  #   label: "team-frontend"
+
+policy_path: /etc/ccguard/server_policy.yaml
+db_url: sqlite:///./ccguard.db
+host: 0.0.0.0
+port: 8080
+log_level: INFO

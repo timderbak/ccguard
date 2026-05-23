@@ -1,0 +1,21 @@
+# Пример конфига агента ccguard. Лежит в ~/.ccguard/config.yaml.
+# Создаётся автоматически при первом запуске; install_salt генерируется.
+
+server:
+  url: http://localhost:8080
+  token: dev-token-replace-me
+
+machine_label: laptop-dev          # опционально, человекочитаемая метка
+
+# install_salt: <generated-32-bytes-hex>   # генерируется автоматически
+
+audit:
+  max_bytes: 10485760              # 10 MiB
+  backup_count: 5
+
+policy:
+  cache_path: ~/.ccguard/policy.yaml
+  block_fail_mode: open            # переопределяет policy.block_fail_mode
+
+sync:
+  interval_minutes: 60             # MVP — sync ручной, поле зарезервировано
