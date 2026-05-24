@@ -264,3 +264,62 @@ def test_policy_editor_has_all_sections(monkeypatch, tmp_path) -> None:
         r = client.get("/policy", cookies={"ccg_session": sid})
         for needle in ["MCP servers", "Network", "Commands", "Skills", "Hooks", "Agents", "Env"]:
             assert needle in r.text, f"missing section: {needle}"
+
+
+def test_save_draft_then_publish_bumps_revision(monkeypatch, tmp_path) -> None:
+    from ccguard.server.db.models import PolicyVersion
+    from ccguard.server.services.auth_service import create_session, hash_password
+    from ccguard.server.web.csrf import generate_csrf_token
+    from sqlmodel import Session
+
+    monkeypatch.setenv("CCGUARD_ADMIN_PASSWORD_HASH", hash_password("h"))
+    monkeypatch.setenv("CCGUARD_DB_URL", f"sqlite:///{tmp_path}/web.db")
+    monkeypatch.setenv("CCGUARD_SESSION_SECRET", "s")
+
+    with TestClient(create_app()) as client:
+        engine = client.app.state.engine
+        with Session(engine) as s:
+            s.add(PolicyVersion(
+                revision=1, status="published",
+                yaml_text=(
+                    "meta:\n  schema_version: 1\n  revision: 1\n  updated_at: '2026-01-01T00:00:00Z'\n"
+                ),
+                created_by="admin",
+            ))
+            sid = create_session(s, user_id="admin")
+        csrf = generate_csrf_token(secret="s", session_id=sid)
+
+        form_data = {
+            "csrf_token": csrf,
+            "mcp_servers.severity": "warn",
+            "mcp_servers.allowlist_names": "filesystem",
+            "mcp_servers.denylist_names": "",
+            "mcp_servers.denylist_url_patterns": "",
+            "network.severity": "warn",
+            "network.allowlist_hosts": "",
+            "network.denylist_hosts": "",
+            "commands.severity": "warn",
+            "commands.denylist_patterns": "",
+            "commands.allowlist_patterns": "",
+            "skills.severity": "warn",
+            "skills.allowlist_names": "",
+            "skills.trusted_dir_hashes": "",
+            "hooks.severity": "warn",
+            "hooks.allowlist_commands": "",
+            "hooks.deny_unknown": "1",
+            "agents.severity": "warn",
+            "agents.allowlist_names": "",
+            "agents.denylist_names": "",
+            "agents.denylist_tools": "Bash",
+            "agents.trusted_file_hashes": "",
+            "env.severity": "warn",
+            "env.denylist_patterns": "",
+            "env.allowlist_names": "",
+        }
+        r = client.post("/policy/publish", data=form_data,
+                        cookies={"ccg_session": sid}, follow_redirects=False)
+        assert r.status_code == 303
+        with Session(engine) as s:
+            rows = list(s.exec(PolicyVersion.__table__.select()  # type: ignore[attr-defined]
+                               .where(PolicyVersion.status == "published")))
+            assert any(row.revision == 2 for row in rows)

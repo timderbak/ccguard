@@ -246,6 +246,63 @@ def policy_editor(
     )
 
 
+@router.post("/policy/draft")
+async def save_policy_draft(
+    request: Request,
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services.policy_service import (
+        get_current_published,
+        save_draft,
+    )
+    from ccguard.server.web.policy_form import form_to_yaml
+
+    form = await request.form()
+    current = get_current_published(session)
+    current_rev = current.revision if current else 0
+    yaml_text = form_to_yaml(dict(form), current_revision=current_rev)
+    save_draft(session, yaml_text=yaml_text, user_id=user)
+    return RedirectResponse(url="/policy", status_code=303)
+
+
+@router.post("/policy/publish")
+async def publish_policy(
+    request: Request,
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services.policy_service import (
+        get_current_published,
+        get_draft,
+        publish_draft,
+        save_draft,
+    )
+    from ccguard.server.web.policy_form import form_to_yaml
+
+    form = await request.form()
+    keys = list(form.keys())
+    has_section_data = any(
+        k.startswith(prefix + ".")
+        for k in keys
+        for prefix in ("mcp_servers", "network", "commands", "skills", "hooks", "agents", "env")
+    )
+    if has_section_data:
+        current = get_current_published(session)
+        current_rev = current.revision if current else 0
+        save_draft(
+            session,
+            yaml_text=form_to_yaml(dict(form), current_revision=current_rev),
+            user_id=user,
+        )
+    if get_draft(session) is None:
+        raise HTTPException(status_code=400, detail="no draft to publish")
+    publish_draft(session, user_id=user)
+    return RedirectResponse(url="/policy", status_code=303)
+
+
 @router.get("/_partials/overview/fleet-table", response_class=HTMLResponse)
 def overview_fleet_partial(
     request: Request,
