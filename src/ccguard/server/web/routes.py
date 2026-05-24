@@ -10,6 +10,7 @@ from sqlmodel import Session
 
 from ccguard.server.api.deps import get_session
 from ccguard.server.config import ServerConfig
+from ccguard.server.web.csrf import verify_csrf_token
 from ccguard.server.services.auth_service import (
     create_session,
     delete_session,
@@ -82,10 +83,18 @@ def login_submit(
     return resp
 
 
+def require_csrf(request: Request, csrf_token: str = Form("")) -> None:
+    sid = request.cookies.get(COOKIE_NAME) or ""
+    cfg = _config(request)
+    if not verify_csrf_token(csrf_token, secret=cfg.session_secret, session_id=sid):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="invalid CSRF token")
+
+
 @router.post("/logout")
 def logout(
     request: Request,
     session: Session = Depends(get_session),
+    _csrf: None = Depends(require_csrf),
 ) -> Response:
     sid = request.cookies.get(COOKIE_NAME)
     if sid:

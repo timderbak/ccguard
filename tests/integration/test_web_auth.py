@@ -46,6 +46,17 @@ def test_login_with_wrong_password_rejected(admin_app: TestClient) -> None:
     assert r.status_code == 401
 
 
+def test_logout_without_csrf_rejected(admin_app: TestClient) -> None:
+    r = admin_app.post(
+        "/login",
+        data={"username": "admin", "password": "hunter2"},
+        follow_redirects=False,
+    )
+    sid = r.cookies["ccg_session"]
+    r = admin_app.post("/logout", cookies={"ccg_session": sid}, follow_redirects=False)
+    assert r.status_code == 403
+
+
 def test_api_token_does_not_grant_web_access(admin_app: TestClient) -> None:
     r = admin_app.get(
         "/",
