@@ -12,7 +12,12 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
 
     {% include "components/_policy_section_mcp.html" %}
+    {% include "components/_policy_section_network.html" %}
+    {% include "components/_policy_section_commands.html" %}
+    {% include "components/_policy_section_skills.html" %}
     {% include "components/_policy_section_hooks.html" %}
+    {% include "components/_policy_section_agents.html" %}
+    {% include "components/_policy_section_env.html" %}
 
     <div class="flex gap-2 sticky bottom-0 bg-slate-50 py-4">
         <button type="submit"

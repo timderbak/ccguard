@@ -241,3 +241,26 @@ def test_policy_editor_renders_current_policy(monkeypatch, tmp_path) -> None:
         r = client.get("/policy", cookies={"ccg_session": sid})
         assert r.status_code == 200
         assert "filesystem" in r.text  # current allowlist appears in form
+
+
+def test_policy_editor_has_all_sections(monkeypatch, tmp_path) -> None:
+    from ccguard.server.db.models import PolicyVersion
+    from ccguard.server.services.auth_service import create_session, hash_password
+    from sqlmodel import Session
+
+    monkeypatch.setenv("CCGUARD_ADMIN_PASSWORD_HASH", hash_password("h"))
+    monkeypatch.setenv("CCGUARD_DB_URL", f"sqlite:///{tmp_path}/web.db")
+    monkeypatch.setenv("CCGUARD_SESSION_SECRET", "test-secret")
+
+    yaml_text = (
+        "meta:\n  schema_version: 1\n  revision: 1\n  updated_at: '2026-01-01T00:00:00Z'\n"
+    )
+    with TestClient(create_app()) as client:
+        engine = client.app.state.engine
+        with Session(engine) as s:
+            s.add(PolicyVersion(revision=1, status="published",
+                                yaml_text=yaml_text, created_by="admin"))
+            sid = create_session(s, user_id="admin")
+        r = client.get("/policy", cookies={"ccg_session": sid})
+        for needle in ["MCP servers", "Network", "Commands", "Skills", "Hooks", "Agents", "Env"]:
+            assert needle in r.text, f"missing section: {needle}"
