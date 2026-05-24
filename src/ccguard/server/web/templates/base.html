@@ -7,7 +7,28 @@
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-50 text-slate-900">
-    {% block content %}{% endblock %}
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+    {% if user %}
+    <div class="flex min-h-screen">
+        <aside class="w-56 bg-slate-900 text-slate-100 p-4">
+            <h1 class="text-xl font-bold mb-6">ccguard</h1>
+            <nav class="space-y-2 text-sm">
+                <a href="/" class="block hover:bg-slate-800 px-3 py-2 rounded">Overview</a>
+                <a href="/machines" class="block hover:bg-slate-800 px-3 py-2 rounded">Machines</a>
+                <a href="/findings" class="block hover:bg-slate-800 px-3 py-2 rounded">Findings</a>
+                <a href="/policy" class="block hover:bg-slate-800 px-3 py-2 rounded">Policy</a>
+                <a href="/policy/history" class="block hover:bg-slate-800 px-3 py-2 rounded">History</a>
+                <a href="/settings" class="block hover:bg-slate-800 px-3 py-2 rounded">Settings</a>
+            </nav>
+            <form method="POST" action="/logout" class="mt-6">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <button class="text-sm text-slate-400 hover:text-white">Log out</button>
+            </form>
+        </aside>
+        <main class="flex-1 p-8">{% block content %}{% endblock %}</main>
+    </div>
+    {% else %}
+    {% block content_anonymous %}{{ self.content() }}{% endblock %}
+    {% endif %}
 </body>
 </html>

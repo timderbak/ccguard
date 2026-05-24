@@ -1,0 +1,36 @@
+<table class="w-full text-sm">
+    <thead>
+        <tr class="text-left text-slate-500 border-b">
+            <th class="py-2">Host</th>
+            <th>Agent</th>
+            <th>Last seen</th>
+            <th>Policy rev</th>
+            <th>Warn / Block</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for m in machines %}
+        <tr class="border-b last:border-0">
+            <td class="py-2">
+                <a href="/machines/{{ m.machine_id }}" class="hover:underline">
+                    {{ m.machine_label or m.machine_id[:12] }}
+                </a>
+            </td>
+            <td>{{ m.agent_version or "-" }}</td>
+            <td>{{ m.last_seen.isoformat(timespec="minutes") }}</td>
+            <td>{{ m.agent_policy_revision or "-" }}</td>
+            <td>{{ m.warn_count }} / {{ m.block_count }}</td>
+            <td>
+                {% if m.status == "compliant" %}<span class="text-emerald-600">● compliant</span>
+                {% elif m.status == "policy-old" %}<span class="text-amber-600">◎ policy old</span>
+                {% elif m.status == "stale" %}<span class="text-slate-400">○ stale</span>
+                {% elif m.status == "blocking" %}<span class="text-red-600">■ blocking</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="py-6 text-center text-slate-400">No machines yet.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
