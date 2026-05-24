@@ -32,6 +32,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)
+
+    # Trigger policy bootstrap from file if DB has no published policy yet.
+    # Otherwise the web UI /policy route returns 503 until first agent sync.
+    from sqlmodel import Session as _Session2
+    with _Session2(engine) as _s_pol:
+        try:
+            app.state.policy_loader.load_with_etag(_s_pol)
+        except FileNotFoundError:
+            # No DB policy AND no bootstrap file — server can still start;
+            # /policy will 503 until something seeds it. This is informational.
+            logger.warning("no policy in DB and no bootstrap file; web /policy will 503 until seeded")
+
     logger.info(
         "ccguard-server up: tokens=%d, db=%s, policy=%s",
         len(cfg.tokens),
