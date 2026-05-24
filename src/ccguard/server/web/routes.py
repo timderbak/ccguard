@@ -124,6 +124,21 @@ def overview_page(
     )
 
 
+@router.get("/machines", response_class=HTMLResponse)
+def machines_list(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    from ccguard.server.services.machine_service import list_machines_with_status
+    machines = list_machines_with_status(session)
+    return templates.TemplateResponse(
+        request,
+        "machines_list.html",
+        {"user": user, "machines": machines, "csrf_token": _csrf_for(request)},
+    )
+
+
 @router.get("/_partials/overview/fleet-table", response_class=HTMLResponse)
 def overview_fleet_partial(
     request: Request,
