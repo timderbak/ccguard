@@ -34,8 +34,15 @@ def get_session(request: Request) -> Iterator[Session]:
 
 def require_token(
     x_ccguard_token: Annotated[str | None, Header(alias="X-CCGuard-Token")] = None,
+    session: Session = Depends(get_session),
     config: ServerConfig = Depends(get_config),
 ) -> str:
-    if not x_ccguard_token or not config.is_token_valid(x_ccguard_token):
+    from ccguard.server.services.token_service import is_token_valid as db_valid
+
+    if not x_ccguard_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
-    return x_ccguard_token
+    if db_valid(session, x_ccguard_token):
+        return x_ccguard_token
+    if config.is_token_valid(x_ccguard_token):
+        return x_ccguard_token
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
