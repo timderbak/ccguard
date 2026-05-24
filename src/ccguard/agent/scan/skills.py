@@ -1,8 +1,19 @@
-"""Сканер скиллов: имя, путь, dir_hash, origin."""
+"""Сканер скиллов: имя, путь, dir_hash, origin.
+
+Поддерживаемые источники:
+  * `~/.claude/skills/<name>/SKILL.md`             — local;
+  * `<plugin_install_path>/skills/<name>/SKILL.md` — plugin (через
+    `installed_plugins.json`, поле `installPath`).
+
+Глубоко вложенные SKILL.md (`cli-tool/components/skills/...`, shadow-копии
+для других AI-инструментов под `.cursor/`, `.gemini/` и т.п.) Claude Code
+не загружает, поэтому не инвентаризируем.
+"""
 
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -60,14 +71,43 @@ def _has_scripts(skill_dir: Path) -> bool:
     return False
 
 
+def _plugin_install_paths(claude_home: Path) -> list[Path]:
+    """installPath'ы из installed_plugins.json."""
+    f = claude_home / "plugins" / "installed_plugins.json"
+    if not f.exists():
+        return []
+    try:
+        data = json.loads(f.read_text())
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    plugins = data.get("plugins") or {}
+    if not isinstance(plugins, dict):
+        return []
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for installs in plugins.values():
+        if not isinstance(installs, list):
+            continue
+        for inst in installs:
+            if not isinstance(inst, dict):
+                continue
+            p = inst.get("installPath")
+            if isinstance(p, str) and p not in seen:
+                paths.append(Path(p))
+                seen.add(p)
+    return paths
+
+
 def scan_all_skills(claude_home: Path) -> list[SkillEntry]:
-    """Скиллы из ~/.claude/skills/ (local) и ~/.claude/plugins/*/skills/ (plugin)."""
+    """Local-скиллы из ~/.claude/skills/ + per-plugin-скиллы из installed_plugins.json."""
     out: list[SkillEntry] = []
     out.extend(_scan_skills_dir(claude_home / "skills", "local"))
 
-    plugins_dir = claude_home / "plugins"
-    if plugins_dir.exists():
-        for plugin in sorted(plugins_dir.iterdir()):
-            if plugin.is_dir():
-                out.extend(_scan_skills_dir(plugin / "skills", "plugin"))
+    for plugin_root in _plugin_install_paths(claude_home):
+        # Каждый плагин может выкладывать скиллы либо в `<root>/skills/`,
+        # либо (старый формат) в `<root>/.claude/skills/`.
+        out.extend(_scan_skills_dir(plugin_root / "skills", "plugin"))
+        out.extend(_scan_skills_dir(plugin_root / ".claude" / "skills", "plugin"))
     return out

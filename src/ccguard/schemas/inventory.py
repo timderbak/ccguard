@@ -27,6 +27,8 @@ class HookEntry(SchemaBase):
     url: str | None = None
     timeout_sec: int | None = None
     source: str
+    command_file_hash: str | None = None
+    command_file_path: str | None = None
 
 
 class McpServerEntry(SchemaBase):
@@ -51,6 +53,25 @@ class PluginEntry(SchemaBase):
     name: str
     source: str
     enabled: bool
+
+
+class AgentEntry(SchemaBase):
+    """Кастомный субагент: `~/.claude/agents/<name>.md`."""
+
+    name: str
+    path: str
+    file_hash: str
+    tools: list[str] | None = None  # из YAML frontmatter `tools:` (если есть)
+    model: str | None = None
+    description: str | None = None
+
+
+class CommandEntry(SchemaBase):
+    """Кастомная slash-команда: `~/.claude/commands/[<ns>/]<name>.md`."""
+
+    name: str  # `<ns>/<name>` без расширения
+    path: str
+    file_hash: str
 
 
 class PermissionsSnapshot(SchemaBase):
@@ -80,4 +101,7 @@ class InventoryReport(SchemaBase):
     hooks: list[HookEntry] = []
     plugins: list[PluginEntry] = []
     permissions: PermissionsSnapshot = PermissionsSnapshot()
+    agents: list[AgentEntry] = []
+    commands: list[CommandEntry] = []
+    env_keys: list[str] = []  # имена переменных из settings.env (без значений)
     claude_code_version: str | None = None

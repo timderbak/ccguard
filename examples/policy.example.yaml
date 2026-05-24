@@ -3,7 +3,7 @@
 
 meta:
   schema_version: 1
-  revision: 1                    # инкрементируется при каждом изменении содержимого
+  revision: 2                    # инкрементируется при каждом изменении содержимого
   name: default                  # на будущее multi-policy, MVP игнорирует
   updated_at: "2026-05-23T12:00:00Z"
 
@@ -76,3 +76,37 @@ hooks:
     - /opt/ccguard/bin/ccguard-enforce-bin
   # Если true, любой хук, не входящий в allowlist_commands, поднимет finding.
   deny_unknown: true
+
+agents:
+  severity: warn
+  # Имена кастомных субагентов, явно разрешённых.
+  allowlist_names: []
+  # Имена, явно запрещённые.
+  denylist_names: []
+  # Инструменты, запрещённые в `tools:` frontmatter агента.
+  # Пример: запретить кастомным агентам доступ к Bash и Write.
+  denylist_tools:
+    - Bash
+    - Write
+    - Edit
+  # sha256 файлов агентов, которым доверяем.
+  trusted_file_hashes: []
+  # Если true — все агенты, не в allowlist, поднимают finding.
+  deny_all_unknown: false
+
+env:
+  severity: warn
+  # Регексы для имён env-переменных. Значения не инвентаризируются.
+  # Цель: ловить хранение секретов в settings.json (env: { … }).
+  denylist_patterns:
+    - ".*_API_KEY$"
+    - ".*_SECRET$"
+    - ".*_TOKEN$"
+    - "^OPENAI_.*"
+    - "^ANTHROPIC_API_KEY$"
+    - "^AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN)$"
+  # Имена, которые точно ОК (PATH, HOME и т.п.).
+  allowlist_names:
+    - PATH
+    - HOME
+    - LANG

@@ -57,12 +57,70 @@ def test_scan_all_local_skills(tmp_path: Path) -> None:
 
 
 def test_scan_plugin_skills(tmp_path: Path) -> None:
+    """Плагины с installPath из installed_plugins.json — реальный layout Claude Code."""
+    import json
+
     home = tmp_path / "claude"
-    plugin_skills_dir = home / "plugins" / "my-plugin" / "skills"
+    plugins_root = home / "plugins"
+    plugins_root.mkdir(parents=True)
+
+    plugin_root = plugins_root / "cache" / "my-marketplace" / "my-plugin" / "1.0.0"
+    plugin_skills_dir = plugin_root / "skills"
     plugin_skills_dir.mkdir(parents=True)
     _make_skill(plugin_skills_dir, "from-plugin")
+
+    (plugins_root / "installed_plugins.json").write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "plugins": {
+                    "my-plugin@my-marketplace": [
+                        {"scope": "user", "installPath": str(plugin_root), "version": "1.0.0"}
+                    ]
+                },
+            }
+        )
+    )
 
     skills = scan_all_skills(home)
     by_name = {s.name: s for s in skills}
     assert "from-plugin" in by_name
     assert by_name["from-plugin"].origin == "plugin"
+
+
+def test_scan_plugin_skills_legacy_dotclaude(tmp_path: Path) -> None:
+    """Старый формат: `<install_path>/.claude/skills/`."""
+    import json
+
+    home = tmp_path / "claude"
+    plugins_root = home / "plugins"
+    plugin_root = plugins_root / "cache" / "mp" / "p" / "1.0"
+    legacy_dir = plugin_root / ".claude" / "skills"
+    legacy_dir.mkdir(parents=True)
+    _make_skill(legacy_dir, "legacy-skill")
+
+    (plugins_root / "installed_plugins.json").write_text(
+        json.dumps({"plugins": {"p@mp": [{"scope": "user", "installPath": str(plugin_root)}]}})
+    )
+
+    skills = scan_all_skills(home)
+    assert any(s.name == "legacy-skill" for s in skills)
+
+
+def test_scan_skips_deep_nested_skills(tmp_path: Path) -> None:
+    """Skill в `cli-tool/components/skills/...` НЕ должен попадать в инвентарь."""
+    import json
+
+    home = tmp_path / "claude"
+    plugins_root = home / "plugins"
+    plugin_root = plugins_root / "cache" / "mp" / "p" / "1.0"
+    deep = plugin_root / "cli-tool" / "components" / "skills"
+    deep.mkdir(parents=True)
+    _make_skill(deep, "should-be-ignored")
+
+    (plugins_root / "installed_plugins.json").write_text(
+        json.dumps({"plugins": {"p@mp": [{"scope": "user", "installPath": str(plugin_root)}]}})
+    )
+
+    skills = scan_all_skills(home)
+    assert all(s.name != "should-be-ignored" for s in skills)

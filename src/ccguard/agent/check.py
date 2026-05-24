@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 from ccguard.agent.masking import mask_secrets
 from ccguard.schemas import (
+    AgentEntry,
     Finding,
     HookEntry,
     InventoryReport,
@@ -192,12 +193,112 @@ def _check_settings_parse_errors(inv: InventoryReport) -> list[Finding]:
     return out
 
 
+def _check_agents(inv: InventoryReport, policy: Policy) -> list[Finding]:
+    out: list[Finding] = []
+    pol = policy.agents
+    deny_tools = set(pol.denylist_tools)
+    for a in inv.agents:
+        if a.name in pol.denylist_names:
+            out.append(_agent_finding(a, pol.severity, "agents.denylist", "имя в denylist"))
+            continue
+        if pol.deny_all_unknown and a.name not in pol.allowlist_names:
+            if pol.trusted_file_hashes and a.file_hash in pol.trusted_file_hashes:
+                continue
+            out.append(
+                _agent_finding(
+                    a,
+                    pol.severity,
+                    "agents.unknown",
+                    "агент не в allowlist (whitelist-режим)",
+                )
+            )
+            continue
+        if deny_tools and a.tools:
+            forbidden = sorted(deny_tools.intersection(a.tools))
+            if forbidden:
+                out.append(
+                    _agent_finding(
+                        a,
+                        pol.severity,
+                        "agents.forbidden_tool",
+                        f"в tools запрещённые: {', '.join(forbidden)}",
+                    )
+                )
+                continue
+        if pol.trusted_file_hashes and a.file_hash not in pol.trusted_file_hashes:
+            if not pol.allowlist_names or a.name not in pol.allowlist_names:
+                out.append(
+                    _agent_finding(
+                        a,
+                        pol.severity,
+                        "agents.untrusted_hash",
+                        f"file_hash ({a.file_hash[:12]}…) не в trusted_file_hashes",
+                    )
+                )
+    return out
+
+
+def _agent_finding(a: AgentEntry, sev, rule_id: str, why: str) -> Finding:  # type: ignore[no-untyped-def]
+    return Finding(
+        rule_id=rule_id,
+        severity=sev,
+        title=f"Кастомный субагент: {a.name}",
+        description=f"{why}. tools={a.tools or '-'}, model={a.model or '-'}",
+        source=a.path,
+        recommendation=(
+            "Удалить агента из ~/.claude/agents/, добавить имя в agents.allowlist_names "
+            "или хэш в trusted_file_hashes."
+        ),
+        matched_value=mask_secrets(a.name),
+    )
+
+
+def _check_env(inv: InventoryReport, policy: Policy) -> list[Finding]:
+    out: list[Finding] = []
+    pol = policy.env
+    if not pol.denylist_patterns:
+        return out
+    compiled = []
+    for pat in pol.denylist_patterns:
+        try:
+            compiled.append((pat, re.compile(pat)))
+        except re.error:
+            continue
+    allow = set(pol.allowlist_names)
+    for name in inv.env_keys:
+        if name in allow:
+            continue
+        for pat_src, regex in compiled:
+            if regex.search(name):
+                out.append(
+                    Finding(
+                        rule_id="env.denylist",
+                        severity=pol.severity,
+                        title=f"Чувствительная env-переменная: {name}",
+                        description=(
+                            f"Имя {name!r} мэтчит denylist-паттерн {pat_src!r}. "
+                            "Значение не инвентаризировалось, но сам факт хранения "
+                            "секретов в settings.json небезопасен."
+                        ),
+                        source="settings.json:env",
+                        recommendation=(
+                            "Убрать переменную из settings.json. Использовать секрет-менеджер."
+                        ),
+                        matched_value=name,
+                    )
+                )
+                break
+    return out
+
+
 def check_inventory(inv: InventoryReport, policy: Policy) -> list[Finding]:
     """Собрать все findings из применения policy к inventory."""
     out: list[Finding] = []
     out.extend(_check_mcp_servers(inv, policy))
     out.extend(_check_hooks(inv, policy))
     out.extend(_check_skills(inv, policy))
+    out.extend(_check_agents(inv, policy))
+    out.extend(_check_env(inv, policy))
     out.extend(_check_permissions(inv))
     out.extend(_check_settings_parse_errors(inv))
     return out

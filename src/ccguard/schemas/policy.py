@@ -51,6 +51,23 @@ class HooksPolicy(RuleBase):
     deny_unknown: bool = True
 
 
+class AgentsPolicy(RuleBase):
+    """Кастомные субагенты (`~/.claude/agents/*.md`)."""
+
+    allowlist_names: list[str] = []
+    denylist_names: list[str] = []
+    denylist_tools: list[str] = []
+    trusted_file_hashes: list[str] = []
+    deny_all_unknown: bool = False
+
+
+class EnvPolicy(RuleBase):
+    """Имена env-переменных в settings.json. Значения не инвентаризируются."""
+
+    denylist_patterns: list[str] = []
+    allowlist_names: list[str] = []
+
+
 class PolicyMeta(SchemaBase):
     schema_version: Literal[1] = 1
     revision: int
@@ -66,3 +83,5 @@ class Policy(SchemaBase):
     commands: CommandsPolicy = CommandsPolicy()
     skills: SkillsPolicy = SkillsPolicy()
     hooks: HooksPolicy = HooksPolicy()
+    agents: AgentsPolicy = AgentsPolicy()
+    env: EnvPolicy = EnvPolicy()

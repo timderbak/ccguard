@@ -6,6 +6,9 @@ from datetime import UTC, datetime
 
 from ccguard.agent.check import check_inventory, exit_code_for_findings
 from ccguard.schemas import (
+    AgentEntry,
+    AgentsPolicy,
+    EnvPolicy,
     Finding,
     HookEntry,
     HooksPolicy,
@@ -196,3 +199,73 @@ def test_exit_code_warn_only() -> None:
         Finding(rule_id="x", severity="warn", title="t", description="d", source="s", recommendation="r")
     ]
     assert exit_code_for_findings(findings) == 1
+
+
+# ------- agents policy -------
+
+
+def _agent(name: str, **kw: object) -> AgentEntry:
+    return AgentEntry(
+        name=name,
+        path=f"/agents/{name}.md",
+        file_hash=str(kw.get("file_hash") or "h" * 64),
+        tools=kw.get("tools"),  # type: ignore[arg-type]
+        model=kw.get("model"),  # type: ignore[arg-type]
+    )
+
+
+def test_agents_denylist_name() -> None:
+    inv = _inventory(agents=[_agent("evil")])
+    pol = _policy(agents=AgentsPolicy(denylist_names=["evil"]))
+    findings = check_inventory(inv, pol)
+    assert any(f.rule_id == "agents.denylist" for f in findings)
+
+
+def test_agents_denylist_tool() -> None:
+    """Если в tools агента есть Bash, и Bash в denylist_tools — finding."""
+    inv = _inventory(agents=[_agent("a", tools=["Read", "Bash", "Grep"])])
+    pol = _policy(agents=AgentsPolicy(denylist_tools=["Bash"]))
+    findings = check_inventory(inv, pol)
+    assert any(f.rule_id == "agents.forbidden_tool" for f in findings)
+
+
+def test_agents_deny_all_unknown() -> None:
+    inv = _inventory(agents=[_agent("a"), _agent("b")])
+    pol = _policy(agents=AgentsPolicy(allowlist_names=["a"], deny_all_unknown=True))
+    findings = check_inventory(inv, pol)
+    names = [f.title for f in findings if f.rule_id == "agents.unknown"]
+    assert any("b" in t for t in names)
+    assert not any("a" in t for t in names)
+
+
+def test_agents_trusted_file_hash_bypass() -> None:
+    """Хэш в trusted_file_hashes снимает unknown-finding даже при whitelist-режиме."""
+    inv = _inventory(agents=[_agent("a", file_hash="deadbeef" * 8)])
+    pol = _policy(
+        agents=AgentsPolicy(
+            deny_all_unknown=True, trusted_file_hashes=["deadbeef" * 8]
+        )
+    )
+    findings = [f for f in check_inventory(inv, pol) if f.rule_id.startswith("agents.")]
+    assert findings == []
+
+
+# ------- env policy -------
+
+
+def test_env_denylist_regex() -> None:
+    inv = _inventory(env_keys=["PATH", "OPENAI_API_KEY", "GITHUB_TOKEN", "HOME"])
+    pol = _policy(env=EnvPolicy(denylist_patterns=[r".*_API_KEY$", r".*_TOKEN$"]))
+    findings = [f for f in check_inventory(inv, pol) if f.rule_id == "env.denylist"]
+    titles = {f.matched_value for f in findings}
+    assert titles == {"OPENAI_API_KEY", "GITHUB_TOKEN"}
+
+
+def test_env_allowlist_overrides_pattern() -> None:
+    inv = _inventory(env_keys=["OPENAI_API_KEY"])
+    pol = _policy(
+        env=EnvPolicy(
+            denylist_patterns=[r".*_API_KEY$"], allowlist_names=["OPENAI_API_KEY"]
+        )
+    )
+    assert [f for f in check_inventory(inv, pol) if f.rule_id == "env.denylist"] == []

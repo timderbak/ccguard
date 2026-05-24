@@ -15,6 +15,7 @@ from ccguard.server.api import findings, health, inventory, machines, policy
 from ccguard.server.config import ServerConfig
 from ccguard.server.db.session import init_db, make_engine
 from ccguard.server.policy_loader import PolicyLoader
+from ccguard.server.web.routes import router as web_router
 
 logger = logging.getLogger("ccguard.server")
 
@@ -48,8 +49,6 @@ def create_app() -> FastAPI:
     app.include_router(policy.router)
     app.include_router(machines.router)
     app.include_router(findings.router)
-
-    from ccguard.server.web.routes import router as web_router
     app.include_router(web_router)
     return app
 

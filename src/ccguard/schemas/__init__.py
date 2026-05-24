@@ -7,6 +7,8 @@ from ccguard.schemas.enforce import (
 )
 from ccguard.schemas.finding import Finding, Severity
 from ccguard.schemas.inventory import (
+    AgentEntry,
+    CommandEntry,
     HookEntry,
     InventoryReport,
     McpServerEntry,
@@ -16,7 +18,9 @@ from ccguard.schemas.inventory import (
     SkillEntry,
 )
 from ccguard.schemas.policy import (
+    AgentsPolicy,
     CommandsPolicy,
+    EnvPolicy,
     HooksPolicy,
     McpServersPolicy,
     NetworkPolicy,
@@ -27,10 +31,14 @@ from ccguard.schemas.policy import (
 from ccguard.schemas.sync import SyncPayload
 
 __all__ = [
+    "AgentEntry",
+    "AgentsPolicy",
     "AuditEntry",
+    "CommandEntry",
     "CommandsPolicy",
     "EnforceDecision",
     "EnforceHookInput",
+    "EnvPolicy",
     "Finding",
     "HookEntry",
     "HooksPolicy",
