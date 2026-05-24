@@ -62,6 +62,19 @@ class WebSession(SQLModel, table=True):
     expires_at: datetime = Field(index=True)
 
 
+class PolicyVersion(SQLModel, table=True):
+    """Policy revision history: draft / published / archived."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    revision: int = Field(index=True)
+    status: str = Field(index=True)  # "draft" | "published" | "archived"
+    yaml_text: str
+    comment: str | None = None
+    created_by: str
+    created_at: datetime = Field(default_factory=_utcnow)
+    published_at: datetime | None = None
+
+
 class AuditRecord(SQLModel, table=True):
     """Audit-события (только deny + fail_open), присланные агентом."""
 

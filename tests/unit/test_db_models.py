@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlmodel import Session, select
 
-from ccguard.server.db.models import AgentToken, WebSession
+from ccguard.server.db.models import AgentToken, PolicyVersion, WebSession
 from ccguard.server.db.session import init_db, make_engine
 
 
@@ -47,3 +47,28 @@ def test_web_session_roundtrip() -> None:
         assert row is not None
         assert row.user_id == "admin"
         assert row.expires_at > row.created_at
+
+
+def test_policy_version_roundtrip() -> None:
+    engine = _engine()
+    now = datetime.now(UTC)
+    with Session(engine) as s:
+        s.add(
+            PolicyVersion(
+                revision=1,
+                status="published",
+                yaml_text="meta:\n  schema_version: 1\n",
+                comment="initial",
+                created_by="admin",
+                published_at=now,
+            )
+        )
+        s.commit()
+    with Session(engine) as s:
+        row = s.exec(
+            select(PolicyVersion).where(PolicyVersion.revision == 1)
+        ).one()
+        assert row.status == "published"
+        assert row.created_by == "admin"
+        assert row.published_at is not None
+        assert "schema_version" in row.yaml_text
