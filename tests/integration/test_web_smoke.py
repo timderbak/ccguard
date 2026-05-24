@@ -359,3 +359,53 @@ def test_policy_history_rollback(monkeypatch, tmp_path):
         assert r.status_code == 303
         with Session(engine) as s:
             assert get_draft(s) is not None
+
+
+def test_settings_create_and_revoke_token(monkeypatch, tmp_path) -> None:
+    from ccguard.server.db.models import AgentToken
+    from ccguard.server.services.auth_service import create_session, hash_password
+    from ccguard.server.web.csrf import generate_csrf_token
+    from sqlmodel import Session, select
+
+    monkeypatch.setenv("CCGUARD_ADMIN_PASSWORD_HASH", hash_password("h"))
+    monkeypatch.setenv("CCGUARD_DB_URL", f"sqlite:///{tmp_path}/web.db")
+    monkeypatch.setenv("CCGUARD_SESSION_SECRET", "s")
+
+    with TestClient(create_app()) as client:
+        engine = client.app.state.engine
+        with Session(engine) as s:
+            sid = create_session(s, user_id="admin")
+        csrf = generate_csrf_token(secret="s", session_id=sid)
+
+        r = client.get("/settings", cookies={"ccg_session": sid})
+        assert r.status_code == 200
+        assert "Agent tokens" in r.text
+
+        r = client.post(
+            "/settings/tokens",
+            data={"csrf_token": csrf, "label": "laptop"},
+            cookies={"ccg_session": sid},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        assert "new_token=" in r.headers["location"]
+
+        with Session(engine) as s:
+            rows = list(s.exec(select(AgentToken)))
+            assert len(rows) == 1
+            assert rows[0].label == "laptop"
+            token_id = rows[0].id
+
+        r = client.post(
+            f"/settings/tokens/{token_id}/revoke",
+            data={"csrf_token": csrf},
+            cookies={"ccg_session": sid},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        with Session(engine) as s:
+            row = s.get(AgentToken, token_id)
+            assert row is not None
+            assert row.revoked_at is not None
+
+

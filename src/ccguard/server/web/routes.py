@@ -346,6 +346,53 @@ def policy_rollback(
     return RedirectResponse(url="/policy", status_code=303)
 
 
+@router.get("/settings", response_class=HTMLResponse)
+def settings_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    from ccguard.server.services.token_service import list_tokens
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "user": user,
+            "tokens": list_tokens(session),
+            "new_token": request.query_params.get("new_token"),
+            "password_msg": request.query_params.get("password_msg"),
+            "server_version": "0.1.0",
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+@router.post("/settings/tokens")
+def settings_create_token(
+    request: Request,
+    label: str = Form(...),
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services.token_service import create_token
+    raw = create_token(session, label=label)
+    return RedirectResponse(url=f"/settings?new_token={raw}", status_code=303)
+
+
+@router.post("/settings/tokens/{token_id}/revoke")
+def settings_revoke_token(
+    request: Request,
+    token_id: int,
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services.token_service import revoke_token
+    revoke_token(session, token_id)
+    return RedirectResponse(url="/settings", status_code=303)
+
+
 @router.get("/_partials/overview/fleet-table", response_class=HTMLResponse)
 def overview_fleet_partial(
     request: Request,
