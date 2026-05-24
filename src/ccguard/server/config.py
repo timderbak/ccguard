@@ -24,6 +24,10 @@ class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8080
     log_level: str = "INFO"
+    admin_user: str = "admin"
+    admin_password_hash: str | None = None
+    session_secret: str = "change-me-in-prod"
+    cookie_secure: bool = False
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> ServerConfig:
@@ -46,6 +50,10 @@ class ServerConfig(BaseModel):
             host=os.environ.get("CCGUARD_HOST", cls.model_fields["host"].default),
             port=int(os.environ.get("CCGUARD_PORT", cls.model_fields["port"].default)),
             log_level=os.environ.get("CCGUARD_LOG_LEVEL", cls.model_fields["log_level"].default),
+            admin_user=os.environ.get("CCGUARD_ADMIN_USER", "admin"),
+            admin_password_hash=os.environ.get("CCGUARD_ADMIN_PASSWORD_HASH"),
+            session_secret=os.environ.get("CCGUARD_SESSION_SECRET", "change-me-in-prod"),
+            cookie_secure=os.environ.get("CCGUARD_COOKIE_SECURE", "false").lower() == "true",
         )
 
     def is_token_valid(self, token: str) -> bool:
