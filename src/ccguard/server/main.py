@@ -27,7 +27,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_db(engine)
     app.state.config = cfg
     app.state.engine = engine
-    app.state.policy_loader = PolicyLoader(Path(cfg.policy_path))
+    app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)
     logger.info(
         "ccguard-server up: tokens=%d, db=%s, policy=%s",
         len(cfg.tokens),

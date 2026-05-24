@@ -48,14 +48,14 @@ def client(tmp_path: Path, policy_file: Path) -> Iterator[TestClient]:
     init_db(engine)
     app.state.config = cfg
     app.state.engine = engine
-    app.state.policy_loader = PolicyLoader(policy_file)
+    app.state.policy_loader = PolicyLoader(file_path=policy_file, engine=engine)
 
     with TestClient(app) as c:
         # Дополнительная перезапись после lifespan — lifespan может пересчитать
         # state из env. Гарантируем тестовые значения.
         c.app.state.config = cfg  # type: ignore[attr-defined]
         c.app.state.engine = engine  # type: ignore[attr-defined]
-        c.app.state.policy_loader = PolicyLoader(policy_file)  # type: ignore[attr-defined]
+        c.app.state.policy_loader = PolicyLoader(file_path=policy_file, engine=engine)  # type: ignore[attr-defined]
         yield c
 
 
