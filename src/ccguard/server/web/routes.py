@@ -139,6 +139,34 @@ def machines_list(
     )
 
 
+@router.get("/machines/{machine_id}", response_class=HTMLResponse)
+def machine_detail(
+    request: Request,
+    machine_id: str,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    from ccguard.server.db.models import Machine
+    from ccguard.server.services.machine_service import (
+        get_findings_for_machine,
+        get_latest_inventory_json,
+    )
+    machine = session.get(Machine, machine_id)
+    if machine is None:
+        raise HTTPException(status_code=404)
+    return templates.TemplateResponse(
+        request,
+        "machine_detail.html",
+        {
+            "user": user,
+            "machine": machine,
+            "inventory": get_latest_inventory_json(session, machine_id),
+            "findings": get_findings_for_machine(session, machine_id),
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
 @router.get("/_partials/overview/fleet-table", response_class=HTMLResponse)
 def overview_fleet_partial(
     request: Request,

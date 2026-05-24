@@ -98,3 +98,30 @@ def list_machines_with_status(session: Session) -> list[MachineRow]:
             )
         )
     return out
+
+
+def get_latest_inventory_json(session: Session, machine_id: str) -> dict[str, object] | None:
+    inv = session.exec(
+        select(InventorySnapshot)
+        .where(InventorySnapshot.machine_id == machine_id)
+        .order_by(InventorySnapshot.received_at.desc())  # type: ignore[attr-defined]
+    ).first()
+    if inv is None:
+        return None
+    try:
+        return json.loads(inv.payload_json)
+    except ValueError:
+        return None
+
+
+def get_findings_for_machine(
+    session: Session, machine_id: str, limit: int = 200
+) -> list[FindingRecord]:
+    return list(
+        session.exec(
+            select(FindingRecord)
+            .where(FindingRecord.machine_id == machine_id)
+            .order_by(FindingRecord.discovered_at.desc())  # type: ignore[attr-defined]
+            .limit(limit)
+        )
+    )

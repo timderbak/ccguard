@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}ccguard — {{ machine.machine_label or machine.machine_id }}{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-semibold mb-2">{{ machine.machine_label or machine.machine_id }}</h2>
+<p class="text-slate-500 text-sm mb-6">{{ machine.machine_id }} · {{ machine.agent_version or "-" }} · last seen {{ machine.last_seen.isoformat(timespec="minutes") }}</p>
+
+<div class="grid grid-cols-2 gap-6">
+    <section class="bg-white rounded-lg shadow p-4">
+        <h3 class="font-semibold mb-3">Inventory</h3>
+        {% if inventory %}
+            {% for section_name, items in inventory.items() %}
+                {% if items is sequence and items|length > 0 and items[0] is mapping %}
+                <details class="border-b py-2">
+                    <summary class="cursor-pointer">{{ section_name }} ({{ items|length }})</summary>
+                    <ul class="ml-4 mt-2 text-sm space-y-1">
+                        {% for item in items %}
+                        <li>{{ item.get("name") or item.get("event") or item.get("path") or "-" }}</li>
+                        {% endfor %}
+                    </ul>
+                </details>
+                {% endif %}
+            {% endfor %}
+        {% else %}
+            <p class="text-slate-400 text-sm">No inventory yet.</p>
+        {% endif %}
+    </section>
+
+    <section class="bg-white rounded-lg shadow p-4">
+        <h3 class="font-semibold mb-3">Findings ({{ findings|length }})</h3>
+        <ul class="text-sm space-y-2">
+            {% for f in findings %}
+            <li class="border-b pb-2">
+                <span class="font-mono text-xs uppercase
+                    {% if f.severity == 'block' %}text-red-600
+                    {% elif f.severity == 'warn' %}text-amber-600
+                    {% else %}text-slate-500{% endif %}">
+                    {{ f.severity }}
+                </span>
+                {{ f.rule_id }}
+            </li>
+            {% else %}
+            <li class="text-slate-400">No findings.</li>
+            {% endfor %}
+        </ul>
+    </section>
+</div>
+
+<form method="POST" action="/machines/{{ machine.machine_id }}/revoke" class="mt-6">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <button class="text-sm text-red-600 hover:underline"
+            onclick="return confirm('Revoke this machine?')">Revoke machine</button>
+</form>
+{% endblock %}
