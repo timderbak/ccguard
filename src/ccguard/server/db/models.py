@@ -42,6 +42,26 @@ class FindingRecord(SQLModel, table=True):
     payload_json: str  # сериализованный Finding
 
 
+class AgentToken(SQLModel, table=True):
+    """Hashed agent token. Replaces env-var list at runtime."""
+
+    id: int | None = Field(default=None, primary_key=True)
+    label: str
+    token_hash: str = Field(index=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+    last_used_at: datetime | None = None
+    revoked_at: datetime | None = None
+
+
+class WebSession(SQLModel, table=True):
+    """Browser session for ccguard web UI."""
+
+    id: str = Field(primary_key=True)
+    user_id: str = Field(index=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+    expires_at: datetime = Field(index=True)
+
+
 class AuditRecord(SQLModel, table=True):
     """Audit-события (только deny + fail_open), присланные агентом."""
 
