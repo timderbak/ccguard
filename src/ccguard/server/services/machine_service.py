@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal
+
+from sqlmodel import Session, select
+
+from ccguard.server.db.models import FindingRecord, InventorySnapshot, Machine
+from ccguard.server.services.policy_service import get_current_published
 
 ComplianceStatus = Literal["compliant", "policy-old", "stale", "blocking"]
 
@@ -28,3 +35,66 @@ def compliance_status(
     if agent_policy_revision is None or agent_policy_revision < current_published_revision:
         return "policy-old"
     return "compliant"
+
+
+@dataclass
+class MachineRow:
+    machine_id: str
+    machine_label: str | None
+    last_seen: datetime
+    agent_version: str | None
+    agent_policy_revision: int | None
+    warn_count: int
+    block_count: int
+    status: ComplianceStatus
+
+
+def list_machines_with_status(session: Session) -> list[MachineRow]:
+    current = get_current_published(session)
+    current_rev = current.revision if current else 0
+    machines = list(session.exec(select(Machine)))
+    out: list[MachineRow] = []
+    for m in machines:
+        latest_inv = session.exec(
+            select(InventorySnapshot)
+            .where(InventorySnapshot.machine_id == m.machine_id)
+            .order_by(InventorySnapshot.received_at.desc())  # type: ignore[attr-defined]
+        ).first()
+        agent_rev: int | None = None
+        if latest_inv is not None:
+            try:
+                data = json.loads(latest_inv.payload_json)
+                agent_rev = int(data.get("meta", {}).get("revision", 0)) or None
+            except (ValueError, KeyError):
+                agent_rev = None
+        warn_count = 0
+        block_count = 0
+        if latest_inv is not None and latest_inv.id is not None:
+            findings = list(
+                session.exec(
+                    select(FindingRecord).where(FindingRecord.inventory_id == latest_inv.id)
+                )
+            )
+            for f in findings:
+                if f.severity == "warn":
+                    warn_count += 1
+                elif f.severity == "block":
+                    block_count += 1
+        out.append(
+            MachineRow(
+                machine_id=m.machine_id,
+                machine_label=m.machine_label,
+                last_seen=m.last_seen,
+                agent_version=m.agent_version,
+                agent_policy_revision=agent_rev,
+                warn_count=warn_count,
+                block_count=block_count,
+                status=compliance_status(
+                    last_seen=m.last_seen,
+                    agent_policy_revision=agent_rev,
+                    current_published_revision=current_rev,
+                    block_findings_count=block_count,
+                ),
+            )
+        )
+    return out
