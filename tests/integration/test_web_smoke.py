@@ -139,6 +139,41 @@ def test_machine_detail_renders_inventory(monkeypatch, tmp_path):
         assert r404.status_code == 404
 
 
+def test_findings_feed_renders_with_filter(monkeypatch, tmp_path):
+    from datetime import UTC, datetime
+
+    from sqlmodel import Session
+
+    from ccguard.server.db.models import FindingRecord
+    from ccguard.server.services.auth_service import create_session, hash_password
+
+    monkeypatch.setenv("CCGUARD_ADMIN_PASSWORD_HASH", hash_password("hunter2"))
+    monkeypatch.setenv("CCGUARD_DB_URL", f"sqlite:///{tmp_path}/web.db")
+    monkeypatch.setenv("CCGUARD_SESSION_SECRET", "test-secret")
+
+    with TestClient(create_app()) as client:
+        engine = client.app.state.engine
+        now = datetime.now(UTC)
+        with Session(engine) as s:
+            s.add(
+                FindingRecord(
+                    machine_id="m1",
+                    inventory_id=1,
+                    rule_id="agents.forbidden_tool",
+                    severity="warn",
+                    discovered_at=now,
+                    payload_json="{}",
+                )
+            )
+            sid = create_session(s, user_id="admin")
+        r = client.get(
+            "/findings?rule_id=agents.forbidden_tool",
+            cookies={"ccg_session": sid},
+        )
+        assert r.status_code == 200
+        assert "agents.forbidden_tool" in r.text
+
+
 def test_revoke_machine_deletes_row(monkeypatch, tmp_path):
     from datetime import UTC, datetime
 

@@ -183,6 +183,31 @@ def revoke_machine(
     return RedirectResponse(url="/machines", status_code=303)
 
 
+@router.get("/findings", response_class=HTMLResponse)
+def findings_page(
+    request: Request,
+    severity: str | None = None,
+    rule_id: str | None = None,
+    machine_id: str | None = None,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    from ccguard.server.services.finding_service import query_findings
+    findings = query_findings(
+        session, severity=severity, rule_id=rule_id, machine_id=machine_id, limit=200,
+    )
+    return templates.TemplateResponse(
+        request,
+        "findings_feed.html",
+        {
+            "user": user,
+            "findings": findings,
+            "filters": {"severity": severity, "rule_id": rule_id, "machine_id": machine_id},
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
 @router.get("/_partials/overview/fleet-table", response_class=HTMLResponse)
 def overview_fleet_partial(
     request: Request,
