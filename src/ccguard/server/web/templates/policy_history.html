@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}ccguard — policy history{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-semibold mb-6">Policy history</h2>
+<div class="bg-white rounded-lg shadow p-4">
+    <table class="w-full text-sm">
+        <thead><tr class="text-left text-slate-500 border-b">
+            <th class="py-2">Rev</th><th>Status</th><th>Created</th><th>By</th><th>Comment</th><th></th>
+        </tr></thead>
+        <tbody>
+        {% for v in versions %}
+        <tr class="border-b last:border-0">
+            <td class="py-2 font-mono">{{ v.revision }}</td>
+            <td>{{ v.status }}</td>
+            <td>{{ v.created_at.isoformat(timespec="minutes") }}</td>
+            <td>{{ v.created_by }}</td>
+            <td>{{ v.comment or "-" }}</td>
+            <td>
+                {% if v.status != "draft" %}
+                <form method="POST" action="/policy/rollback/{{ v.id }}" class="inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                    <button class="text-blue-600 hover:underline"
+                            onclick="return confirm('Create draft from rev {{ v.revision }}?')">
+                        rollback to this
+                    </button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

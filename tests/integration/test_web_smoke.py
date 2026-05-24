@@ -323,3 +323,39 @@ def test_save_draft_then_publish_bumps_revision(monkeypatch, tmp_path) -> None:
             rows = list(s.exec(PolicyVersion.__table__.select()  # type: ignore[attr-defined]
                                .where(PolicyVersion.status == "published")))
             assert any(row.revision == 2 for row in rows)
+
+
+def test_policy_history_rollback(monkeypatch, tmp_path):
+    from ccguard.server.db.models import PolicyVersion
+    from ccguard.server.services.auth_service import create_session, hash_password
+    from ccguard.server.services.policy_service import get_draft
+    from ccguard.server.web.csrf import generate_csrf_token
+    from sqlmodel import Session
+
+    monkeypatch.setenv("CCGUARD_ADMIN_PASSWORD_HASH", hash_password("h"))
+    monkeypatch.setenv("CCGUARD_DB_URL", f"sqlite:///{tmp_path}/web.db")
+    monkeypatch.setenv("CCGUARD_SESSION_SECRET", "s")
+
+    yaml_text = "meta:\n  schema_version: 1\n  revision: 1\n  updated_at: '2026-01-01T00:00:00Z'\n"
+    with TestClient(create_app()) as client:
+        engine = client.app.state.engine
+        with Session(engine) as s:
+            s.add(PolicyVersion(id=1, revision=1, status="archived",
+                                yaml_text=yaml_text, created_by="admin"))
+            s.add(PolicyVersion(revision=2, status="published",
+                                yaml_text=yaml_text, created_by="admin"))
+            sid = create_session(s, user_id="admin")
+        csrf = generate_csrf_token(secret="s", session_id=sid)
+
+        r = client.get("/policy/history", cookies={"ccg_session": sid})
+        assert r.status_code == 200
+
+        r = client.post(
+            "/policy/rollback/1",
+            data={"csrf_token": csrf},
+            cookies={"ccg_session": sid},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        with Session(engine) as s:
+            assert get_draft(s) is not None

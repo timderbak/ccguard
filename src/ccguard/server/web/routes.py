@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from ccguard.server.api.deps import get_session
 from ccguard.server.config import ServerConfig
@@ -311,6 +311,38 @@ async def publish_policy(
     if get_draft(session) is None:
         raise HTTPException(status_code=400, detail="no draft to publish")
     publish_draft(session, user_id=user)
+    return RedirectResponse(url="/policy", status_code=303)
+
+
+@router.get("/policy/history", response_class=HTMLResponse)
+def policy_history(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    from ccguard.server.db.models import PolicyVersion
+    versions = list(
+        session.exec(
+            select(PolicyVersion).order_by(PolicyVersion.revision.desc())  # type: ignore[attr-defined]
+        )
+    )
+    return templates.TemplateResponse(
+        request,
+        "policy_history.html",
+        {"user": user, "versions": versions, "csrf_token": _csrf_for(request)},
+    )
+
+
+@router.post("/policy/rollback/{version_id}")
+def policy_rollback(
+    request: Request,
+    version_id: int,
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services.policy_service import rollback_to
+    rollback_to(session, version_id=version_id, user_id=user)
     return RedirectResponse(url="/policy", status_code=303)
 
 
