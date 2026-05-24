@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ccguard.server.main import create_app
@@ -212,3 +213,31 @@ def test_revoke_machine_deletes_row(monkeypatch, tmp_path):
         assert r.headers["location"] == "/machines"
         with Session(engine) as s:
             assert s.get(Machine, "m1") is None
+
+
+def test_policy_editor_renders_current_policy(monkeypatch, tmp_path) -> None:
+    from ccguard.server.db.models import PolicyVersion
+    from ccguard.server.services.auth_service import create_session, hash_password
+    from sqlmodel import Session
+
+    monkeypatch.setenv("CCGUARD_ADMIN_PASSWORD_HASH", hash_password("h"))
+    monkeypatch.setenv("CCGUARD_DB_URL", f"sqlite:///{tmp_path}/web.db")
+    monkeypatch.setenv("CCGUARD_SESSION_SECRET", "test-secret")
+
+    with TestClient(create_app()) as client:
+        engine = client.app.state.engine
+        with Session(engine) as s:
+            s.add(
+                PolicyVersion(
+                    revision=1, status="published",
+                    yaml_text=(
+                        "meta:\n  schema_version: 1\n  revision: 1\n  updated_at: '2026-01-01T00:00:00Z'\n"
+                        "mcp_servers:\n  severity: warn\n  allowlist_names: [filesystem]\n"
+                    ),
+                    created_by="admin",
+                )
+            )
+            sid = create_session(s, user_id="admin")
+        r = client.get("/policy", cookies={"ccg_session": sid})
+        assert r.status_code == 200
+        assert "filesystem" in r.text  # current allowlist appears in form

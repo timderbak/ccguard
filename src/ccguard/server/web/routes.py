@@ -208,6 +208,44 @@ def findings_page(
     )
 
 
+@router.get("/policy", response_class=HTMLResponse)
+def policy_editor(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    from ccguard.server.services.policy_service import (
+        diff_policies,
+        get_current_published,
+        get_draft,
+        validate_yaml,
+    )
+    current = get_current_published(session)
+    draft = get_draft(session)
+    source = draft if draft is not None else current
+    if source is None:
+        raise HTTPException(status_code=503, detail="no policy in DB (run bootstrap first)")
+    policy_obj = validate_yaml(source.yaml_text)
+    diff_lines = (
+        diff_policies(current.yaml_text, draft.yaml_text)
+        if current is not None and draft is not None
+        else []
+    )
+    return templates.TemplateResponse(
+        request,
+        "policy_editor.html",
+        {
+            "user": user,
+            "policy": policy_obj,
+            "current_rev": current.revision if current else "-",
+            "draft_rev": draft.revision if draft else (current.revision + 1 if current else 1),
+            "has_draft": draft is not None,
+            "diff_lines": diff_lines,
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
 @router.get("/_partials/overview/fleet-table", response_class=HTMLResponse)
 def overview_fleet_partial(
     request: Request,

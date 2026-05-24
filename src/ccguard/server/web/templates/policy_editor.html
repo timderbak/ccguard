@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}ccguard — policy{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-semibold mb-2">Policy editor</h2>
+<p class="text-slate-500 text-sm mb-6">
+    Current rev <span class="font-mono">{{ current_rev }}</span> ·
+    Draft rev <span class="font-mono">{{ draft_rev }}</span>
+    {% if has_draft %}<span class="text-amber-600">· unsaved</span>{% endif %}
+</p>
+
+<form method="POST" action="/policy/draft" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+
+    {% include "components/_policy_section_mcp.html" %}
+    {% include "components/_policy_section_hooks.html" %}
+
+    <div class="flex gap-2 sticky bottom-0 bg-slate-50 py-4">
+        <button type="submit"
+                class="bg-slate-900 text-white rounded px-4 py-2">Save draft</button>
+        <button type="submit" formaction="/policy/publish"
+                class="bg-emerald-700 text-white rounded px-4 py-2"
+                onclick="return confirm('Publish draft to all agents?')">Publish</button>
+    </div>
+</form>
+
+{% if diff_lines %}
+<section class="bg-white rounded-lg shadow p-4 mt-6">
+    <h3 class="font-semibold mb-3">Diff vs published</h3>
+    <pre class="text-xs overflow-x-auto">{% for line in diff_lines %}{{ line }}
+{% endfor %}</pre>
+</section>
+{% endif %}
+{% endblock %}
