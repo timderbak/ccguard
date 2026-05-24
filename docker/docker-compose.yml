@@ -11,6 +11,9 @@ services:
       CCGUARD_TOKENS: "demo-token-replace-me"
       CCGUARD_POLICY_PATH: "/etc/ccguard/server_policy.yaml"
       CCGUARD_DB_URL: "sqlite:////var/lib/ccguard/ccguard.db"
+      CCGUARD_ADMIN_USER: "admin"
+      CCGUARD_ADMIN_PASSWORD_HASH: "$$2b$$12$$rzeiQ0m26yc6nR0dYe.BzOYrg4majOWocqeBYpCBhF.b.W7Nuz3Qy"
+      CCGUARD_SESSION_SECRET: "demo-session-secret-change-me"
     volumes:
       - ../examples/policy.example.yaml:/etc/ccguard/server_policy.yaml:ro
       - ccguard-data:/var/lib/ccguard
