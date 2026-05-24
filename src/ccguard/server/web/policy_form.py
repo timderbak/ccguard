@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
@@ -46,6 +47,7 @@ _SECTIONS: dict[str, dict[str, str]] = {
         "severity": "str",
         "allowlist_names": "csv",
         "denylist_names": "csv",
+        "allowlist_url_patterns": "csv",
         "denylist_url_patterns": "csv",
         "deny_all_unknown": "bool",
     },
@@ -87,21 +89,45 @@ _SECTIONS: dict[str, dict[str, str]] = {
 }
 
 
-def form_to_yaml(form: Mapping[str, str], *, current_revision: int) -> str:
-    """Serialize form data into Policy YAML. Validates via Policy.model_validate."""
-    data: dict[str, Any] = {
-        "meta": {
-            "schema_version": 1,
-            "revision": current_revision + 1,
-            "updated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
-        },
+def form_to_yaml(
+    form: Mapping[str, str],
+    *,
+    current_revision: int,
+    baseline: dict | None = None,
+) -> str:
+    """Serialize form data into Policy YAML. Validates via Policy.model_validate.
+
+    If baseline is provided, merge form values onto it (preserving keys not edited
+    via the UI, such as top-level ``block_fail_mode``, ``meta.name``, and
+    ``skills.signature``).
+    """
+    if baseline is not None:
+        data: dict[str, Any] = deepcopy(baseline)
+        # Reset the meta block and known sections — everything else is preserved.
+        for section in _SECTIONS:
+            data.pop(section, None)
+    else:
+        data = {}
+
+    existing_meta = data.get("meta", {}) if baseline is not None else {}
+    new_meta: dict[str, Any] = {
+        "schema_version": 1,
+        "revision": current_revision + 1,
+        "updated_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
     }
+    if "name" in existing_meta:
+        new_meta["name"] = existing_meta["name"]
+    data["meta"] = new_meta
+
     for section, fields in _SECTIONS.items():
-        # Only emit the section if at least one of its form fields was provided.
-        # Missing sections fall back to Policy defaults via model_validate.
-        if not any(f"{section}.{field}" in form for field in fields):
-            continue
-        data[section] = _section(form, section, fields)
+        section_data = _section(form, section, fields)
+        # Preserve skills.signature (not edited via UI).
+        if section == "skills" and baseline is not None:
+            sig = baseline.get("skills", {}).get("signature")
+            if sig is not None:
+                section_data["signature"] = sig
+        data[section] = section_data
+
     # Validate by round-tripping through Policy.
     Policy.model_validate(data)
     return yaml.safe_dump(data, sort_keys=False)

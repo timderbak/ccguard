@@ -27,6 +27,12 @@
                    value="{{ policy.mcp_servers.denylist_url_patterns | join(', ') }}"
                    class="mt-1 block w-full rounded border-slate-300" />
         </label>
+        <label class="block">
+            allowlist_url_patterns (comma-separated):
+            <input type="text" name="mcp_servers.allowlist_url_patterns"
+                   value="{{ policy.mcp_servers.allowlist_url_patterns | join(', ') }}"
+                   class="mt-1 block w-full rounded border border-slate-300" />
+        </label>
         <label class="inline-flex items-center">
             <input type="checkbox" name="mcp_servers.deny_all_unknown" value="1"
                    {% if policy.mcp_servers.deny_all_unknown %}checked{% endif %} />

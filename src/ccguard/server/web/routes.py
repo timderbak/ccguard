@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 from sqlmodel import Session
 
 from ccguard.server.api.deps import get_session
@@ -262,7 +264,13 @@ async def save_policy_draft(
     form = await request.form()
     current = get_current_published(session)
     current_rev = current.revision if current else 0
-    yaml_text = form_to_yaml(dict(form), current_revision=current_rev)
+    baseline = yaml.safe_load(current.yaml_text) if current else None
+    try:
+        yaml_text = form_to_yaml(
+            dict(form), current_revision=current_rev, baseline=baseline,
+        )
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     save_draft(session, yaml_text=yaml_text, user_id=user)
     return RedirectResponse(url="/policy", status_code=303)
 
@@ -292,11 +300,14 @@ async def publish_policy(
     if has_section_data:
         current = get_current_published(session)
         current_rev = current.revision if current else 0
-        save_draft(
-            session,
-            yaml_text=form_to_yaml(dict(form), current_revision=current_rev),
-            user_id=user,
-        )
+        baseline = yaml.safe_load(current.yaml_text) if current else None
+        try:
+            yaml_text = form_to_yaml(
+                dict(form), current_revision=current_rev, baseline=baseline,
+            )
+        except ValidationError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        save_draft(session, yaml_text=yaml_text, user_id=user)
     if get_draft(session) is None:
         raise HTTPException(status_code=400, detail="no draft to publish")
     publish_draft(session, user_id=user)
