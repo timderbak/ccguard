@@ -25,6 +25,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     cfg = ServerConfig.load(os.environ.get("CCGUARD_SERVER_CONFIG"))
     engine = make_engine(cfg.db_url)
     init_db(engine)
+    from sqlmodel import Session as _Session
+    from ccguard.server.services.token_service import bootstrap_env_tokens
+    with _Session(engine) as _s:
+        bootstrap_env_tokens(_s, env_tokens=[t.value for t in cfg.tokens])
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)

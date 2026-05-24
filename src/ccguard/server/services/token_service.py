@@ -38,6 +38,18 @@ def revoke_token(session: Session, token_id: int) -> None:
     session.commit()
 
 
+def bootstrap_env_tokens(session: Session, *, env_tokens: list[str]) -> None:
+    """Migrate env-configured tokens into AgentToken if the table is empty."""
+    existing = session.exec(select(AgentToken).limit(1)).first()
+    if existing is not None:
+        return
+    for i, raw in enumerate(env_tokens):
+        if not raw:
+            continue
+        session.add(AgentToken(label=f"env-bootstrap-{i}", token_hash=_hash(raw)))
+    session.commit()
+
+
 def is_token_valid(session: Session, raw: str) -> bool:
     row = session.exec(
         select(AgentToken).where(
