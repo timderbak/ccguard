@@ -409,3 +409,57 @@ def test_settings_create_and_revoke_token(monkeypatch, tmp_path) -> None:
             assert row.revoked_at is not None
 
 
+def test_change_admin_password(monkeypatch, tmp_path) -> None:
+    from ccguard.server.services.auth_service import (
+        create_session,
+        hash_password,
+        verify_password,
+    )
+    from ccguard.server.web.csrf import generate_csrf_token
+    from sqlmodel import Session
+
+    hash_file = tmp_path / "admin_hash.txt"
+    monkeypatch.setenv("CCGUARD_ADMIN_PASSWORD_HASH", hash_password("old-pass"))
+    monkeypatch.setenv("CCGUARD_ADMIN_HASH_FILE", str(hash_file))
+    monkeypatch.setenv("CCGUARD_DB_URL", f"sqlite:///{tmp_path}/web.db")
+    monkeypatch.setenv("CCGUARD_SESSION_SECRET", "s")
+
+    with TestClient(create_app()) as client:
+        engine = client.app.state.engine
+        with Session(engine) as s:
+            sid = create_session(s, user_id="admin")
+        csrf = generate_csrf_token(secret="s", session_id=sid)
+
+        # wrong current password rejected
+        r = client.post(
+            "/settings/password",
+            data={
+                "csrf_token": csrf,
+                "current_password": "wrong",
+                "new_password": "new-pass-123",
+            },
+            cookies={"ccg_session": sid},
+            follow_redirects=False,
+        )
+        assert r.status_code == 401
+
+        # correct current password accepted
+        r = client.post(
+            "/settings/password",
+            data={
+                "csrf_token": csrf,
+                "current_password": "old-pass",
+                "new_password": "new-pass-123",
+            },
+            cookies={"ccg_session": sid},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        assert "password_msg=" in r.headers["location"]
+
+        assert hash_file.exists()
+        new_hash = hash_file.read_text().strip()
+        assert verify_password("new-pass-123", new_hash)
+        assert not verify_password("old-pass", new_hash)
+
+

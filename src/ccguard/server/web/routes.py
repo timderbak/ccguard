@@ -393,6 +393,28 @@ def settings_revoke_token(
     return RedirectResponse(url="/settings", status_code=303)
 
 
+@router.post("/settings/password")
+def settings_change_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(..., min_length=6),
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+) -> RedirectResponse:
+    from pathlib import Path
+    from ccguard.server.services.auth_service import hash_password, verify_password
+
+    cfg = _config(request)
+    if cfg.admin_password_hash is None or not verify_password(current_password, cfg.admin_password_hash):
+        raise HTTPException(status_code=401, detail="current password incorrect")
+
+    new_hash = hash_password(new_password)
+    if cfg.admin_hash_file:
+        Path(cfg.admin_hash_file).write_text(new_hash + "\n")
+    cfg.admin_password_hash = new_hash
+    return RedirectResponse(url="/settings?password_msg=Password+changed", status_code=303)
+
+
 @router.get("/_partials/overview/fleet-table", response_class=HTMLResponse)
 def overview_fleet_partial(
     request: Request,

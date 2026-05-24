@@ -26,6 +26,7 @@ class ServerConfig(BaseModel):
     log_level: str = "INFO"
     admin_user: str = "admin"
     admin_password_hash: str | None = None
+    admin_hash_file: str | None = None
     session_secret: str = "change-me-in-prod"
     cookie_secure: bool = False
 
@@ -52,6 +53,7 @@ class ServerConfig(BaseModel):
             log_level=os.environ.get("CCGUARD_LOG_LEVEL", cls.model_fields["log_level"].default),
             admin_user=os.environ.get("CCGUARD_ADMIN_USER", "admin"),
             admin_password_hash=os.environ.get("CCGUARD_ADMIN_PASSWORD_HASH"),
+            admin_hash_file=os.environ.get("CCGUARD_ADMIN_HASH_FILE"),
             session_secret=os.environ.get("CCGUARD_SESSION_SECRET", "change-me-in-prod"),
             cookie_secure=os.environ.get("CCGUARD_COOKIE_SECURE", "false").lower() == "true",
         )
