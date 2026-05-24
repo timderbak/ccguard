@@ -167,6 +167,22 @@ def machine_detail(
     )
 
 
+@router.post("/machines/{machine_id}/revoke")
+def revoke_machine(
+    request: Request,
+    machine_id: str,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.db.models import Machine
+    row = session.get(Machine, machine_id)
+    if row is not None:
+        session.delete(row)
+        session.commit()
+    return RedirectResponse(url="/machines", status_code=303)
+
+
 @router.get("/_partials/overview/fleet-table", response_class=HTMLResponse)
 def overview_fleet_partial(
     request: Request,
