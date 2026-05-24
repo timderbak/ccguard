@@ -48,6 +48,9 @@ def create_app() -> FastAPI:
     app.include_router(policy.router)
     app.include_router(machines.router)
     app.include_router(findings.router)
+
+    from ccguard.server.web.routes import router as web_router
+    app.include_router(web_router)
     return app
 
 
