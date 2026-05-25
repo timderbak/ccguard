@@ -31,11 +31,24 @@ class InventorySnapshot(SQLModel, table=True):
 
 
 class FindingRecord(SQLModel, table=True):
-    """Findings, ассоциированные с конкретным inventory."""
+    """Findings.
+
+    ``inventory_id`` is nullable from Phase 2 onward so anomaly findings — which
+    are produced by server-side aggregation across a time window rather than by
+    a single inventory snapshot — can be persisted without a synthetic snapshot
+    link. Findings produced by Phase 1 check_engine continue to populate
+    ``inventory_id`` with the snapshot they originated from.
+
+    Note on migration: ``create_all`` is a no-op against an existing table, so
+    pre-Phase-2 deployments will keep their NOT-NULL column constraint at the
+    SQLite layer until the DB is re-created. This is acceptable because the
+    Phase 2 writers (anomaly path) are not yet exposed to those deployments.
+    Fresh installs get the nullable column immediately.
+    """
 
     id: int | None = Field(default=None, primary_key=True)
     machine_id: str = Field(index=True)
-    inventory_id: int = Field(index=True)
+    inventory_id: int | None = Field(default=None, index=True)
     rule_id: str = Field(index=True)
     severity: str = Field(index=True)
     discovered_at: datetime = Field(default_factory=_utcnow)
@@ -112,3 +125,32 @@ class ToolUseEvent(SQLModel, table=True):
     fingerprint: str = Field(index=True)
     decision: str = Field(index=True)
     result_status: str
+
+
+class MachineBaseline(SQLModel, table=True):
+    """Cached per-machine per-metric anomaly baseline (Phase 2 / Plan 02-01).
+
+    One row per (machine_id, metric) — composite uniqueness is enforced via a
+    ``CREATE UNIQUE INDEX IF NOT EXISTS`` in
+    :func:`ccguard.server.db.session.init_db`, NOT via a SQLModel
+    ``UniqueConstraint``. We keep parity with the Phase 1 ``tool_use_event``
+    index pattern (also DDL-driven) because mixing ``Field(index=True)`` with
+    ``__table_args__`` UniqueConstraints is brittle under repeated
+    ``create_all`` calls in tests.
+
+    ``recent_points_json`` is a JSON-encoded ``list[float]`` of up to 14 recent
+    daily observations, retained for sparkline reuse so the UI does not have to
+    re-aggregate every render.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    # One of ``ccguard.server.services.anomaly_constants.ALL_METRICS``.
+    metric: str = Field(index=True)
+    mean: float
+    stdev: float
+    sample_count: int
+    baseline_ready: bool = Field(default=False)
+    # JSON-encoded ``list[float]``; up to 14 entries.
+    recent_points_json: str = Field(default="[]")
+    updated_at: datetime = Field(default_factory=_utcnow)

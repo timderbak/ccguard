@@ -21,6 +21,15 @@ _TOOL_USE_INDEX_DDL: tuple[str, ...] = (
     "ON tooluseevent(decision, ts DESC)",
 )
 
+# Composite unique index for MachineBaseline (Plan 02-01). SQLModel auto-names
+# tables as the lowercased class name without underscores — match the existing
+# Phase 1 convention (``tooluseevent``), so the target table is
+# ``machinebaseline``. Idempotent so ``init_db`` stays safe to re-run.
+_MACHINE_BASELINE_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_machinebaseline_machine_metric "
+    "ON machinebaseline(machine_id, metric)",
+)
+
 
 def make_engine(db_url: str) -> Engine:
     """Создать engine. Для SQLite — включить WAL и foreign_keys."""
@@ -40,9 +49,12 @@ def make_engine(db_url: str) -> Engine:
 
 def init_db(engine: Engine) -> None:
     SQLModel.metadata.create_all(engine)
-    # Composite indexes for ToolUseEvent (TUA-02). Idempotent — safe to re-run.
+    # Composite indexes for ToolUseEvent (TUA-02) and MachineBaseline (02-01).
+    # Idempotent — safe to re-run.
     with engine.begin() as conn:
         for ddl in _TOOL_USE_INDEX_DDL:
+            conn.execute(text(ddl))
+        for ddl in _MACHINE_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
 
 
