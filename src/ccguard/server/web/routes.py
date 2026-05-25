@@ -412,7 +412,7 @@ def settings_change_password(
     if cfg.admin_hash_file:
         Path(cfg.admin_hash_file).write_text(new_hash + "\n")
     cfg.admin_password_hash = new_hash
-    return RedirectResponse(url="/settings?password_msg=Password+changed", status_code=303)
+    return RedirectResponse(url="/settings?password_msg=Пароль+изменён", status_code=303)
 
 
 @router.get("/_partials/overview/fleet-table", response_class=HTMLResponse)

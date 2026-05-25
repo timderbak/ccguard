@@ -2,11 +2,11 @@
 {% block title %}ccguard — {{ machine.machine_label or machine.machine_id }}{% endblock %}
 {% block content %}
 <h2 class="text-2xl font-semibold mb-2">{{ machine.machine_label or machine.machine_id }}</h2>
-<p class="text-slate-500 text-sm mb-6">{{ machine.machine_id }} · {{ machine.agent_version or "-" }} · last seen {{ machine.last_seen.isoformat(timespec="minutes") }}</p>
+<p class="text-slate-500 text-sm mb-6">{{ machine.machine_id }} · {{ machine.agent_version or "-" }} · последний sync {{ machine.last_seen.isoformat(timespec="minutes") }}</p>
 
 <div class="grid grid-cols-2 gap-6">
     <section class="bg-white rounded-lg shadow p-4">
-        <h3 class="font-semibold mb-3">Inventory</h3>
+        <h3 class="font-semibold mb-3">Инвентарь</h3>
         {% if inventory %}
             {% for section_name, items in inventory.items() %}
                 {% if items is sequence and items|length > 0 and items[0] is mapping %}
@@ -21,12 +21,12 @@
                 {% endif %}
             {% endfor %}
         {% else %}
-            <p class="text-slate-400 text-sm">No inventory yet.</p>
+            <p class="text-slate-400 text-sm">Инвентаря ещё нет.</p>
         {% endif %}
     </section>
 
     <section class="bg-white rounded-lg shadow p-4">
-        <h3 class="font-semibold mb-3">Findings ({{ findings|length }})</h3>
+        <h3 class="font-semibold mb-3">Находки ({{ findings|length }})</h3>
         <ul class="text-sm space-y-2">
             {% for f in findings %}
             <li class="border-b pb-2">
@@ -39,7 +39,7 @@
                 {{ f.rule_id }}
             </li>
             {% else %}
-            <li class="text-slate-400">No findings.</li>
+            <li class="text-slate-400">Находок нет.</li>
             {% endfor %}
         </ul>
     </section>
@@ -48,6 +48,6 @@
 <form method="POST" action="/machines/{{ machine.machine_id }}/revoke" class="mt-6">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     <button class="text-sm text-red-600 hover:underline"
-            onclick="return confirm('Revoke this machine?')">Revoke machine</button>
+            onclick="return confirm('Отозвать эту машину?')">Отозвать машину</button>
 </form>
 {% endblock %}

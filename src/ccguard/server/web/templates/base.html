@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -13,16 +13,16 @@
         <aside class="w-56 bg-slate-900 text-slate-100 p-4">
             <h1 class="text-xl font-bold mb-6">ccguard</h1>
             <nav class="space-y-2 text-sm">
-                <a href="/" class="block hover:bg-slate-800 px-3 py-2 rounded">Overview</a>
-                <a href="/machines" class="block hover:bg-slate-800 px-3 py-2 rounded">Machines</a>
-                <a href="/findings" class="block hover:bg-slate-800 px-3 py-2 rounded">Findings</a>
-                <a href="/policy" class="block hover:bg-slate-800 px-3 py-2 rounded">Policy</a>
-                <a href="/policy/history" class="block hover:bg-slate-800 px-3 py-2 rounded">History</a>
-                <a href="/settings" class="block hover:bg-slate-800 px-3 py-2 rounded">Settings</a>
+                <a href="/" class="block hover:bg-slate-800 px-3 py-2 rounded">Обзор</a>
+                <a href="/machines" class="block hover:bg-slate-800 px-3 py-2 rounded">Машины</a>
+                <a href="/findings" class="block hover:bg-slate-800 px-3 py-2 rounded">Находки</a>
+                <a href="/policy" class="block hover:bg-slate-800 px-3 py-2 rounded">Политика</a>
+                <a href="/policy/history" class="block hover:bg-slate-800 px-3 py-2 rounded">История</a>
+                <a href="/settings" class="block hover:bg-slate-800 px-3 py-2 rounded">Настройки</a>
             </nav>
             <form method="POST" action="/logout" class="mt-6">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-                <button class="text-sm text-slate-400 hover:text-white">Log out</button>
+                <button class="text-sm text-slate-400 hover:text-white">Выйти</button>
             </form>
         </aside>
         <main class="flex-1 p-8">{% block content %}{% endblock %}</main>

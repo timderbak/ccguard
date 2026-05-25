@@ -1,18 +1,18 @@
 <details class="bg-white rounded-lg shadow p-4">
-    <summary class="cursor-pointer font-semibold">Env</summary>
+    <summary class="cursor-pointer font-semibold">Переменные окружения</summary>
     <div class="mt-4 space-y-3 text-sm">
-        <label class="block">severity:
+        <label class="block">критичность:
             <select name="env.severity" class="rounded border-slate-300 ml-2">
                 <option value="info"  {% if policy.env.severity == 'info'  %}selected{% endif %}>info</option>
                 <option value="warn"  {% if policy.env.severity == 'warn'  %}selected{% endif %}>warn</option>
                 <option value="block" {% if policy.env.severity == 'block' %}selected{% endif %}>block</option>
             </select>
         </label>
-        <label class="block">denylist_patterns (one regex per line):
+        <label class="block">denylist_patterns (одна regex на строку):
             <textarea name="env.denylist_patterns" rows="4"
                       class="mt-1 block w-full rounded border-slate-300 font-mono text-xs"
                       >{{ policy.env.denylist_patterns | join('\n') }}</textarea></label>
-        <label class="block">allowlist_names (comma-separated):
+        <label class="block">allowlist_names (через запятую):
             <input type="text" name="env.allowlist_names"
                    value="{{ policy.env.allowlist_names | join(', ') }}"
                    class="mt-1 block w-full rounded border-slate-300" /></label>

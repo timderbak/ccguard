@@ -1,12 +1,12 @@
 <table class="w-full text-sm">
     <thead>
         <tr class="text-left text-slate-500 border-b">
-            <th class="py-2">Host</th>
-            <th>Agent</th>
-            <th>Last seen</th>
-            <th>Policy rev</th>
+            <th class="py-2">Хост</th>
+            <th>Агент</th>
+            <th>Последний sync</th>
+            <th>Ревизия политики</th>
             <th>Warn / Block</th>
-            <th>Status</th>
+            <th>Статус</th>
         </tr>
     </thead>
     <tbody>
@@ -22,15 +22,15 @@
             <td>{{ m.agent_policy_revision or "-" }}</td>
             <td>{{ m.warn_count }} / {{ m.block_count }}</td>
             <td>
-                {% if m.status == "compliant" %}<span class="text-emerald-600">● compliant</span>
-                {% elif m.status == "policy-old" %}<span class="text-amber-600">◎ policy old</span>
-                {% elif m.status == "stale" %}<span class="text-slate-400">○ stale</span>
-                {% elif m.status == "blocking" %}<span class="text-red-600">■ blocking</span>
+                {% if m.status == "compliant" %}<span class="text-emerald-600">● соответствует</span>
+                {% elif m.status == "policy-old" %}<span class="text-amber-600">◎ устаревшая политика</span>
+                {% elif m.status == "stale" %}<span class="text-slate-400">○ молчит</span>
+                {% elif m.status == "blocking" %}<span class="text-red-600">■ блокирует</span>
                 {% endif %}
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="py-6 text-center text-slate-400">No machines yet.</td></tr>
+        <tr><td colspan="6" class="py-6 text-center text-slate-400">Машин пока нет.</td></tr>
         {% endfor %}
     </tbody>
 </table>

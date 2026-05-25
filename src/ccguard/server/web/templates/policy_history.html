@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}ccguard — policy history{% endblock %}
+{% block title %}ccguard — история политики{% endblock %}
 {% block content %}
-<h2 class="text-2xl font-semibold mb-6">Policy history</h2>
+<h2 class="text-2xl font-semibold mb-6">История политики</h2>
 <div class="bg-white rounded-lg shadow p-4">
     <table class="w-full text-sm">
         <thead><tr class="text-left text-slate-500 border-b">
-            <th class="py-2">Rev</th><th>Status</th><th>Created</th><th>By</th><th>Comment</th><th></th>
+            <th class="py-2">Ревизия</th><th>Статус</th><th>Создано</th><th>Автор</th><th>Комментарий</th><th></th>
         </tr></thead>
         <tbody>
         {% for v in versions %}
@@ -20,8 +20,8 @@
                 <form method="POST" action="/policy/rollback/{{ v.id }}" class="inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
                     <button class="text-blue-600 hover:underline"
-                            onclick="return confirm('Create draft from rev {{ v.revision }}?')">
-                        rollback to this
+                            onclick="return confirm('Создать черновик из ревизии {{ v.revision }}?')">
+                        откатить к этой
                     </button>
                 </form>
                 {% endif %}

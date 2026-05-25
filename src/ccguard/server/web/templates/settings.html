@@ -1,19 +1,19 @@
 {% extends "base.html" %}
-{% block title %}ccguard — settings{% endblock %}
+{% block title %}ccguard — настройки{% endblock %}
 {% block content %}
-<h2 class="text-2xl font-semibold mb-6">Settings</h2>
+<h2 class="text-2xl font-semibold mb-6">Настройки</h2>
 
 <section class="bg-white rounded-lg shadow p-4 mb-6">
-    <h3 class="font-semibold mb-3">Agent tokens</h3>
+    <h3 class="font-semibold mb-3">Токены агентов</h3>
     {% if new_token %}
     <div class="bg-emerald-50 border border-emerald-200 p-3 rounded mb-3 text-sm">
-        New token (copy now — won't be shown again):
+        Новый токен (скопируй сейчас — больше не покажем):
         <code class="font-mono break-all">{{ new_token }}</code>
     </div>
     {% endif %}
     <table class="w-full text-sm mb-4">
         <thead><tr class="text-left text-slate-500 border-b">
-            <th class="py-2">Label</th><th>Created</th><th>Last used</th><th></th>
+            <th class="py-2">Метка</th><th>Создан</th><th>Последнее использование</th><th></th>
         </tr></thead>
         <tbody>
         {% for t in tokens %}
@@ -24,46 +24,46 @@
             <td>
                 <form method="POST" action="/settings/tokens/{{ t.id }}/revoke" class="inline">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-                    <button class="text-red-600 hover:underline">revoke</button>
+                    <button class="text-red-600 hover:underline">отозвать</button>
                 </form>
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="4" class="py-3 text-slate-400">No tokens yet.</td></tr>
+        <tr><td colspan="4" class="py-3 text-slate-400">Токенов пока нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>
     <form method="POST" action="/settings/tokens" class="flex gap-2 items-end">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
         <label class="block text-sm">
-            New token label
+            Метка нового токена
             <input type="text" name="label" required
                    class="block rounded border border-slate-300 mt-1" />
         </label>
-        <button class="bg-slate-900 text-white rounded px-4 py-2 text-sm">Create token</button>
+        <button class="bg-slate-900 text-white rounded px-4 py-2 text-sm">Создать токен</button>
     </form>
 </section>
 
 <section class="bg-white rounded-lg shadow p-4 mb-6">
-    <h3 class="font-semibold mb-3">Change admin password</h3>
+    <h3 class="font-semibold mb-3">Сменить пароль администратора</h3>
     <form method="POST" action="/settings/password" class="space-y-3 text-sm max-w-md">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-        <label class="block">Current password
+        <label class="block">Текущий пароль
             <input type="password" name="current_password" required
                    class="mt-1 block w-full rounded border border-slate-300" /></label>
-        <label class="block">New password
+        <label class="block">Новый пароль
             <input type="password" name="new_password" required minlength="6"
                    class="mt-1 block w-full rounded border border-slate-300" /></label>
-        <button class="bg-slate-900 text-white rounded px-4 py-2">Change password</button>
+        <button class="bg-slate-900 text-white rounded px-4 py-2">Сменить пароль</button>
         {% if password_msg %}<p class="text-sm text-emerald-600">{{ password_msg }}</p>{% endif %}
     </form>
 </section>
 
 <section class="bg-white rounded-lg shadow p-4">
-    <h3 class="font-semibold mb-3">About</h3>
+    <h3 class="font-semibold mb-3">О сервере</h3>
     <ul class="text-sm space-y-1 text-slate-600">
-        <li>Server version: {{ server_version }}</li>
-        <li>Admin user: <code>{{ user }}</code></li>
+        <li>Версия сервера: {{ server_version }}</li>
+        <li>Администратор: <code>{{ user }}</code></li>
     </ul>
 </section>
 {% endblock %}

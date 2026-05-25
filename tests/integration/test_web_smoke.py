@@ -62,7 +62,7 @@ def test_overview_renders_fleet_table(monkeypatch, tmp_path):
         r = client.get("/", cookies={"ccg_session": sid})
         assert r.status_code == 200
         assert "laptop" in r.text
-        assert "compliant" in r.text.lower()
+        assert "соответствует" in r.text
 
 
 def test_machines_list_renders(monkeypatch, tmp_path):
@@ -94,7 +94,7 @@ def test_machines_list_renders(monkeypatch, tmp_path):
         r = client.get("/machines", cookies={"ccg_session": sid})
         assert r.status_code == 200
         assert "laptop" in r.text
-        assert "Machines (1)" in r.text
+        assert "Машины (1)" in r.text
 
 
 def test_machine_detail_renders_inventory(monkeypatch, tmp_path):
@@ -262,7 +262,7 @@ def test_policy_editor_has_all_sections(monkeypatch, tmp_path) -> None:
                                 yaml_text=yaml_text, created_by="admin"))
             sid = create_session(s, user_id="admin")
         r = client.get("/policy", cookies={"ccg_session": sid})
-        for needle in ["MCP servers", "Network", "Commands", "Skills", "Hooks", "Agents", "Env"]:
+        for needle in ["MCP-серверы", "Сеть", "Команды", "Навыки", "Хуки", "Агенты", "Переменные окружения"]:
             assert needle in r.text, f"missing section: {needle}"
 
 
@@ -379,7 +379,7 @@ def test_settings_create_and_revoke_token(monkeypatch, tmp_path) -> None:
 
         r = client.get("/settings", cookies={"ccg_session": sid})
         assert r.status_code == 200
-        assert "Agent tokens" in r.text
+        assert "Токены агентов" in r.text
 
         r = client.post(
             "/settings/tokens",

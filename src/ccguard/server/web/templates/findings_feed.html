@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}ccguard — findings{% endblock %}
+{% block title %}ccguard — находки{% endblock %}
 {% block content %}
-<h2 class="text-2xl font-semibold mb-6">Findings</h2>
+<h2 class="text-2xl font-semibold mb-6">Находки</h2>
 <form method="GET" action="/findings" class="bg-white rounded-lg shadow p-4 mb-4 flex gap-4">
     <select name="severity" class="rounded border border-slate-300 text-sm">
-        <option value="">all severities</option>
+        <option value="">все уровни</option>
         <option value="block" {% if filters.severity == "block" %}selected{% endif %}>block</option>
         <option value="warn"  {% if filters.severity == "warn"  %}selected{% endif %}>warn</option>
         <option value="info"  {% if filters.severity == "info"  %}selected{% endif %}>info</option>
@@ -13,13 +13,13 @@
            value="{{ filters.rule_id or '' }}" class="rounded border border-slate-300 text-sm" />
     <input type="text" name="machine_id" placeholder="machine_id"
            value="{{ filters.machine_id or '' }}" class="rounded border border-slate-300 text-sm" />
-    <button class="bg-slate-900 text-white text-sm rounded px-4">Filter</button>
+    <button class="bg-slate-900 text-white text-sm rounded px-4">Фильтр</button>
 </form>
 
 <div class="bg-white rounded-lg shadow p-4">
     <table class="w-full text-sm">
         <thead><tr class="text-left text-slate-500 border-b">
-            <th>When</th><th>Machine</th><th>Rule</th><th>Severity</th>
+            <th>Когда</th><th>Машина</th><th>Правило</th><th>Критичность</th>
         </tr></thead>
         <tbody>
         {% for f in findings %}
@@ -36,7 +36,7 @@
                        {% else %}text-slate-500{% endif %}">{{ f.severity }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="4" class="py-6 text-center text-slate-400">No findings.</td></tr>
+        <tr><td colspan="4" class="py-6 text-center text-slate-400">Находок нет.</td></tr>
         {% endfor %}
         </tbody>
     </table>

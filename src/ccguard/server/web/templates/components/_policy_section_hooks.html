@@ -1,8 +1,8 @@
 <details class="bg-white rounded-lg shadow p-4">
-    <summary class="cursor-pointer font-semibold">Hooks</summary>
+    <summary class="cursor-pointer font-semibold">Хуки</summary>
     <div class="mt-4 space-y-3 text-sm">
         <label class="block">
-            severity:
+            критичность:
             <select name="hooks.severity" class="rounded border-slate-300 ml-2">
                 <option value="info"  {% if policy.hooks.severity == 'info'  %}selected{% endif %}>info</option>
                 <option value="warn"  {% if policy.hooks.severity == 'warn'  %}selected{% endif %}>warn</option>
@@ -10,7 +10,7 @@
             </select>
         </label>
         <label class="block">
-            allowlist_commands (newline-separated):
+            allowlist_commands (по одной на строку):
             <textarea name="hooks.allowlist_commands" rows="4"
                       class="mt-1 block w-full rounded border-slate-300 font-mono text-xs"
                       >{{ policy.hooks.allowlist_commands | join('\n') }}</textarea>
@@ -18,7 +18,7 @@
         <label class="inline-flex items-center">
             <input type="checkbox" name="hooks.deny_unknown" value="1"
                    {% if policy.hooks.deny_unknown %}checked{% endif %} />
-            <span class="ml-2">deny unknown</span>
+            <span class="ml-2">блокировать неизвестные</span>
         </label>
     </div>
 </details>
