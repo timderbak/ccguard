@@ -99,6 +99,18 @@ def _same_day_finding_exists(
 
     Uses SQLite-compatible ``func.date()`` on ``discovered_at`` to bucket on
     the UTC date (FindingRecord.discovered_at is always tz-aware UTC).
+
+    WR-06: Concurrency invariant — this SELECT-then-INSERT pattern is NOT
+    race-free. APScheduler's ``coalesce=True + max_instances=1`` makes the
+    scheduler a single in-process writer, which is sufficient for v0.2.
+
+    DO NOT call ``evaluate_one`` (or this function) from request handlers
+    without acquiring an external lock — a concurrent web-triggered tick
+    racing the scheduler could insert duplicate findings for the same
+    ``(machine_id, rule_id, UTC date)`` triple. If/when v0.3 needs request-
+    triggered evaluation, replace this pre-check with a SQLite expression
+    UNIQUE INDEX on ``(machine_id, rule_id, date(discovered_at))`` and
+    catch ``IntegrityError`` on insert.
     """
     today_iso = today_utc.date().isoformat()
     stmt = (
