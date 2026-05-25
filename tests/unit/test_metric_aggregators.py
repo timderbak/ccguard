@@ -205,6 +205,32 @@ def test_bash_calls_events_outside_window_excluded() -> None:
     assert total == 1
 
 
+def test_bash_calls_tz_aware_orm_roundtrip_matches() -> None:
+    """Regression for CR-01: tz-aware datetimes inserted via the ORM must
+    match the aggregator's date-prefix range filter regardless of how the
+    underlying driver/dialect serializes the timestamp (space vs ``T``
+    separator, with or without trailing ``+00:00`` offset).
+    """
+    anchor = date(2026, 5, 25)
+    engine = _engine()
+    with Session(engine) as s:
+        # tz-aware UTC datetime, identical to what Phase 1 ingest produces.
+        _seed_event(s, ts=datetime(2026, 5, 25, 0, 0, 1, tzinfo=UTC))
+        _seed_event(s, ts=datetime(2026, 5, 25, 23, 59, 59, tzinfo=UTC))
+        # Boundary: anchor - 13 days (still in window).
+        _seed_event(s, ts=datetime(2026, 5, 12, 12, 0, 0, tzinfo=UTC))
+        # Boundary: anchor - 14 days (out of window).
+        _seed_event(s, ts=datetime(2026, 5, 11, 12, 0, 0, tzinfo=UTC))
+        s.commit()
+        series = bash_calls_per_day_series(s, "m1", anchor_date=anchor)
+    by_day = dict(series)
+    # CR-01 regression: must NOT be all zeros against ORM-stored tz-aware rows.
+    assert sum(by_day.values()) == 3
+    assert by_day[anchor] == 2
+    assert by_day[date(2026, 5, 12)] == 1
+    assert date(2026, 5, 11) not in by_day  # outside the 14-day window
+
+
 # ===========================================================================
 # new_mcp_per_week_series
 # ===========================================================================

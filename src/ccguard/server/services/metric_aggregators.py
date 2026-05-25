@@ -89,26 +89,27 @@ def bash_calls_per_day_series(
     """
     anchor = anchor_date or _default_anchor()
     days = _anchor_dates(anchor)
-    start_dt = datetime(days[0].year, days[0].month, days[0].day, tzinfo=UTC)
-    # exclusive upper bound = anchor + 1 day at 00:00 UTC
-    end_excl = datetime(anchor.year, anchor.month, anchor.day, tzinfo=UTC) + timedelta(days=1)
 
-    # SQLite (via SQLAlchemy) persists tz-aware datetimes as ISO strings with a
-    # space separator (``"YYYY-MM-DD HH:MM:SS.ffffff"``), no offset suffix. We
-    # bind in the same format so the lexicographic comparison stays correct.
-    fmt = "%Y-%m-%d %H:%M:%S.%f"
+    # Compare on the date prefix (``substr(ts, 1, 10)`` == ``"YYYY-MM-DD"``)
+    # directly against ``date.isoformat()`` strings. This is independent of how
+    # SQLAlchemy/SQLite serializes the rest of the timestamp (space vs ``T``
+    # separator, with or without trailing ``+00:00`` offset) — what matters is
+    # only the first 10 characters, which are the UTC date for any tz-aware
+    # datetime normalized to UTC (Phase 1 ``ToolUseEventIn._enforce_utc``
+    # guarantees this). Lexicographic comparison on ``YYYY-MM-DD`` strings
+    # matches calendrical ordering, so the range filter is exact.
     sql = _sql(
         "SELECT substr(ts, 1, 10) AS day, COUNT(*) AS cnt "
         "FROM tooluseevent "
         "WHERE machine_id = :mid "
         "  AND tool_name = 'Bash' "
-        "  AND ts >= :start "
-        "  AND ts < :end "
+        "  AND substr(ts, 1, 10) >= :start_day "
+        "  AND substr(ts, 1, 10) <= :end_day "
         "GROUP BY day"
     ).bindparams(
         mid=machine_id,
-        start=start_dt.replace(tzinfo=None).strftime(fmt),
-        end=end_excl.replace(tzinfo=None).strftime(fmt),
+        start_day=days[0].isoformat(),
+        end_day=anchor.isoformat(),
     )
 
     counts: dict[str, int] = {}
