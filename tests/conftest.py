@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -68,3 +69,37 @@ def sample_inventory() -> InventoryReport:
             ask=[],
         ),
     )
+
+
+# --- audit_hook buffer fixtures (Phase 01 / Plan 01-01) ---------------------
+
+
+@pytest.fixture
+def audit_buffer_path(tmp_path: Path) -> Path:
+    """Per-test path for a ToolBufferDB sqlite file."""
+    return tmp_path / "audit_buffer.db"
+
+
+def multiprocessing_buffer_worker(path_str: str, n_inserts: int) -> int:
+    """Worker target for multiprocessing-based concurrency tests.
+
+    Module-level (not a closure) so it is picklable under `spawn` start method.
+    Opens its own ToolBufferDB at the given path and performs ``n_inserts``
+    independent INSERTs. Returns the number of successful inserts.
+    """
+    from pathlib import Path as _P
+
+    from ccguard.agent.audit_hook.buffer import ToolBufferDB
+
+    ok = 0
+    with ToolBufferDB(_P(path_str)) as buf:
+        for i in range(n_inserts):
+            buf.insert(
+                ts=f"2026-05-25T00:00:{i:02d}Z",
+                tool_name="Bash",
+                fingerprint="0123456789abcdef",
+                decision="allow",
+                result_status="success",
+            )
+            ok += 1
+    return ok
