@@ -1,0 +1,33 @@
+<table class="w-full text-sm">
+    <thead>
+        <tr class="text-sm text-slate-500 border-b text-left">
+            <th class="py-2">Когда</th>
+            <th>Машина</th>
+            <th>Инструмент</th>
+            <th>Решение</th>
+            <th>Результат</th>
+            <th>Fingerprint</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for event in events %}
+        <tr class="border-b last:border-0">
+            <td class="py-2 whitespace-nowrap text-slate-600">{{ event.ts.isoformat(timespec="seconds") }}</td>
+            <td>
+                <a href="/machines/{{ event.machine_id }}" class="hover:underline">{{ event.machine_id[:12] }}</a>
+            </td>
+            <td class="font-mono py-2">{{ event.tool_name }}</td>
+            <td class="{% if event.decision == 'allow' %}text-emerald-600{% elif event.decision == 'deny' %}text-red-600{% else %}text-amber-600{% endif %}">{{ event.decision }}</td>
+            <td class="text-slate-700">{{ event.result_status }}</td>
+            <td class="font-mono text-slate-500 py-2">{{ event.fingerprint[:10] }}</td>
+        </tr>
+    {% else %}
+        <tr><td colspan="6" class="py-6 text-center text-slate-400">Аудит-событий нет.</td></tr>
+    {% endfor %}
+    </tbody>
+    {% if total > limit %}
+    <tfoot>
+        <tr><td colspan="6" class="py-3 text-center text-slate-400 text-sm">Показано {{ events|length }} из {{ total }} событий за период. Сузьте фильтры если нужно больше.</td></tr>
+    </tfoot>
+    {% endif %}
+</table>

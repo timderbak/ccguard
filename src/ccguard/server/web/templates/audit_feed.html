@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}ccguard — аудит{% endblock %}
+{% block content %}
+<h2 class="text-2xl font-semibold mb-6">Аудит</h2>
+
+<form method="GET" action="/audit" class="bg-white rounded-lg shadow p-4 mb-4 flex gap-4 flex-wrap">
+    <label class="sr-only" for="f-machine">Машина</label>
+    <input type="text" id="f-machine" name="machine_id" placeholder="machine_id"
+           value="{{ filters.machine_id or '' }}"
+           class="rounded border border-slate-300 text-sm px-2 py-1 focus:ring-2 focus:ring-slate-400 focus:border-slate-500" />
+
+    <label class="sr-only" for="f-tool">Инструмент</label>
+    <input type="text" id="f-tool" name="tool_name" placeholder="tool_name"
+           value="{{ filters.tool_name or '' }}"
+           class="rounded border border-slate-300 text-sm px-2 py-1 focus:ring-2 focus:ring-slate-400 focus:border-slate-500" />
+
+    <label class="sr-only" for="f-decision">Решение</label>
+    <select id="f-decision" name="decision"
+            class="rounded border border-slate-300 text-sm px-2 py-1 focus:ring-2 focus:ring-slate-400 focus:border-slate-500">
+        <option value="">все решения</option>
+        <option value="allow" {% if filters.decision == "allow" %}selected{% endif %}>allow</option>
+        <option value="deny"  {% if filters.decision == "deny"  %}selected{% endif %}>deny</option>
+        <option value="error" {% if filters.decision == "error" %}selected{% endif %}>error</option>
+    </select>
+
+    <label class="sr-only" for="f-timeframe">Период</label>
+    <select id="f-timeframe" name="timeframe"
+            class="rounded border border-slate-300 text-sm px-2 py-1 focus:ring-2 focus:ring-slate-400 focus:border-slate-500">
+        <option value="1h"  {% if filters.timeframe == "1h"  %}selected{% endif %}>за 1 час</option>
+        <option value="24h" {% if filters.timeframe == "24h" %}selected{% endif %}>за 24 часа</option>
+        <option value="7d"  {% if filters.timeframe == "7d"  %}selected{% endif %}>за 7 дней</option>
+    </select>
+
+    <button class="bg-slate-900 text-white text-sm rounded px-4 py-2">Фильтр</button>
+    <a href="/audit" class="text-sm text-slate-500 hover:underline self-center">Сбросить</a>
+</form>
+
+<div class="bg-white rounded-lg shadow p-4 mb-4"
+     hx-get="/_partials/audit/timeline"
+     hx-trigger="every 30s"
+     hx-include="closest form">
+    <h3 class="text-sm font-semibold text-slate-700 mb-3">Активность за 24 часа</h3>
+    {% if timeline_partial_available %}
+        {% include "components/_audit_timeline.html" %}
+    {% else %}
+        <p class="text-sm text-slate-400 py-6 text-center">Нет данных за выбранный период.</p>
+    {% endif %}
+</div>
+
+<div class="bg-white rounded-lg shadow p-4">
+    {% include "components/_audit_events_table.html" %}
+</div>
+{% endblock %}
