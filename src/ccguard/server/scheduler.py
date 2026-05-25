@@ -44,13 +44,18 @@ def build_scheduler() -> AsyncIOScheduler:
 
 def start_scheduler(
     scheduler: AsyncIOScheduler,
-    tick_callable: Callable[[], None],
+    tick_callable: Callable[..., object],
 ) -> None:
     """Register the anomaly tick and start the scheduler.
 
     First run is scheduled at ``now(UTC) + 30s`` so devs get fast feedback;
     subsequent runs follow the hourly interval. ``coalesce=True`` and
     ``max_instances=1`` ensure missed runs collapse and ticks never overlap.
+
+    ``tick_callable`` may be a sync or async callable; an async callable is
+    awaited by AsyncIOScheduler on the event loop. Production wraps the
+    blocking SQL tick in ``asyncio.to_thread`` (see ``main._lifespan``) so the
+    loop stays responsive during sweeps (WR-05).
     """
     next_run = datetime.now(UTC) + timedelta(seconds=FIRST_TICK_DELAY_SECONDS)
     scheduler.add_job(

@@ -22,6 +22,10 @@ logger = logging.getLogger("ccguard.server")
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # WR-01: Initialize scheduler attribute BEFORE any work that may raise so
+    # the ``finally:`` cleanup block can safely reference ``app.state.scheduler``
+    # without masking the original exception via AttributeError.
+    app.state.scheduler = None
     cfg = ServerConfig.load(os.environ.get("CCGUARD_SERVER_CONFIG"))
     engine = make_engine(cfg.db_url)
     init_db(engine)
@@ -61,11 +65,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services.anomaly_service import tick as anomaly_tick
     from sqlmodel import Session as _SessionTick
 
-    app.state.scheduler = None
     if is_disabled():
         logger.info("anomaly scheduler disabled via CCGUARD_DISABLE_SCHEDULER")
     else:
-        def _tick_job() -> None:
+        import asyncio
+
+        def _tick_job_sync() -> None:
             try:
                 with _SessionTick(engine) as s:
                     summary = anomaly_tick(s)
@@ -78,9 +83,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception:  # noqa: BLE001 — scheduler job must not crash the loop
                 logger.exception("anomaly tick raised")
 
+        async def _tick_job() -> None:
+            # WR-05: AsyncIOScheduler runs sync callables on the loop thread,
+            # which would block all FastAPI request handlers for the duration
+            # of the sweep (synchronous SQLite I/O on 100+ machines × 4 metrics
+            # easily runs into seconds). Offload to the default thread pool so
+            # the event loop stays responsive during ticks.
+            await asyncio.to_thread(_tick_job_sync)
+
         scheduler = build_scheduler()
-        start_scheduler(scheduler, _tick_job)
-        app.state.scheduler = scheduler
+        try:
+            start_scheduler(scheduler, _tick_job)
+            app.state.scheduler = scheduler
+        except Exception:
+            # WR-01: If start_scheduler raises after partial setup, ensure
+            # ``app.state.scheduler`` stays ``None`` so the lifespan teardown
+            # does not attempt to shutdown a half-started scheduler.
+            app.state.scheduler = None
+            raise
 
     try:
         yield
