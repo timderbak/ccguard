@@ -640,11 +640,18 @@ def anomaly_detail(
             }
         )
 
-    # Baseline band: median ± 3σ, normalized to chart max.
+    # Baseline band: mean ± 3σ, normalized to chart max.
+    # WR-03: clamp top and bottom in absolute terms first, then derive height
+    # from the clamped values. Previous code derived height from raw 6σ and
+    # let min() truncate, which produced visually misleading bars when the
+    # outlier defining max_val pushed (mean + 3σ) > max_val — exactly the
+    # anomaly case we care about.
     band_visible = baseline_ready and stdev > 0 and max_val > 0
     if band_visible:
-        band_bottom_pct = max(0.0, ((mean - 3 * stdev) / max_val) * 100.0)
-        band_height_pct = min(100.0 - band_bottom_pct, (6 * stdev / max_val) * 100.0)
+        top_pct = max(0.0, min(100.0, ((mean + 3 * stdev) / max_val) * 100.0))
+        bot_pct = max(0.0, min(100.0, ((mean - 3 * stdev) / max_val) * 100.0))
+        band_bottom_pct = bot_pct
+        band_height_pct = max(0.0, top_pct - bot_pct)
     else:
         band_bottom_pct = 0.0
         band_height_pct = 0.0
