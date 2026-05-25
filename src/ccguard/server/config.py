@@ -29,6 +29,12 @@ class ServerConfig(BaseModel):
     admin_hash_file: str | None = None
     session_secret: str = "change-me-in-prod"
     cookie_secure: bool = False
+    anthropic_api_key: str | None = None
+
+    @property
+    def llm_enabled_at_startup(self) -> bool:
+        """True iff ANTHROPIC_API_KEY is non-empty at startup; drives UI 'no API key' state."""
+        return bool(self.anthropic_api_key)
 
     @classmethod
     def load(cls, path: str | Path | None = None) -> ServerConfig:
@@ -56,6 +62,7 @@ class ServerConfig(BaseModel):
             admin_hash_file=os.environ.get("CCGUARD_ADMIN_HASH_FILE"),
             session_secret=os.environ.get("CCGUARD_SESSION_SECRET", "change-me-in-prod"),
             cookie_secure=os.environ.get("CCGUARD_COOKIE_SECURE", "false").lower() == "true",
+            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY") or None,
         )
 
     def is_token_valid(self, token: str) -> bool:
