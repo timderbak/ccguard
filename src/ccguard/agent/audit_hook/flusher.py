@@ -84,7 +84,14 @@ def _acquire_lock(
     lock: Path | None = None,
     now: float | None = None,
 ) -> bool:
-    """Atomic pidfile write. Returns False if a fresh (<5s) lock already exists."""
+    """Atomic pidfile create. Returns False if a fresh (<5s) lock already exists.
+
+    Uses ``os.open`` with ``O_CREAT|O_EXCL`` so that two concurrent PostToolUse
+    hooks racing past :func:`_should_spawn` cannot both succeed in acquiring
+    the lock (CR-01: TOCTOU race → duplicate flusher → duplicate server rows).
+    A stale lock (mtime older than ``_LOCK_FRESH_S``) is unlinked before the
+    exclusive create so recovery still works.
+    """
     p = lock if lock is not None else _lock_path()
     n = now if now is not None else time.time()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -95,12 +102,19 @@ def _acquire_lock(
             age = float("inf")
         if age < _LOCK_FRESH_S:
             return False
-    tmp = p.with_suffix(p.suffix + ".tmp")
+        # Stale lock — remove before O_EXCL create. If unlink fails (e.g. a
+        # concurrent process just took over), the O_EXCL below will reject us
+        # cleanly.
+        with contextlib.suppress(OSError):
+            p.unlink()
     try:
-        tmp.write_text(str(os.getpid()))
-        tmp.replace(p)
-    except OSError:
-        return False
+        fd = os.open(str(p), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except (FileExistsError, OSError):
+        return False  # lost the race or filesystem error
+    try:
+        os.write(fd, str(os.getpid()).encode())
+    finally:
+        os.close(fd)
     return True
 
 
