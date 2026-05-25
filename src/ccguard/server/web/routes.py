@@ -210,6 +210,50 @@ def findings_page(
     )
 
 
+@router.get("/audit", response_class=HTMLResponse)
+def audit_page(
+    request: Request,
+    machine_id: str = "",
+    tool_name: str = "",
+    decision: str = "",
+    timeframe: str = "24h",
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    from ccguard.server.services.tool_use_service import list_events
+
+    if decision not in ("allow", "deny", "error", ""):
+        decision = ""
+    if timeframe not in ("1h", "24h", "7d"):
+        timeframe = "24h"
+    events, total = list_events(
+        session,
+        machine_id_like=machine_id or None,
+        tool_name=tool_name or None,
+        decision=decision or None,
+        timeframe=timeframe,  # type: ignore[arg-type]
+        limit=200,
+    )
+    return templates.TemplateResponse(
+        request,
+        "audit_feed.html",
+        {
+            "user": user,
+            "filters": {
+                "machine_id": machine_id,
+                "tool_name": tool_name,
+                "decision": decision,
+                "timeframe": timeframe,
+            },
+            "events": events,
+            "total": total,
+            "limit": 200,
+            "timeline_partial_available": False,  # PLAN 05 flips this to True
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
 @router.get("/policy", response_class=HTMLResponse)
 def policy_editor(
     request: Request,

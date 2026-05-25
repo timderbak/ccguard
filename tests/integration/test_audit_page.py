@@ -47,10 +47,9 @@ def _seed_event(
     )
 
 
-def test_audit_anonymous_redirects_to_login() -> None:
+def test_audit_anonymous_redirects_to_login(admin_client) -> None:
     """No admin cookie → redirect to /login (HTML accept)."""
-    app = create_app()
-    client = TestClient(app)
+    client, _engine, _sid = admin_client
     r = client.get("/audit", headers={"Accept": "text/html"}, follow_redirects=False)
     assert r.status_code in (302, 307)
     assert r.headers["location"] == "/login"
