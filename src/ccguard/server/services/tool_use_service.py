@@ -100,6 +100,13 @@ def timeline_buckets(
     SQL uses ``strftime('%Y-%m-%d %H', ts)`` to group by hour. SQLite stores
     timezone-aware datetimes as ISO strings; ``strftime`` operates on the
     string lexicographically which is correct for UTC-anchored ISO values.
+
+    The UTC anchoring is enforced at ingest by
+    :class:`ccguard.schemas.tool_use.ToolUseEventIn`'s ``_enforce_utc``
+    field validator (WR-05): naive datetimes are rejected and non-UTC
+    offsets are normalized to UTC before the row is persisted, so the
+    lexicographic hour-bucketing here cannot silently mis-bin events from
+    a misconfigured future agent.
     """
     now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     start = now - timedelta(hours=hours - 1)

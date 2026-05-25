@@ -15,10 +15,10 @@ every outgoing batch and the server echoes its own value back in
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Final, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from ccguard.schemas._base import SchemaBase
 
@@ -38,6 +38,24 @@ class ToolUseEventIn(SchemaBase):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{16}$")
     decision: Literal["allow", "deny", "error"]
     result_status: Literal["success", "error", "blocked"]
+
+    @field_validator("ts", mode="after")
+    @classmethod
+    def _enforce_utc(cls, v: datetime) -> datetime:
+        """Reject naive datetimes; normalize tz-aware values to UTC.
+
+        WR-05: ``server.services.tool_use_service.timeline_buckets`` groups by
+        ``strftime('%Y-%m-%d %H', ts)`` and treats the stored ISO string as
+        UTC-anchored. A future agent shipping ``+03:00`` (or naive local
+        time) would silently mis-bucket events. Enforce the UTC contract at
+        ingest by rejecting naive datetimes and converting any non-UTC
+        offset to UTC before persistence.
+        """
+        if v.tzinfo is None:
+            raise ValueError("ts must be timezone-aware (UTC)")
+        if v.utcoffset() != UTC.utcoffset(v):
+            return v.astimezone(UTC)
+        return v
 
 
 class AuditBatchIn(SchemaBase):
