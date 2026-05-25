@@ -30,6 +30,19 @@ _MACHINE_BASELINE_INDEX_DDL: tuple[str, ...] = (
     "ON machinebaseline(machine_id, metric)",
 )
 
+# Composite indexes for Plan 03-01 LLM-scanner foundations. Same idempotent
+# ``IF NOT EXISTS`` pattern as TUA-02.
+#   ix_llmcalllog_ts_model — accelerates the daily-budget aggregate
+#                            ``SELECT count(*) WHERE ts >= ? GROUP BY model``.
+#   ix_scanresult_scanned_at_desc — accelerates the admin "last 10 scans"
+#                            view (ORDER BY scanned_at DESC LIMIT 10).
+_LLM_SCANNER_INDEX_DDL: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS ix_llmcalllog_ts_model "
+    "ON llmcalllog(ts, model)",
+    "CREATE INDEX IF NOT EXISTS ix_scanresult_scanned_at_desc "
+    "ON scanresult(scanned_at DESC)",
+)
+
 
 def make_engine(db_url: str) -> Engine:
     """Создать engine. Для SQLite — включить WAL и foreign_keys."""
@@ -48,6 +61,13 @@ def make_engine(db_url: str) -> Engine:
 
 
 def init_db(engine: Engine) -> None:
+    # Import models so SQLModel.metadata sees every table_=True class before
+    # create_all. Phase 1+2 relied on call-site imports (test files / API
+    # routers) to trigger registration; Plan 03-01 adds ScanResult / LLMCallLog
+    # / SettingsRecord which may not be imported on every call path. An
+    # explicit import here is the safe, idempotent fix.
+    from ccguard.server.db import models  # noqa: F401  (side-effect import)
+
     SQLModel.metadata.create_all(engine)
     # Composite indexes for ToolUseEvent (TUA-02) and MachineBaseline (02-01).
     # Idempotent — safe to re-run.
@@ -55,6 +75,8 @@ def init_db(engine: Engine) -> None:
         for ddl in _TOOL_USE_INDEX_DDL:
             conn.execute(text(ddl))
         for ddl in _MACHINE_BASELINE_INDEX_DDL:
+            conn.execute(text(ddl))
+        for ddl in _LLM_SCANNER_INDEX_DDL:
             conn.execute(text(ddl))
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Literal
 
 from sqlmodel import Field, SQLModel
 
@@ -153,4 +154,77 @@ class MachineBaseline(SQLModel, table=True):
     baseline_ready: bool = Field(default=False)
     # JSON-encoded ``list[float]``; up to 14 entries.
     recent_points_json: str = Field(default="[]")
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
+# --- Phase 3 / Plan 03-01: LLM content scanner foundations ------------------
+
+
+# ``scope`` is stored as ``str`` (not Literal) at the SQLModel layer so SQLite
+# does not need a separate column-level CHECK constraint. The application layer
+# validates the value via this alias when constructing rows.
+ScanScope = Literal["agent", "skill"]
+
+
+class ScanResult(SQLModel, table=True):
+    """Cached LLM-scanner verdict per artifact, keyed by content hash.
+
+    One row per unique ``file_hash`` (UNIQUE) — Plan 03-01 D-03 makes the hash
+    the cache key, so re-scanning identical content is a no-op. ``ttl_expires_at``
+    drives the cache-eviction sweep introduced in Plan 03-03.
+
+    Plan 03-01 deliberately does NOT add a column-level CHECK on ``scope`` or
+    ``risk_score`` — Phase 1+2 pattern keeps SQLite schemas Pydantic-validated
+    at the write boundary, not enforced by the engine, so ``create_all`` stays
+    a no-op against pre-existing tables.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    file_hash: str = Field(unique=True, index=True)
+    file_path: str
+    # ``ScanScope`` Literal at the Python boundary; stored as plain str.
+    scope: str = Field(index=True)
+    risk_score: int  # 0–100, validated at write boundary by the scanner service.
+    category: str = Field(index=True)
+    rationale: str = Field(max_length=500)
+    scanned_at: datetime = Field(default_factory=_utcnow, index=True)
+    model: str
+    ttl_expires_at: datetime = Field(index=True)
+
+
+class LLMCallLog(SQLModel, table=True):
+    """Audit log: one row per Anthropic API call made by the scanner.
+
+    Drives:
+    - daily call counter for the budget enforcer (Plan 03-03) via composite
+      index ``(ts, model)`` installed in :func:`init_db`;
+    - per-file_hash provenance for admin audits.
+
+    No raw content is ever stored — only token counts, cost estimate, and a
+    pointer to the corresponding ``ScanResult`` via ``file_hash``.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    ts: datetime = Field(default_factory=_utcnow, index=True)
+    file_hash: str = Field(index=True)
+    model: str
+    input_tokens: int
+    output_tokens: int
+    cost_estimate_cents: int
+
+
+class SettingsRecord(SQLModel, table=True):
+    """Key/value store for admin-tunable server settings (Plan 03-01 D-04).
+
+    Seeded on first startup by
+    :func:`ccguard.server.services.settings_service.seed_llm_settings` with
+    ``llm_scanner_enabled=false`` and ``daily_call_budget=100``. Subsequent
+    re-seeds preserve admin edits (idempotent insert-or-skip, never overwrite).
+
+    Values are plain strings so callers can store any literal (bool/int/etc.);
+    typing is delegated to a thin accessor layer in ``settings_service``.
+    """
+
+    key: str = Field(primary_key=True)
+    value: str
     updated_at: datetime = Field(default_factory=_utcnow)

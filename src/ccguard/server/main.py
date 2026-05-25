@@ -30,9 +30,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = make_engine(cfg.db_url)
     init_db(engine)
     from sqlmodel import Session as _Session
+    from ccguard.server.services.settings_service import seed_llm_settings
     from ccguard.server.services.token_service import bootstrap_env_tokens
     with _Session(engine) as _s:
         bootstrap_env_tokens(_s, env_tokens=[t.value for t in cfg.tokens])
+        # Plan 03-01 D-04: seed LLM-scanner KV defaults on first startup;
+        # subsequent restarts are no-ops, preserving admin edits.
+        seed_llm_settings(_s)
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)
