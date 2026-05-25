@@ -1,6 +1,7 @@
 """ccguard web UI routes (Jinja2 + HTMX)."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import yaml
@@ -521,4 +522,44 @@ def overview_fleet_partial(
         request,
         "components/_fleet_table.html",
         {"machines": machines},
+    )
+
+
+@router.get("/_partials/anomalies/overview", response_class=HTMLResponse)
+def anomalies_overview_partial(
+    request: Request,
+    _user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """HTMX-polled top-5 recent anomaly findings (rule_id LIKE 'anomaly.%')."""
+    from ccguard.server.db.models import FindingRecord
+
+    rows = list(
+        session.exec(
+            select(FindingRecord)
+            .where(FindingRecord.rule_id.like("anomaly.%"))  # type: ignore[attr-defined]
+            .order_by(FindingRecord.discovered_at.desc())  # type: ignore[attr-defined]
+            .limit(5)
+        )
+    )
+    items = []
+    for r in rows:
+        metric = r.rule_id.removeprefix("anomaly.")
+        try:
+            payload = json.loads(r.payload_json) if r.payload_json else {}
+        except (ValueError, TypeError):
+            payload = {}
+        items.append(
+            {
+                "machine_id": r.machine_id,
+                "metric": metric,
+                "observed_value": payload.get("observed_value", "—"),
+                "sigma_distance": round(float(payload.get("sigma_distance", 0.0)), 1),
+                "ts_short": r.discovered_at.strftime("%Y-%m-%d %H:%M"),
+            }
+        )
+    return templates.TemplateResponse(
+        request,
+        "components/_anomalies_overview.html",
+        {"items": items},
     )

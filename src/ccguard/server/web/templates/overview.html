@@ -7,4 +7,10 @@
      hx-trigger="every 30s">
     {% include "components/_fleet_table.html" %}
 </div>
+<div class="bg-white rounded-lg shadow p-4 mt-4"
+     hx-get="/_partials/anomalies/overview"
+     hx-trigger="load, every 60s"
+     hx-target="this">
+    {% include "components/_anomalies_overview.html" %}
+</div>
 {% endblock %}
