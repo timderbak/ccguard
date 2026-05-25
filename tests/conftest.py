@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import secrets
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -78,6 +79,59 @@ def sample_inventory() -> InventoryReport:
 def audit_buffer_path(tmp_path: Path) -> Path:
     """Per-test path for a ToolBufferDB sqlite file."""
     return tmp_path / "audit_buffer.db"
+
+
+# --- Phase 1 / Plan 01-06: bulk seed helpers for /audit smoke ---------------
+
+
+def random_fingerprint() -> str:
+    """Return a fresh 16-char lowercase hex string suitable for ToolUseEvent.
+
+    Used by integration tests that need many distinct fingerprints without
+    crafting them manually.
+    """
+    return secrets.token_hex(8)
+
+
+def seed_tool_use_events(
+    session,
+    *,
+    count: int,
+    machine_id: str = "laptop-test",
+    tool_name: str = "Bash",
+    decision: str = "allow",
+    result_status: str = "success",
+    base_ts: datetime | None = None,
+    ts_step_seconds: int = 60,
+    fingerprint: str | None = None,
+) -> list:
+    """Bulk-insert ``count`` ToolUseEvent rows and commit.
+
+    Each row has ``ts = base_ts - i * ts_step_seconds`` so the resulting set
+    spans the period ``[base_ts - count*step, base_ts]`` backwards in time —
+    useful for timeline-bucket smoke tests.
+
+    Returns the list of inserted rows in insertion order.
+    """
+    from ccguard.server.db.models import ToolUseEvent
+
+    if base_ts is None:
+        base_ts = datetime.now(UTC)
+    rows: list = []
+    for i in range(count):
+        ts = base_ts - timedelta(seconds=i * ts_step_seconds)
+        row = ToolUseEvent(
+            machine_id=machine_id,
+            ts=ts,
+            tool_name=tool_name,
+            fingerprint=fingerprint or random_fingerprint(),
+            decision=decision,
+            result_status=result_status,
+        )
+        session.add(row)
+        rows.append(row)
+    session.commit()
+    return rows
 
 
 def multiprocessing_buffer_worker(path_str: str, n_inserts: int) -> int:
