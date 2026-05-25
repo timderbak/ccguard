@@ -591,11 +591,17 @@ def anomaly_detail(
 ) -> HTMLResponse:
     """Drill-down: baseline strip + 14-day timeseries + recent findings."""
     from datetime import timedelta
-    from ccguard.server.db.models import FindingRecord, MachineBaseline
+    from ccguard.server.db.models import FindingRecord, Machine, MachineBaseline
     from ccguard.server.services.anomaly_constants import VALID_METRICS, rule_id_for
 
     if metric not in VALID_METRICS:
         raise HTTPException(status_code=404, detail="unknown metric")
+
+    # WR-04: mirror machine_detail's 404 — previously any URL like
+    # /anomalies/totally-fake-id/bash_calls_per_day rendered the warm-up page,
+    # which is enumeration-friendly and inconsistent with the rest of the UI.
+    if session.get(Machine, machine_id) is None:
+        raise HTTPException(status_code=404, detail="unknown machine")
 
     baseline = session.exec(
         select(MachineBaseline).where(

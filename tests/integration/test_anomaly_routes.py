@@ -178,7 +178,10 @@ def test_anomaly_detail_unknown_metric_returns_404(admin_client) -> None:
 
 
 def test_anomaly_detail_known_metric_renders_back_link_and_baseline_card(admin_client) -> None:
-    client, _engine, sid = admin_client
+    client, engine, sid = admin_client
+    with Session(engine) as s:
+        s.add(Machine(machine_id="mtest-detail"))
+        s.commit()
     r = client.get(
         "/anomalies/mtest-detail/bash_calls_per_day", cookies={"ccg_session": sid}
     )
@@ -190,14 +193,27 @@ def test_anomaly_detail_known_metric_renders_back_link_and_baseline_card(admin_c
 
 
 def test_anomaly_detail_no_baseline_row_shows_warmup_copy(admin_client) -> None:
-    client, _engine, sid = admin_client
-    # No baseline seeded → baseline_ready is False → warm-up copy must appear.
+    client, engine, sid = admin_client
+    # Seed the machine but NOT the baseline → baseline_ready=False → warm-up.
+    with Session(engine) as s:
+        s.add(Machine(machine_id="mtest-warm"))
+        s.commit()
     r = client.get(
         "/anomalies/mtest-warm/bash_calls_per_day", cookies={"ccg_session": sid}
     )
     assert r.status_code == 200
     # UI-SPEC: "Недостаточно данных для baseline" line.
     assert "Недостаточно данных для baseline" in r.text
+
+
+def test_anomaly_detail_unknown_machine_id_404(admin_client) -> None:
+    """WR-04: unknown machine_id returns 404 (mirrors machine_detail)."""
+    client, _engine, sid = admin_client
+    r = client.get(
+        "/anomalies/totally-fake-id/bash_calls_per_day",
+        cookies={"ccg_session": sid},
+    )
+    assert r.status_code == 404
 
 
 def test_anomaly_detail_unauthenticated_redirects_or_401(admin_client) -> None:
