@@ -83,14 +83,19 @@ def test_fourteen_zero_points_no_finding() -> None:
         assert f is None
 
 
-def test_window_baseline_ready_gates_on_length_not_nonzero_count() -> None:
-    """Locked decision: baseline_ready is gated on window length (≥7), not on
-    non-zero point count. A 14-point series with only 7 non-zero entries is
-    baseline_ready=True."""
+def test_window_baseline_ready_gates_on_nonzero_count() -> None:
+    """CR-02 fix: baseline_ready is gated on the non-zero point count, not
+    the zero-padded window length. The aggregators always return 14 points
+    (zero-padded), so the previous length-based gate flipped to True on the
+    very first tick of a brand-new machine and immediately produced
+    false-positive 3σ findings when any spike appeared. Now: a 14-point
+    series with exactly 7 non-zero entries records ``sample_count=7`` and
+    flips ``baseline_ready=True``; with fewer than 7 it stays in warm-up.
+    """
     eng = _engine()
     with Session(eng) as s:
         _machine(s, "sparse")
-        # 7 zeros then 7 nonzero — sample_count=14 → baseline_ready=True.
+        # 7 zeros then 7 nonzero — real_n=7 → sample_count=7, ready=True.
         values = [0, 0, 0, 0, 0, 0, 0, 4, 5, 4, 5, 4, 5, 4]
         pts = [(date(2026, 5, 1) + timedelta(days=i), v) for i, v in enumerate(values)]
         with patch.dict(
@@ -102,8 +107,31 @@ def test_window_baseline_ready_gates_on_length_not_nonzero_count() -> None:
             select(MachineBaseline).where(MachineBaseline.machine_id == "sparse")
         ).first()
         assert bl is not None
-        assert bl.sample_count == 14
+        assert bl.sample_count == 7
         assert bl.baseline_ready is True
+
+
+def test_window_baseline_warmup_under_threshold_nonzero() -> None:
+    """CR-02 fix: 14-point series with <7 non-zero values stays in warm-up
+    (sample_count < WARMUP_THRESHOLD)."""
+    eng = _engine()
+    with Session(eng) as s:
+        _machine(s, "brand-new")
+        # 13 zeros + 1 spike — real_n=1 → ready=False, no false positive.
+        values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 42]
+        pts = [(date(2026, 5, 1) + timedelta(days=i), v) for i, v in enumerate(values)]
+        with patch.dict(
+            anomaly_service._DISPATCH,
+            {"bash_calls_per_day": lambda *_a, **_k: pts},
+        ):
+            finding = anomaly_service.evaluate_one(s, "brand-new", "bash_calls_per_day")
+        bl = s.exec(
+            select(MachineBaseline).where(MachineBaseline.machine_id == "brand-new")
+        ).first()
+        assert bl is not None
+        assert bl.sample_count == 1
+        assert bl.baseline_ready is False
+        assert finding is None  # warm-up gates emission
 
 
 # ---------------------------------------------------------------------------

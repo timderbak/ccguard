@@ -40,15 +40,26 @@ def compute_baseline(points: list[float]) -> dict:
     Uses :func:`statistics.fmean` and :func:`statistics.stdev` (sample stdev,
     ``n-1`` denominator). Returns ``stdev=0.0`` when ``len(points) < 2`` (where
     :func:`statistics.stdev` would otherwise raise ``StatisticsError``).
+
+    Warm-up gate (CR-02): ``points`` arrives from the aggregators as a
+    14-length zero-padded series, so ``len(points)`` is always 14 and cannot
+    distinguish a brand-new machine from one with two weeks of history. We
+    therefore derive the persisted ``sample_count`` from the **non-zero**
+    points (real activity signal) and gate ``baseline_ready`` on it. A
+    legitimately-quiet day reads as zero too, but for the four anomaly
+    metrics used in Phase 2 a machine that has truly been quiet for >7 days
+    has no useful baseline to compare against anyway — so requiring at least
+    ``WARMUP_THRESHOLD`` days of observed activity is the correct gate.
     """
     n = len(points)
     mean = float(statistics.fmean(points)) if n >= 1 else 0.0
     stdev = float(statistics.stdev(points)) if n >= 2 else 0.0
+    real_n = sum(1 for v in points if v > 0)
     return {
         "mean": mean,
         "stdev": stdev,
-        "sample_count": n,
-        "baseline_ready": n >= WARMUP_THRESHOLD,
+        "sample_count": real_n,
+        "baseline_ready": real_n >= WARMUP_THRESHOLD,
     }
 
 

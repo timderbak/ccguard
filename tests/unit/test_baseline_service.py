@@ -46,18 +46,27 @@ def test_compute_baseline_identical_points_zero_stdev() -> None:
 
 
 def test_compute_baseline_full_window_includes_zeros() -> None:
-    """6 nonzero + 8 zeros → sample_count=14, ready=True (zeros are real)."""
+    """6 nonzero + 8 zeros → sample_count=6 (CR-02: non-zero gate), ready=False.
+
+    Statistics (mean/stdev) are still computed over the full 14-point series
+    so the zero-padded days correctly anchor the distribution; only the
+    warm-up gate uses the non-zero count.
+    """
     pts = [10.0, 5.0, 3.0, 2.0, 1.0, 4.0] + [0.0] * 8
     result = compute_baseline(pts)
-    assert result["sample_count"] == 14
-    assert result["baseline_ready"] is True
-    # statistical correctness
+    assert result["sample_count"] == 6
+    assert result["baseline_ready"] is False
+    # statistical correctness — mean/stdev still derived from full series
     assert result["mean"] == statistics.fmean(pts)
     assert result["stdev"] == statistics.stdev(pts)
 
 
 def test_compute_baseline_warmup_under_threshold() -> None:
-    """Fewer than 7 points → baseline_ready=False."""
+    """CR-02: fewer than 7 non-zero points → baseline_ready=False.
+
+    Aggregators always return a 14-length zero-padded series; ``points`` of
+    length ``n>0`` (all ones) here simulates n days of real activity.
+    """
     for n in range(0, WARMUP_THRESHOLD):
         result = compute_baseline([1.0] * n if n > 0 else [])
         assert result["baseline_ready"] is False, f"n={n} should be warm-up"
@@ -65,7 +74,7 @@ def test_compute_baseline_warmup_under_threshold() -> None:
 
 
 def test_compute_baseline_exactly_7_points_ready() -> None:
-    """Boundary: exactly 7 points → baseline_ready=True."""
+    """Boundary: exactly 7 non-zero points → baseline_ready=True."""
     result = compute_baseline([1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
     assert result["baseline_ready"] is True
     assert result["sample_count"] == 7
