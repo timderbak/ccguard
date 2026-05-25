@@ -1,0 +1,17 @@
+<h3 class="text-sm font-semibold text-slate-700 mb-3">Активность за 24 часа</h3>
+{% if max_count == 0 %}
+<p class="text-sm text-slate-400 py-6 text-center">Нет данных за выбранный период.</p>
+{% else %}
+<div class="flex items-end gap-1 h-32" role="img" aria-label="Гистограмма аудит-событий по часам">
+    {% for bucket in buckets %}
+    {% set pct = (bucket.count / max_count * 100) if max_count > 0 else 0 %}
+    <div class="flex-1 bg-slate-700 rounded-sm"
+         style="height: {{ pct }}%; min-height: {% if bucket.count > 0 %}2px{% else %}0{% endif %};"
+         title="{{ bucket.hour_label }} — {{ bucket.count }} событий"></div>
+    {% endfor %}
+</div>
+<div class="flex justify-between text-xs text-slate-400 mt-2">
+    <span>{{ buckets[0].hour_label }}</span>
+    <span>{{ buckets[-1].hour_label }}</span>
+</div>
+{% endif %}
