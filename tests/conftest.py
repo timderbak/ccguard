@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+import os
+
+# Phase 2 / Plan 02-03: keep the anomaly APScheduler from booting inside
+# TestClient processes. Must run BEFORE any FastAPI app import — putting it at
+# module top of conftest guarantees pytest evaluates it first.
+os.environ.setdefault("CCGUARD_DISABLE_SCHEDULER", "1")
+
 import secrets
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
