@@ -4,9 +4,22 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, SQLModel, create_engine
+
+# Composite indexes for ToolUseEvent (TUA-02). Defined here — not as SQLModel
+# Index() — because we want explicit DESC ordering on the timestamp column and
+# we want idempotent ``CREATE INDEX IF NOT EXISTS`` semantics so ``init_db`` is
+# safe to call repeatedly (test fixtures, server lifespan, etc.).
+_TOOL_USE_INDEX_DDL: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS ix_tooluseevent_machine_ts  "
+    "ON tooluseevent(machine_id, ts DESC)",
+    "CREATE INDEX IF NOT EXISTS ix_tooluseevent_tool_ts     "
+    "ON tooluseevent(tool_name, ts DESC)",
+    "CREATE INDEX IF NOT EXISTS ix_tooluseevent_decision_ts "
+    "ON tooluseevent(decision, ts DESC)",
+)
 
 
 def make_engine(db_url: str) -> Engine:
@@ -27,6 +40,10 @@ def make_engine(db_url: str) -> Engine:
 
 def init_db(engine: Engine) -> None:
     SQLModel.metadata.create_all(engine)
+    # Composite indexes for ToolUseEvent (TUA-02). Idempotent — safe to re-run.
+    with engine.begin() as conn:
+        for ddl in _TOOL_USE_INDEX_DDL:
+            conn.execute(text(ddl))
 
 
 def session_factory(engine: Engine) -> Iterator[Session]:

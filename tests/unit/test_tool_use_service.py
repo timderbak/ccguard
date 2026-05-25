@@ -171,19 +171,18 @@ def test_timeline_bucket_count_equals_hours_parameter() -> None:
 
 def test_timeline_recent_hour_count() -> None:
     engine = _engine()
-    now = datetime.now(UTC)
+    # Anchor 3 events inside the current wall-clock hour so they all bucket
+    # into ``buckets[-1]`` regardless of when the test runs.
+    hour_anchor = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
     with Session(engine) as s:
-        # 3 events in the current hour
         _seed(s, [
-            _ev(ts=now),
-            _ev(ts=now - timedelta(minutes=10)),
-            _ev(ts=now - timedelta(minutes=30)),
+            _ev(ts=hour_anchor + timedelta(minutes=1)),
+            _ev(ts=hour_anchor + timedelta(minutes=15)),
+            _ev(ts=hour_anchor + timedelta(minutes=30)),
         ])
         buckets = timeline_buckets(s)
         assert len(buckets) == 24
-        # last bucket (newest) should be the current hour
         assert buckets[-1]["count"] == 3
-        # all earlier buckets should be 0
         assert sum(b["count"] for b in buckets[:-1]) == 0
 
 

@@ -88,3 +88,27 @@ class AuditRecord(SQLModel, table=True):
     reason: str | None
     fail_open: bool
     tool_input_fingerprint: str
+
+
+class ToolUseEvent(SQLModel, table=True):
+    """Tool-use events from PostToolUse hook (TUA-02).
+
+    Privacy: NO raw tool_input is ever stored; only a 16-hex fingerprint computed
+    by the agent (see ``ccguard.agent.audit_hook.fingerprint``). This is the
+    semantic counterpart of :class:`AuditRecord` (which captures only deny +
+    fail-open enforcement events) — this table is the firehose of every tool
+    invocation including allow/success outcomes.
+
+    Auto-created via ``SQLModel.metadata.create_all`` (no Alembic per phase decision).
+    Composite indexes for the dashboard query patterns are added by
+    :func:`ccguard.server.db.session.init_db` as ``CREATE INDEX IF NOT EXISTS``.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    ts: datetime = Field(index=True)
+    received_at: datetime = Field(default_factory=_utcnow)
+    tool_name: str = Field(index=True)
+    fingerprint: str = Field(index=True)
+    decision: str = Field(index=True)
+    result_status: str
