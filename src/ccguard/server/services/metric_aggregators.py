@@ -42,6 +42,7 @@ and the latest window snapshot.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, date, datetime, timedelta
 
 from sqlalchemy import text as _sql
@@ -54,6 +55,8 @@ from .anomaly_constants import (
     SKILL_HASH_FIELD,
     SKILL_NAME_FIELD,
 )
+
+log = logging.getLogger(__name__)
 
 WINDOW_DAYS: int = 14
 ROLLING_WEEK_DAYS: int = 7
@@ -161,7 +164,18 @@ def _load_snapshots(
             day = date.fromisoformat(str(received_at)[:10])
         try:
             payload = json.loads(payload_json) if isinstance(payload_json, str) else {}
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as exc:
+            # WR-08: silently masking a malformed inventory payload hides data
+            # corruption from AppSec users — the per-snapshot result becomes
+            # "no items" which renders as "no anomalies" instead of an alert.
+            # Log a warning so the corruption is at least visible in server
+            # logs; we still fall back to {} to keep the aggregator running
+            # against the remaining (valid) snapshots.
+            log.warning(
+                "malformed inventorysnapshot.payload_json for machine_id=%s: %s",
+                machine_id,
+                exc,
+            )
             payload = {}
         out.append((day, payload))
     return out
