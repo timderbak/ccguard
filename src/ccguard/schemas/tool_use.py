@@ -44,7 +44,11 @@ class AuditBatchIn(SchemaBase):
     """A batch of audit events POSTed by the agent flusher to ``/api/v1/audit``."""
 
     schema_version: str
-    machine_id: str = Field(min_length=1)
+    # max_length=128 bounds untrusted input — derive_machine_id emits a 16-hex
+    # digest so 128 is generous; cap prevents a misbehaving or malicious agent
+    # holding a valid token from POSTing arbitrarily large strings repeated
+    # across events (WR-03).
+    machine_id: str = Field(min_length=1, max_length=128)
     events: list[ToolUseEventIn] = Field(min_length=1, max_length=200)
 
 
