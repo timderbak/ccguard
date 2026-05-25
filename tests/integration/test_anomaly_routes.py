@@ -206,6 +206,40 @@ def test_anomaly_detail_no_baseline_row_shows_warmup_copy(admin_client) -> None:
     assert "Недостаточно данных для baseline" in r.text
 
 
+def test_anomaly_detail_malformed_recent_points_json_no_500(admin_client) -> None:
+    """WR-07: a MachineBaseline with non-list / non-numeric / NaN
+    recent_points_json must not 500 the detail route."""
+    client, engine, sid = admin_client
+    with Session(engine) as s:
+        s.add(Machine(machine_id="mtest-bad-pts"))
+        for malformed in ("null", "{}", '"oops"', '[1, "x", NaN, true, 3]'):
+            s.add(
+                MachineBaseline(
+                    machine_id="mtest-bad-pts",
+                    metric="bash_calls_per_day",
+                    mean=1.0,
+                    stdev=0.5,
+                    sample_count=8,
+                    baseline_ready=True,
+                    recent_points_json=malformed,
+                    updated_at=datetime.now(UTC),
+                )
+            )
+            s.commit()
+            r = client.get(
+                "/anomalies/mtest-bad-pts/bash_calls_per_day",
+                cookies={"ccg_session": sid},
+            )
+            assert r.status_code == 200, f"500 on payload={malformed!r}: {r.text[:200]}"
+            # Clean up so the next iteration's insert doesn't violate UNIQUE.
+            s.exec(
+                MachineBaseline.__table__.delete().where(
+                    MachineBaseline.machine_id == "mtest-bad-pts"
+                )
+            )
+            s.commit()
+
+
 def test_anomaly_detail_unknown_machine_id_404(admin_client) -> None:
     """WR-04: unknown machine_id returns 404 (mirrors machine_detail)."""
     client, _engine, sid = admin_client

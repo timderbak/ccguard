@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import yaml
@@ -615,18 +616,11 @@ def anomaly_detail(
     labels = [(today - timedelta(days=13 - i)).isoformat() for i in range(14)]
 
     # Build per-point view-model. 2px floor on the detail chart.
-    if baseline is not None:
-        try:
-            raw_points = json.loads(baseline.recent_points_json) if baseline.recent_points_json else []
-        except (ValueError, TypeError):
-            raw_points = []
-    else:
-        raw_points = []
-    # Normalize to length 14 (left-pad with zeros so most recent aligns right).
-    if len(raw_points) < 14:
-        raw_points = [0.0] * (14 - len(raw_points)) + [float(v) for v in raw_points]
-    else:
-        raw_points = [float(v) for v in raw_points[-14:]]
+    # WR-07: validate the JSON shape — recent_points_json must decode to a
+    # list of numbers. A non-list shape (``null``, ``{}``, etc.) or a
+    # non-numeric / NaN entry is treated as no-data so downstream ``max()``
+    # and template formatting never see corrupt values.
+    raw_points = _parse_recent_points(baseline.recent_points_json if baseline else None)
 
     max_val = max(raw_points) if any(v > 0 for v in raw_points) else 1.0
     baseline_ready = bool(baseline and baseline.baseline_ready)
@@ -731,6 +725,45 @@ def _utcnow_date():
     return datetime.now(UTC).date()
 
 
+def _parse_recent_points(payload: str | None, *, pad: bool = True) -> list[float]:
+    """Validate and parse a ``MachineBaseline.recent_points_json`` string.
+
+    WR-07: a malformed or non-list payload must NOT crash the route. Returns:
+
+    * ``pad=True``  → a 14-length list of floats (left-padded with zeros);
+    * ``pad=False`` → the validated list as-is (may be shorter than 14).
+
+    Non-list shapes (``null``, ``{}``), non-numeric entries, and ``NaN``
+    values are dropped so downstream ``max()`` and template formatting never
+    see corrupt values.
+    """
+    if not payload:
+        return [0.0] * 14 if pad else []
+    try:
+        raw = json.loads(payload)
+    except (ValueError, TypeError):
+        return [0.0] * 14 if pad else []
+    if not isinstance(raw, list):
+        return [0.0] * 14 if pad else []
+    out: list[float] = []
+    for v in raw:
+        if isinstance(v, bool):
+            # bool is a subclass of int — exclude explicitly.
+            continue
+        if not isinstance(v, (int, float)):
+            continue
+        fv = float(v)
+        if math.isnan(fv):
+            continue
+        out.append(fv)
+    if pad:
+        if len(out) < 14:
+            out = [0.0] * (14 - len(out)) + out
+        else:
+            out = out[-14:]
+    return out
+
+
 def _build_sparkline_cell(baseline, labels: list[str]) -> dict:
     """Build the per-cell sparkline view-model (warm-up or 14 bars).
 
@@ -739,11 +772,9 @@ def _build_sparkline_cell(baseline, labels: list[str]) -> dict:
     """
     if baseline is None or not baseline.baseline_ready:
         return {"warmup": True, "points": [], "last_value": None, "is_outlier": False}
-    try:
-        raw = json.loads(baseline.recent_points_json) if baseline.recent_points_json else []
-    except (ValueError, TypeError):
-        raw = []
-    raw = [float(v) for v in raw]
+    # WR-07: validate JSON shape — non-list or non-numeric entries become
+    # no-data (warm-up render) instead of raising TypeError downstream.
+    raw = _parse_recent_points(baseline.recent_points_json, pad=False)
     if not raw:
         # baseline_ready but empty points — degenerate. Render as warm-up.
         return {"warmup": True, "points": [], "last_value": None, "is_outlier": False}
