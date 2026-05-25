@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/v1")
 
 @router.get("/findings")
 def list_findings(
-    severity: str | None = Query(default=None, pattern="^(info|warn|block)$"),
+    severity: str | None = Query(default=None, pattern="^(info|warn|block|critical)$"),
     rule_id: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     session: Session = Depends(get_session),

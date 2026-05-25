@@ -48,11 +48,13 @@ def test_extra_forbid_rejects_unknown_field() -> None:
 
 
 def test_severity_literal_validation() -> None:
+    # Phase 3 / Plan 03-01 added ``critical`` to the Severity Literal (D-01).
+    # The Literal now rejects only genuinely unknown values (e.g. ``"bogus"``).
     with pytest.raises(ValidationError):
         Finding.model_validate(
             {
                 "rule_id": "test",
-                "severity": "critical",
+                "severity": "bogus",
                 "title": "t",
                 "description": "d",
                 "source": "s",
