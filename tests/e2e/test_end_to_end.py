@@ -26,9 +26,15 @@ pytestmark = pytest.mark.e2e
 
 @pytest.fixture(scope="module", autouse=True)
 def _setup_agent_config(tmp_path_factory: pytest.TempPathFactory) -> None:
-    """Положить config.yaml с реальным сервером."""
+    """Положить config.yaml с реальным сервером.
+
+    Изолируем и `CCGUARD_AGENT_HOME`, и `CLAUDE_HOME` — иначе subprocess
+    `ccguard install` пишет хуки в реальный `~/.claude/settings.json`.
+    """
     home = tmp_path_factory.mktemp("ccguard_home")
+    claude_home = tmp_path_factory.mktemp("claude_home")
     os.environ["CCGUARD_AGENT_HOME"] = str(home)
+    os.environ["CLAUDE_HOME"] = str(claude_home)
     cfg_yaml = f"""\
 server:
   url: {SERVER_URL}
