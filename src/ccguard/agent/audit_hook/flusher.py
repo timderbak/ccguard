@@ -17,9 +17,12 @@ sole signal that "a flusher is or just was running". If its mtime is < 5s old,
 Flush loop (``_run_flush_loop``):
   * drain up to 200 rows, build :class:`AuditBatchIn`, POST to
     ``/api/v1/audit`` with ``X-CCGuard-Token`` header.
-  * On 2xx → ``delete_ids``; on failure → exp backoff (1s, 2s, 4s) up to 3
-    attempts, then give up. Rows that didn't drain stay in the buffer for the
-    next invocation.
+  * On 2xx → ``delete_ids``; on failure → exp backoff applied BEFORE each
+    retry (sleeps of 1s then 2s then 4s between the 4 attempts in
+    ``_MAX_ATTEMPTS=4``). Per-batch retry: when a batch fails persistently
+    the outer loop advances past those rows (``skip_after_id``) and keeps
+    draining subsequent batches; the failed rows stay in the buffer for the
+    next invocation (WR-01/WR-02).
   * After successful loop → ``buffer.trim_to_cap(10_000)`` (T-01-03 DoS guard).
 """
 
@@ -41,7 +44,11 @@ _TIME_THRESHOLD_S: Final[int] = 30
 _LOCK_FRESH_S: Final[int] = 5
 _MAX_BATCH: Final[int] = 200
 _BACKOFF_SECONDS: Final[tuple[int, ...]] = (1, 2, 4)
-_MAX_ATTEMPTS: Final[int] = 3
+# _MAX_ATTEMPTS counts ALL attempts including the initial one. Backoff is
+# applied between attempts, so N attempts consume N-1 sleeps; with
+# _MAX_ATTEMPTS=4 and _BACKOFF_SECONDS=(1,2,4) all three documented backoff
+# entries are exercised (WR-01).
+_MAX_ATTEMPTS: Final[int] = 4
 _HTTP_TIMEOUT_S: Final[float] = 10.0
 
 
@@ -222,10 +229,14 @@ def _run_flush_loop() -> None:
     }
     url = f"{server_url}/api/v1/audit"
 
-    attempts = 0
+    # ``skip_after_id`` advances past rows whose batch persistently failed in
+    # THIS flush invocation, so the outer loop can continue draining
+    # subsequent batches (WR-02). Failed rows stay in the buffer and are
+    # picked up by the next flusher invocation.
+    skip_after_id = 0
     with ToolBufferDB(_buffer_path()) as buf:
-        while buf.row_count() > 0 and attempts < _MAX_ATTEMPTS:
-            rows = buf.drain(_MAX_BATCH)
+        while True:
+            rows = buf.drain(_MAX_BATCH, after_id=skip_after_id)
             if not rows:
                 break
             try:
@@ -250,23 +261,38 @@ def _run_flush_loop() -> None:
                 buf.delete_ids([r["id"] for r in rows])
                 continue
 
-            try:
-                with httpx.Client(timeout=_HTTP_TIMEOUT_S) as client:
-                    resp = client.post(
-                        url,
-                        content=batch.model_dump_json(),
-                        headers=headers,
-                    )
-                if 200 <= resp.status_code < 300:
-                    buf.delete_ids([r["id"] for r in rows])
-                    attempts = 0  # reset on success
-                    continue
-                raise RuntimeError(f"audit POST returned {resp.status_code}")
-            except Exception:
-                attempts += 1
-                if attempts >= _MAX_ATTEMPTS:
-                    break
-                time.sleep(_BACKOFF_SECONDS[attempts - 1])
+            # Per-batch retry with backoff BEFORE each retry attempt (not after).
+            # This aligns the executed sleep schedule with _BACKOFF_SECONDS so
+            # all _MAX_ATTEMPTS - 1 backoff entries are exercised (WR-01). A
+            # batch that exhausts retries is skipped, but the OUTER while-loop
+            # continues to drain remaining batches (WR-02 — a transient failure
+            # on the first batch no longer abandons the rest of the buffer).
+            batch_succeeded = False
+            for attempt_idx in range(_MAX_ATTEMPTS):
+                if attempt_idx > 0:
+                    time.sleep(_BACKOFF_SECONDS[attempt_idx - 1])
+                try:
+                    with httpx.Client(timeout=_HTTP_TIMEOUT_S) as client:
+                        resp = client.post(
+                            url,
+                            content=batch.model_dump_json(),
+                            headers=headers,
+                        )
+                    if 200 <= resp.status_code < 300:
+                        buf.delete_ids([r["id"] for r in rows])
+                        batch_succeeded = True
+                        break
+                    # Non-2xx — fall through to next retry.
+                except Exception:
+                    # Network/transport failure — fall through to next retry.
+                    pass
+
+            if not batch_succeeded:
+                # Persistent failure on this batch — leave its rows in the
+                # buffer for the next flusher invocation, but advance past
+                # them so the outer loop continues to attempt draining
+                # subsequent batches (WR-02).
+                skip_after_id = rows[-1]["id"]
 
         # Cap-enforce regardless of attempt outcome.
         buf.trim_to_cap(10_000)

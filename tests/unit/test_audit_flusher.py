@@ -243,14 +243,16 @@ def test_run_flush_loop_backs_off_on_failure(
     monkeypatch.setattr(httpx, "Client", _MockClient)
     flusher._run_flush_loop()
 
-    # Tried up to _MAX_ATTEMPTS (3) and backed off 1s then 2s (third attempt breaks before sleep).
+    # Tried up to _MAX_ATTEMPTS (4) with backoff applied BEFORE each retry
+    # (WR-01 fix): attempt 0 -> sleep(1) -> attempt 1 -> sleep(2) -> attempt 2
+    # -> sleep(4) -> attempt 3. So 4 POSTs and 3 sleeps using all of
+    # _BACKOFF_SECONDS=(1,2,4).
     assert call_count["n"] == flusher._MAX_ATTEMPTS
     # Rows remain — we didn't successfully POST.
     with ToolBufferDB(_isolated_home / "audit_buffer.db") as buf:
         assert buf.row_count() == 2
-    # Backoff schedule: at least 1s and 2s before the final attempt.
-    assert sleeps[0] == 1
-    assert sleeps[1] == 2
+    # Backoff schedule: full (1, 2, 4) before subsequent attempts.
+    assert sleeps == [1, 2, 4]
 
 
 def test_run_flush_loop_chunks_over_max_batch(

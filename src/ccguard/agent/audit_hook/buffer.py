@@ -116,12 +116,18 @@ class ToolBufferDB:
         cur = self.conn.execute("SELECT COUNT(*) FROM events")
         return int(cur.fetchone()[0])
 
-    def drain(self, limit: int = 200) -> list[BufferRow]:
-        """Return the oldest ``limit`` rows by id ASC. Does NOT delete."""
+    def drain(self, limit: int = 200, *, after_id: int = 0) -> list[BufferRow]:
+        """Return the oldest ``limit`` rows by id ASC. Does NOT delete.
+
+        ``after_id`` lets the flusher skip past rows it already tried (and
+        failed) within a single flush invocation — WR-02 mitigation so a
+        transiently-failing first batch does not block draining of subsequent
+        batches whose rows are still in the buffer.
+        """
         cur = self.conn.execute(
             "SELECT id, ts, tool_name, fingerprint, decision, result_status "
-            "FROM events ORDER BY id ASC LIMIT ?",
-            (limit,),
+            "FROM events WHERE id > ? ORDER BY id ASC LIMIT ?",
+            (after_id, limit),
         )
         out: list[BufferRow] = []
         for row in cur.fetchall():
