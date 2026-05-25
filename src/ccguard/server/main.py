@@ -11,7 +11,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 
-from ccguard.server.api import findings, health, inventory, machines, policy
+from ccguard.server.api import audit, findings, health, inventory, machines, policy
 from ccguard.server.config import ServerConfig
 from ccguard.server.db.session import init_db, make_engine
 from ccguard.server.policy_loader import PolicyLoader
@@ -65,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(policy.router)
     app.include_router(machines.router)
     app.include_router(findings.router)
+    app.include_router(audit.router)
     app.include_router(web_router)
     return app
 
