@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import shutil
@@ -13,11 +14,16 @@ from ccguard.agent.config import default_config_dir
 
 Scope = Literal["user", "project", "managed"]
 
-# Matcher'ы, на которые навешиваем наш enforce-хук.
+# Matcher'ы PreToolUse enforce-хука (v0.1).
 HOOK_MATCHERS = ["Bash", "mcp__.*", "WebFetch", "WebSearch"]
 HOOK_TIMEOUT = 5
 SHIM_MARKER = "# ccguard-shim"  # маркер для идемпотентности
 HOOK_TYPE = "command"
+
+# Matcher'ы PostToolUse audit-хука (v0.2, TUA-01/TUA-02). `*` ловит все tool calls.
+AUDIT_HOOK_MATCHERS = ["*"]
+AUDIT_HOOK_TIMEOUT = 3
+AUDIT_SHIM_MARKER = "# ccguard-audit-shim"
 
 
 def _user_settings_path() -> Path:
@@ -50,6 +56,10 @@ def shim_path() -> Path:
     return default_config_dir() / "bin" / "ccguard-enforce"
 
 
+def audit_shim_path() -> Path:
+    return default_config_dir() / "bin" / "ccguard-audit"
+
+
 def _shim_body() -> str:
     """Bash-shim: вызывает либо PyInstaller-бинарник, либо python-fallback.
     Fail-open при отсутствии бинарей."""
@@ -71,11 +81,39 @@ exit 0
 """
 
 
+def _audit_shim_body() -> str:
+    """Bash-shim for PostToolUse audit hook. Fail-silent (audit is best-effort)."""
+    return f"""#!/usr/bin/env bash
+{AUDIT_SHIM_MARKER}
+set -e
+
+BIN="/opt/ccguard/bin/ccguard-audit-bin"
+if [ -x "$BIN" ]; then
+    exec "$BIN" "$@"
+fi
+
+if command -v python3 >/dev/null 2>&1; then
+    exec python3 -m ccguard.agent.audit_main "$@"
+fi
+
+# Fail-silent: no audit binary available — let the tool call proceed unobserved.
+exit 0
+"""
+
+
 def write_shim() -> Path:
     """Записать shim-скрипт и сделать его исполняемым."""
     p = shim_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(_shim_body())
+    os.chmod(p, 0o755)
+    return p
+
+
+def write_audit_shim() -> Path:
+    p = audit_shim_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(_audit_shim_body())
     os.chmod(p, 0o755)
     return p
 
@@ -117,80 +155,113 @@ def _is_our_hook(hook_spec: dict[str, Any], shim: Path) -> bool:
     )
 
 
-def install_hook(scope: Scope = "user", project_dir: Path | None = None) -> dict[str, Any]:
-    """Прописать ccguard-хук в settings.json для всех matcher'ов из HOOK_MATCHERS.
-    Идемпотентно: повторный install не дублирует записи."""
-    shim = write_shim()
-    settings_file = settings_path_for_scope(scope, project_dir)
-    backup = _backup(settings_file)
-    data = _read_settings(settings_file)
+def _install_event(
+    *,
+    data: dict[str, Any],
+    settings_file: Path,
+    hook_event: str,
+    matchers: list[str],
+    shim: Path,
+    timeout: int,
+) -> int:
+    """Write a hooks-section entry for one event kind (PreToolUse or PostToolUse).
 
+    Returns count of hook entries actually appended (0 on idempotent re-run).
+    """
     hooks_section = data.setdefault("hooks", {})
     if not isinstance(hooks_section, dict):
         raise ValueError(f"{settings_file}: hooks must be an object")
 
-    pre_tool_use = hooks_section.setdefault("PreToolUse", [])
-    if not isinstance(pre_tool_use, list):
-        raise ValueError(f"{settings_file}: hooks.PreToolUse must be a list")
+    event_list = hooks_section.setdefault(hook_event, [])
+    if not isinstance(event_list, list):
+        raise ValueError(f"{settings_file}: hooks.{hook_event} must be a list")
 
     added = 0
-    for matcher in HOOK_MATCHERS:
-        # Ищем существующую запись с тем же matcher.
+    for matcher in matchers:
         target_entry = None
-        for entry in pre_tool_use:
+        for entry in event_list:
             if isinstance(entry, dict) and entry.get("matcher") == matcher:
                 target_entry = entry
                 break
         if target_entry is None:
             target_entry = {"matcher": matcher, "hooks": []}
-            pre_tool_use.append(target_entry)
+            event_list.append(target_entry)
         hooks_list = target_entry.setdefault("hooks", [])
         if not isinstance(hooks_list, list):
-            raise ValueError(f"{settings_file}: hooks list malformed for matcher {matcher}")
-        # Если наш хук уже там — пропускаем.
+            raise ValueError(
+                f"{settings_file}: hooks list malformed for {hook_event} matcher {matcher}"
+            )
         if any(isinstance(h, dict) and _is_our_hook(h, shim) for h in hooks_list):
             continue
-        hooks_list.append(
-            {"type": HOOK_TYPE, "command": str(shim), "timeout": HOOK_TIMEOUT}
-        )
+        hooks_list.append({"type": HOOK_TYPE, "command": str(shim), "timeout": timeout})
         added += 1
+    return added
+
+
+def install_hook(scope: Scope = "user", project_dir: Path | None = None) -> dict[str, Any]:
+    """Прописать ccguard-хуки в settings.json:
+
+    * PreToolUse: enforce-shim для HOOK_MATCHERS (v0.1 behavior preserved).
+    * PostToolUse: audit-shim для AUDIT_HOOK_MATCHERS=['*'] (TUA-01/TUA-02).
+
+    Идемпотентно: повторный install не дублирует записи.
+    """
+    shim = write_shim()
+    audit_shim = write_audit_shim()
+    settings_file = settings_path_for_scope(scope, project_dir)
+    backup = _backup(settings_file)
+    data = _read_settings(settings_file)
+
+    added_pre = _install_event(
+        data=data,
+        settings_file=settings_file,
+        hook_event="PreToolUse",
+        matchers=HOOK_MATCHERS,
+        shim=shim,
+        timeout=HOOK_TIMEOUT,
+    )
+    added_post = _install_event(
+        data=data,
+        settings_file=settings_file,
+        hook_event="PostToolUse",
+        matchers=AUDIT_HOOK_MATCHERS,
+        shim=audit_shim,
+        timeout=AUDIT_HOOK_TIMEOUT,
+    )
 
     _write_settings_atomic(settings_file, data)
     return {
         "settings_file": str(settings_file),
         "shim_path": str(shim),
-        "hooks_added": added,
+        "audit_shim_path": str(audit_shim),
+        # `hooks_added` historically meant PreToolUse hooks added (v0.1 contract).
+        # Audit hook count is surfaced separately so v0.1 tests stay green.
+        "hooks_added": added_pre,
+        "audit_hooks_added": added_post,
         "backup": str(backup) if backup else None,
     }
 
 
-def uninstall_hook(scope: Scope = "user", project_dir: Path | None = None) -> dict[str, Any]:
-    """Удалить наши записи. Чужие хуки не трогаем. Idempotent."""
-    shim = shim_path()
-    settings_file = settings_path_for_scope(scope, project_dir)
-    if not settings_file.exists():
-        return {"settings_file": str(settings_file), "hooks_removed": 0, "backup": None}
-
-    backup = _backup(settings_file)
-    data = _read_settings(settings_file)
-
-    hooks_section = data.get("hooks")
-    if not isinstance(hooks_section, dict):
-        return {"settings_file": str(settings_file), "hooks_removed": 0, "backup": str(backup) if backup else None}
-
-    pre_tool_use = hooks_section.get("PreToolUse")
-    if not isinstance(pre_tool_use, list):
-        return {"settings_file": str(settings_file), "hooks_removed": 0, "backup": str(backup) if backup else None}
+def _uninstall_event(
+    *,
+    hooks_section: dict[str, Any],
+    hook_event: str,
+    shim: Path,
+) -> int:
+    """Remove our hook entries from one event list. Returns count removed."""
+    event_list = hooks_section.get(hook_event)
+    if not isinstance(event_list, list):
+        return 0
 
     removed = 0
-    new_pre_tool_use: list[Any] = []
-    for entry in pre_tool_use:
+    new_list: list[Any] = []
+    for entry in event_list:
         if not isinstance(entry, dict):
-            new_pre_tool_use.append(entry)
+            new_list.append(entry)
             continue
         hooks_list = entry.get("hooks", [])
         if not isinstance(hooks_list, list):
-            new_pre_tool_use.append(entry)
+            new_list.append(entry)
             continue
         filtered = []
         for h in hooks_list:
@@ -200,66 +271,124 @@ def uninstall_hook(scope: Scope = "user", project_dir: Path | None = None) -> di
             filtered.append(h)
         if filtered:
             entry["hooks"] = filtered
-            new_pre_tool_use.append(entry)
+            new_list.append(entry)
         # Если list стал пустым — удаляем всю запись с этим matcher.
 
-    if new_pre_tool_use:
-        hooks_section["PreToolUse"] = new_pre_tool_use
+    if new_list:
+        hooks_section[hook_event] = new_list
     else:
-        hooks_section.pop("PreToolUse", None)
+        hooks_section.pop(hook_event, None)
+    return removed
+
+
+def uninstall_hook(scope: Scope = "user", project_dir: Path | None = None) -> dict[str, Any]:
+    """Удалить наши записи. Чужие хуки не трогаем. Idempotent."""
+    shim = shim_path()
+    audit_shim = audit_shim_path()
+    settings_file = settings_path_for_scope(scope, project_dir)
+    if not settings_file.exists():
+        return {"settings_file": str(settings_file), "hooks_removed": 0, "backup": None}
+
+    backup = _backup(settings_file)
+    data = _read_settings(settings_file)
+
+    hooks_section = data.get("hooks")
+    if not isinstance(hooks_section, dict):
+        return {
+            "settings_file": str(settings_file),
+            "hooks_removed": 0,
+            "backup": str(backup) if backup else None,
+        }
+
+    removed_pre = _uninstall_event(
+        hooks_section=hooks_section, hook_event="PreToolUse", shim=shim
+    )
+    removed_post = _uninstall_event(
+        hooks_section=hooks_section, hook_event="PostToolUse", shim=audit_shim
+    )
     if not hooks_section:
         data.pop("hooks", None)
 
     _write_settings_atomic(settings_file, data)
-    # Удаляем shim (если он есть и принадлежит нам).
-    if shim.exists() and SHIM_MARKER in shim.read_text():
-        try:
-            shim.unlink()
-        except OSError:
-            pass
+    # Удаляем shim'ы (только если они наши — проверка маркера).
+    for path, marker in ((shim, SHIM_MARKER), (audit_shim, AUDIT_SHIM_MARKER)):
+        if path.exists() and marker in path.read_text():
+            with contextlib.suppress(OSError):
+                path.unlink()
 
     return {
         "settings_file": str(settings_file),
-        "hooks_removed": removed,
+        "hooks_removed": removed_pre,
+        "audit_hooks_removed": removed_post,
         "backup": str(backup) if backup else None,
     }
 
 
-def verify_installation(scope: Scope = "user", project_dir: Path | None = None) -> dict[str, Any]:
-    """Tamper-detection: убедиться, что хук на месте, ведёт на наш shim, disableAllHooks=false."""
-    shim = shim_path()
-    settings_file = settings_path_for_scope(scope, project_dir)
-    issues: list[str] = []
-    if not settings_file.exists():
-        issues.append(f"settings file missing: {settings_file}")
-        return {"ok": False, "issues": issues}
-
-    data = _read_settings(settings_file)
-    if data.get("disableAllHooks") is True:
-        issues.append("disableAllHooks=true")
-
-    hooks_section = data.get("hooks", {})
-    pre = hooks_section.get("PreToolUse", []) if isinstance(hooks_section, dict) else []
-    missing_matchers: list[str] = []
-    for matcher in HOOK_MATCHERS:
+def _matchers_registered(
+    hooks_section: dict[str, Any],
+    hook_event: str,
+    matchers: list[str],
+    shim: Path,
+) -> list[str]:
+    """Return the subset of ``matchers`` NOT found under our shim for ``hook_event``."""
+    event_list = hooks_section.get(hook_event, []) if isinstance(hooks_section, dict) else []
+    missing: list[str] = []
+    for matcher in matchers:
         found = False
-        for entry in pre if isinstance(pre, list) else []:
+        for entry in event_list if isinstance(event_list, list) else []:
             if not isinstance(entry, dict) or entry.get("matcher") != matcher:
                 continue
-            for h in entry.get("hooks", []) if isinstance(entry.get("hooks"), list) else []:
+            entry_hooks = entry.get("hooks", []) if isinstance(entry.get("hooks"), list) else []
+            for h in entry_hooks:
                 if isinstance(h, dict) and _is_our_hook(h, shim):
                     found = True
                     break
             if found:
                 break
         if not found:
-            missing_matchers.append(matcher)
-    if missing_matchers:
-        issues.append(f"hook missing for matchers: {','.join(missing_matchers)}")
+            missing.append(matcher)
+    return missing
+
+
+def verify_installation(scope: Scope = "user", project_dir: Path | None = None) -> dict[str, Any]:
+    """Tamper-detection: оба хука на месте, ведут на наши shim'ы, disableAllHooks=false."""
+    shim = shim_path()
+    audit_shim = audit_shim_path()
+    settings_file = settings_path_for_scope(scope, project_dir)
+    issues: list[str] = []
+    if not settings_file.exists():
+        issues.append(f"settings file missing: {settings_file}")
+        return {"ok": False, "issues": issues, "audit_hook_registered": False}
+
+    data = _read_settings(settings_file)
+    if data.get("disableAllHooks") is True:
+        issues.append("disableAllHooks=true")
+
+    hooks_section = data.get("hooks", {}) if isinstance(data.get("hooks"), dict) else {}
+
+    missing_pre = _matchers_registered(hooks_section, "PreToolUse", HOOK_MATCHERS, shim)
+    if missing_pre:
+        issues.append(f"hook missing for matchers: {','.join(missing_pre)}")
+
+    missing_audit = _matchers_registered(
+        hooks_section, "PostToolUse", AUDIT_HOOK_MATCHERS, audit_shim
+    )
+    audit_hook_registered = not missing_audit
+    if missing_audit:
+        issues.append(f"audit hook missing for matchers: {','.join(missing_audit)}")
 
     if not shim.exists():
         issues.append(f"shim missing at {shim}")
     elif SHIM_MARKER not in shim.read_text():
         issues.append(f"shim at {shim} doesn't carry ccguard marker (tampered?)")
 
-    return {"ok": not issues, "issues": issues}
+    if not audit_shim.exists():
+        issues.append(f"audit shim missing at {audit_shim}")
+    elif AUDIT_SHIM_MARKER not in audit_shim.read_text():
+        issues.append(f"audit shim at {audit_shim} doesn't carry ccguard marker (tampered?)")
+
+    return {
+        "ok": not issues,
+        "issues": issues,
+        "audit_hook_registered": audit_hook_registered,
+    }

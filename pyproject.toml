@@ -47,6 +47,7 @@ dev = [
 ccguard = "ccguard.agent.cli:app"
 ccguard-server = "ccguard.server.main:serve"
 ccguard-enforce-bin = "ccguard.agent.enforce_main:main"
+ccguard-audit-bin = "ccguard.agent.audit_main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ccguard"]
