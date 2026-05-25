@@ -1,0 +1,19 @@
+<h3 class="text-sm font-semibold text-slate-700 mb-3">Аномалии</h3>
+{% if items %}
+<ul class="space-y-1">
+  {% for it in items %}
+  <li>
+    <a href="/anomalies/{{ it.machine_id }}/{{ it.metric }}"
+       class="flex items-center justify-between text-sm hover:bg-slate-50 rounded px-2 py-1">
+      <span class="font-mono text-slate-700">{{ it.machine_id[:12] }}</span>
+      <span class="font-mono text-slate-500">{{ it.metric }}</span>
+      <span class="font-mono">{{ it.observed_value }}</span>
+      <span class="text-red-600 text-xs font-semibold">{{ it.sigma_distance }}σ</span>
+      <span class="text-xs text-slate-400">{{ it.ts_short }}</span>
+    </a>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-sm text-slate-400 py-6 text-center">Аномалий нет.</p>
+{% endif %}
