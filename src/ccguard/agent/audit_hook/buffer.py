@@ -75,7 +75,16 @@ class ToolBufferDB:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.execute("PRAGMA busy_timeout=5000")
-        self.conn.executescript(_SCHEMA)
+        # WR-04: run DDL only when the events table is missing. executescript
+        # issues an implicit COMMIT that can briefly contend with concurrent
+        # BEGIN IMMEDIATE writers on every hook invocation; gating on a cheap
+        # sqlite_master probe keeps the hot path free of that overhead once
+        # the schema has been initialized.
+        cur = self.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='events'"
+        )
+        if cur.fetchone() is None:
+            self.conn.executescript(_SCHEMA)
         return self
 
     def __exit__(
