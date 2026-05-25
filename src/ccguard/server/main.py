@@ -50,7 +50,44 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         cfg.db_url,
         cfg.policy_path,
     )
-    yield
+
+    # --- Phase 2 / Plan 02-03: anomaly scheduler ---------------------------
+    from ccguard.server.scheduler import (
+        build_scheduler,
+        is_disabled,
+        shutdown_scheduler,
+        start_scheduler,
+    )
+    from ccguard.server.services.anomaly_service import tick as anomaly_tick
+    from sqlmodel import Session as _SessionTick
+
+    app.state.scheduler = None
+    if is_disabled():
+        logger.info("anomaly scheduler disabled via CCGUARD_DISABLE_SCHEDULER")
+    else:
+        def _tick_job() -> None:
+            try:
+                with _SessionTick(engine) as s:
+                    summary = anomaly_tick(s)
+                logger.info(
+                    "anomaly tick: machines=%d findings=%d errors=%d",
+                    summary["machines_evaluated"],
+                    summary["findings_emitted"],
+                    len(summary["errors"]),
+                )
+            except Exception:  # noqa: BLE001 — scheduler job must not crash the loop
+                logger.exception("anomaly tick raised")
+
+        scheduler = build_scheduler()
+        start_scheduler(scheduler, _tick_job)
+        app.state.scheduler = scheduler
+
+    try:
+        yield
+    finally:
+        if app.state.scheduler is not None:
+            await shutdown_scheduler(app.state.scheduler)
+            app.state.scheduler = None
 
 
 def create_app() -> FastAPI:
