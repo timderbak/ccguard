@@ -220,7 +220,7 @@ def audit_page(
     user: str = Depends(require_session),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
-    from ccguard.server.services.tool_use_service import list_events
+    from ccguard.server.services.tool_use_service import list_events, timeline_buckets
 
     if decision not in ("allow", "deny", "error", ""):
         decision = ""
@@ -234,6 +234,16 @@ def audit_page(
         timeframe=timeframe,  # type: ignore[arg-type]
         limit=200,
     )
+    # Timeline always renders the last 24 hours (UI-SPEC card heading
+    # "Активность за 24 часа") regardless of the user-selected timeframe.
+    buckets = timeline_buckets(
+        session,
+        hours=24,
+        machine_id_like=machine_id or None,
+        tool_name=tool_name or None,
+        decision=decision or None,
+    )
+    max_count = max((b["count"] for b in buckets), default=0)
     return templates.TemplateResponse(
         request,
         "audit_feed.html",
@@ -248,9 +258,49 @@ def audit_page(
             "events": events,
             "total": total,
             "limit": 200,
-            "timeline_partial_available": False,  # PLAN 05 flips this to True
+            "buckets": buckets,
+            "max_count": max_count,
             "csrf_token": _csrf_for(request),
         },
+    )
+
+
+@router.get("/_partials/audit/timeline", response_class=HTMLResponse)
+def audit_timeline_partial(
+    request: Request,
+    machine_id: str = "",
+    tool_name: str = "",
+    decision: str = "",
+    timeframe: str = "24h",
+    _user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """HTMX-polled timeline partial.
+
+    The ``timeframe`` query param is accepted (echoed from the audit filter
+    form via ``hx-include="closest form"``) but intentionally ignored: per
+    01-UI-SPEC the chart window is fixed at 24 hours (card heading
+    "Активность за 24 часа"). Filtering still applies on machine_id /
+    tool_name / decision so the polled chart honors active filters.
+    """
+    if decision not in ("allow", "deny", "error", ""):
+        decision = ""
+    # timeframe accepted but unused — see docstring.
+    _ = timeframe
+    from ccguard.server.services.tool_use_service import timeline_buckets
+
+    buckets = timeline_buckets(
+        session,
+        hours=24,
+        machine_id_like=machine_id or None,
+        tool_name=tool_name or None,
+        decision=decision or None,
+    )
+    max_count = max((b["count"] for b in buckets), default=0)
+    return templates.TemplateResponse(
+        request,
+        "components/_audit_timeline.html",
+        {"buckets": buckets, "max_count": max_count},
     )
 
 
