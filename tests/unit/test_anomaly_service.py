@@ -142,6 +142,55 @@ def test_evaluate_one_degenerate_stdev_zero_positive_deviation_flags() -> None:
         assert f.inventory_id is None
 
 
+def test_evaluate_one_degenerate_stdev_zero_sigma_distance_is_none() -> None:
+    """WR-02: when stdev==0 in the underlying baseline the persisted
+    ``sigma_distance`` is ``None`` (JSON-portable), NOT ``float('inf')`` —
+    ``json.dumps`` would otherwise emit the non-RFC-7159 ``Infinity`` literal.
+    Use an exactly-flat baseline so the upserted MachineBaseline has stdev=0.
+    """
+    eng = _engine()
+    with Session(eng) as s:
+        _machine(s, "mdg")
+        # 14 identical points → stdev=0, BUT the latest must equal mean so
+        # _is_outlier returns False — we instead test that if the LATEST is
+        # higher, _is_outlier flags it and the resulting persisted
+        # sigma_distance is None. Use 13 of 3 + spike of 9, where:
+        #   compute_baseline runs on [3]*13 + [9] → stdev > 0 normally.
+        # To force stdev==0 we need a truly flat list. So upsert manually.
+        from ccguard.server.services import baseline_service
+        baseline_service.upsert_baseline(s, "mdg", "bash_calls_per_day", [5.0] * 14)
+        # Now patch the aggregator to return a series whose LAST value > mean.
+        pts = [(date(2026, 5, 1) + timedelta(days=i), 5) for i in range(13)]
+        pts.append((date(2026, 5, 14), 5))  # latest == mean → not outlier on first call
+        # Bump the last to force outlier on next call, while keeping recent series
+        # for upsert. Simpler: directly call evaluate_one twice; first establishes
+        # baseline with 14×5 (stdev=0), second uses a spike series, but
+        # upsert_baseline will recompute stdev from new points, breaking degeneracy.
+        # Instead: short-circuit by patching baseline_service.upsert_baseline.
+        from unittest.mock import patch as _patch
+        from ccguard.server.db.models import MachineBaseline as _MB
+        flat_baseline = _MB(
+            machine_id="mdg", metric="bash_calls_per_day",
+            mean=5.0, stdev=0.0, sample_count=14, baseline_ready=True,
+            recent_points_json="[5,5,5,5,5,5,5,5,5,5,5,5,5,9]",
+        )
+        spike_pts = [(date(2026, 5, 1) + timedelta(days=i), 5) for i in range(13)]
+        spike_pts.append((date(2026, 5, 14), 9))
+        with _patch.dict(
+            anomaly_service._DISPATCH,
+            {"bash_calls_per_day": lambda *a, **k: spike_pts},
+        ), _patch.object(
+            anomaly_service.baseline_service, "upsert_baseline",
+            return_value=flat_baseline,
+        ):
+            f = anomaly_service.evaluate_one(s, "mdg", "bash_calls_per_day")
+        assert f is not None
+        payload = json.loads(f.payload_json)  # must round-trip cleanly
+        assert payload["sigma_distance"] is None
+        # And the persisted JSON must NOT contain the non-portable Infinity literal.
+        assert "Infinity" not in f.payload_json
+
+
 def test_evaluate_one_degenerate_stdev_zero_negative_deviation_no_flag() -> None:
     """stdev=0 and latest < mean → NOT flagged (we only alert on the high side)."""
     eng = _engine()

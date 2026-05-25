@@ -88,7 +88,7 @@
         <tr class="border-b last:border-0 text-sm">
           <td class="py-2 px-2 font-mono text-slate-500">{{ f.discovered_at.isoformat(timespec="seconds") }}</td>
           <td class="py-2 px-2 font-mono">{{ f.observed_value }}</td>
-          <td class="py-2 px-2 {% if f.sigma_distance|abs > 3 %}text-red-600{% endif %}">{{ "%+.1f"|format(f.sigma_distance) }}σ</td>
+          <td class="py-2 px-2 {% if f.is_high_sigma %}text-red-600{% endif %}">{{ f.sigma_distance }}σ</td>
           <td class="py-2 px-2 font-mono text-slate-500">{{ f.rule_id }}</td>
         </tr>
         {% endfor %}

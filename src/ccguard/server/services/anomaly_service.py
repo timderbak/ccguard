@@ -75,11 +75,18 @@ def _is_outlier(latest: float, mean: float, stdev: float) -> bool:
     return latest > mean
 
 
-def _sigma_distance(latest: float, mean: float, stdev: float) -> float:
-    """Z-score; ``inf`` when stdev is zero (degenerate baseline)."""
+def _sigma_distance(latest: float, mean: float, stdev: float) -> float | None:
+    """Z-score; ``None`` when stdev is zero (degenerate baseline).
+
+    WR-02: Previously returned ``float("inf")``, which ``json.dumps`` serializes
+    as the literal ``Infinity`` — not valid JSON per RFC 7159, rejected by
+    strict parsers (browsers' ``JSON.parse``, Postgres JSONB, etc.) and ugly in
+    the UI (``"+inf"``). Returning ``None`` makes the degenerate case explicit
+    and JSON-portable; downstream renderers can show ``"∞"`` or ``"—"``.
+    """
     if stdev > 0:
         return (latest - mean) / stdev
-    return float("inf")
+    return None
 
 
 def _same_day_finding_exists(
@@ -148,7 +155,10 @@ def evaluate_one(
         rule_id=rule_id,
         severity="warn",
         discovered_at=now,
-        payload_json=json.dumps(payload),
+        # WR-02: allow_nan=False makes any future ``inf``/``nan`` in the
+        # payload surface as a ValueError at serialization time instead of
+        # silently producing the non-RFC-7159 ``Infinity``/``NaN`` literals.
+        payload_json=json.dumps(payload, allow_nan=False),
     )
     session.add(finding)
     session.commit()

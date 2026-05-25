@@ -668,15 +668,28 @@ def anomaly_detail(
             payload = json.loads(r.payload_json) if r.payload_json else {}
         except (ValueError, TypeError):
             payload = {}
-        try:
-            sigma = float(payload.get("sigma_distance", 0.0))
-        except (TypeError, ValueError):
-            sigma = 0.0
+        # WR-02: sigma_distance is None for degenerate-stdev findings; render
+        # as "∞" in that case rather than letting the template format ``None``.
+        # Pass both a pre-formatted display string AND a numeric flag for the
+        # red-coloring threshold check so the template stays simple.
+        raw_sigma = payload.get("sigma_distance")
+        is_high_sigma = False
+        if raw_sigma is None:
+            sigma_display = "∞"
+            is_high_sigma = True  # degenerate (stdev=0) outlier → always emphasize
+        else:
+            try:
+                sigma_num = float(raw_sigma)
+                sigma_display = f"{sigma_num:+.1f}"
+                is_high_sigma = abs(sigma_num) > 3
+            except (TypeError, ValueError):
+                sigma_display = "—"
         findings_vm.append(
             {
                 "discovered_at": r.discovered_at,
                 "observed_value": payload.get("observed_value", "—"),
-                "sigma_distance": sigma,
+                "sigma_distance": sigma_display,
+                "is_high_sigma": is_high_sigma,
                 "rule_id": r.rule_id,
             }
         )
@@ -771,12 +784,23 @@ def anomalies_overview_partial(
             payload = json.loads(r.payload_json) if r.payload_json else {}
         except (ValueError, TypeError):
             payload = {}
+        # WR-02: sigma_distance may be None (degenerate stdev=0 baseline) or
+        # a non-numeric value if payload is malformed. Coerce to a display
+        # string so the template can render uniformly without per-cell logic.
+        raw_sigma = payload.get("sigma_distance")
+        if raw_sigma is None:
+            sigma_display = "∞"
+        else:
+            try:
+                sigma_display = f"{round(float(raw_sigma), 1):+.1f}"
+            except (TypeError, ValueError):
+                sigma_display = "—"
         items.append(
             {
                 "machine_id": r.machine_id,
                 "metric": metric,
                 "observed_value": payload.get("observed_value", "—"),
-                "sigma_distance": round(float(payload.get("sigma_distance", 0.0)), 1),
+                "sigma_distance": sigma_display,
                 "ts_short": r.discovered_at.strftime("%Y-%m-%d %H:%M"),
             }
         )
