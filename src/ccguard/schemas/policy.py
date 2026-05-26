@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any, Literal
 
+from pydantic import ConfigDict, Field, field_validator
+
 from ccguard.schemas._base import SchemaBase
 from ccguard.schemas.finding import Severity
+
+# kebab-case: lowercase letters/digits, dash-separated, no leading/trailing/double dash.
+_KEBAB_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 
 class RuleBase(SchemaBase):
@@ -75,7 +81,69 @@ class PolicyMeta(SchemaBase):
     updated_at: datetime
 
 
+class RequiredMCPServer(SchemaBase):
+    """Mandatory MCP-сервер для установки агентом (Phase 4 / PUSH-01).
+
+    `args` / `env` — единый JSON textarea на UI (D-6), хранятся плоско.
+    Метка `_managed_by: ccguard` будет добавлена слоем apply в plan 03 (D-7).
+    """
+
+    name: str
+    command: str
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
+
+
+class RequiredSkill(SchemaBase):
+    """Mandatory skill-файл (`~/.claude/skills/<name>/SKILL.md`) — PUSH-02.
+
+    `content` хранит ПОЛНЫЙ текст файла (frontmatter + тело) единым полем
+    (locked D-5: один textarea без отдельного редактора frontmatter).
+    """
+
+    name: str
+    frontmatter_type: str = "skill"
+    content: str
+
+
+class RequiredAgent(SchemaBase):
+    """Mandatory subagent (`~/.claude/agents/<name>.md`) — PUSH-03."""
+
+    name: str
+    content: str
+
+
+class ManagedClaudeMdBlock(SchemaBase):
+    """Управляемая секция в пользовательском `~/.claude/CLAUDE.md` — PUSH-04.
+
+    `id` — стабильный kebab-case-идентификатор. Используется как маркер для
+    обнаружения/обновления блока между sync-ами (`<!-- ccguard:block:<id> -->`).
+    """
+
+    id: str
+    description: str = ""
+    content: str
+
+    @field_validator("id")
+    @classmethod
+    def _validate_kebab_id(cls, v: str) -> str:
+        if not _KEBAB_RE.match(v):
+            raise ValueError(
+                f"id must be kebab-case (^[a-z0-9]+(-[a-z0-9]+)*$); got: {v!r}"
+            )
+        return v
+
+
 class Policy(SchemaBase):
+    # Backward-compat (D-1): v0.1-агенты, принимающие будущую расширенную политику,
+    # должны игнорировать неизвестные поля верхнего уровня вместо ошибки валидации.
+    # SchemaBase по умолчанию ставит extra='forbid' — здесь override на 'ignore'.
+    model_config = ConfigDict(
+        extra="ignore",
+        str_strip_whitespace=True,
+        frozen=False,
+    )
+
     meta: PolicyMeta
     block_fail_mode: Literal["open", "closed"] = "open"
     mcp_servers: McpServersPolicy = McpServersPolicy()
@@ -85,3 +153,8 @@ class Policy(SchemaBase):
     hooks: HooksPolicy = HooksPolicy()
     agents: AgentsPolicy = AgentsPolicy()
     env: EnvPolicy = EnvPolicy()
+    # Phase 4 / PUSH-01..04: mandatory-sections — additive (schema_version stays 1).
+    required_mcp_servers: list[RequiredMCPServer] = Field(default_factory=list)
+    required_skills: list[RequiredSkill] = Field(default_factory=list)
+    required_agents: list[RequiredAgent] = Field(default_factory=list)
+    managed_claude_md_blocks: list[ManagedClaudeMdBlock] = Field(default_factory=list)
