@@ -29,13 +29,11 @@ from __future__ import annotations
 
 import base64
 import binascii
-import hashlib
 import logging
-from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from ccguard.schemas.scan import (
     ScanBatchResponse,
@@ -45,7 +43,6 @@ from ccguard.schemas.scan import (
 )
 from ccguard.server.api.deps import get_config, get_session, require_token
 from ccguard.server.config import ServerConfig
-from ccguard.server.db.models import ScanResult
 from ccguard.server.services.scan_service import (
     BudgetExhaustedError,
     ScannerDisabledError,
@@ -176,26 +173,14 @@ async def post_scan_content(
         content = raw.decode("utf-8", errors="replace")
 
         # 5. Probe cache BEFORE calling scan_file so we can populate
-        # ``cached`` reliably in the response. ScanService is the source of
-        # truth on cache validity (TTL); we re-implement the same lookup here
-        # (sha256 over utf-8 + ttl_expires_at > now). On a true cache hit the
-        # scan_file call will short-circuit and never touch the LLM.
-        engine = svc._engine  # noqa: SLF001 — controlled internal access
-        file_hash_probe = hashlib.sha256(content.encode("utf-8")).hexdigest()
-        cached = False
+        # ``cached`` reliably in the response. WR-07: use the service's
+        # public ``peek_cache`` so the route and the service share the same
+        # hash + TTL logic and cannot drift if the cache key changes.
         try:
-            with Session(engine) as probe_s:
-                row = probe_s.exec(
-                    select(ScanResult).where(ScanResult.file_hash == file_hash_probe)
-                ).one_or_none()
-                if row is not None:
-                    ttl = row.ttl_expires_at
-                    if ttl.tzinfo is None:
-                        ttl = ttl.replace(tzinfo=UTC)
-                    if ttl > datetime.now(UTC):
-                        cached = True
+            cached = svc.peek_cache(content)
         except Exception:  # noqa: BLE001 — cache probe is best-effort metadata
             logger.debug("scan-content: cache probe failed; reporting cached=false")
+            cached = False
 
         # 6. Call ScanService.scan_file.
         try:

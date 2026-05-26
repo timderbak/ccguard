@@ -294,6 +294,23 @@ class ScanService:
                 s.refresh(row)
                 return row
 
+    def peek_cache(self, content: str) -> bool:
+        """Return True iff ``content``'s hash has a non-expired ScanResult row.
+
+        WR-07: lets the HTTP layer report ``cached=true/false`` in the
+        ``/scan-content`` response without reaching into the service's
+        private ``_engine``. Uses the same hashing + TTL logic as
+        :meth:`scan_file` so the two cannot drift.
+        """
+        file_hash = _file_hash(content)
+        with Session(self._engine) as s:
+            row = s.exec(
+                select(ScanResult).where(ScanResult.file_hash == file_hash)
+            ).one_or_none()
+        if row is None:
+            return False
+        return _aware_utc(row.ttl_expires_at) > datetime.now(UTC)
+
     async def rescan_file(self, file_hash: str) -> _RescanQueuedSentinel | None:
         """Invalidate the cache row for ``file_hash``; return :data:`RescanQueued`.
 
