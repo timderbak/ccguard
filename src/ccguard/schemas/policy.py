@@ -183,6 +183,41 @@ class ManagedClaudeMdBlock(SchemaBase):
         return v
 
 
+class LlamaGuardConfig(SchemaBase):
+    """Optional LlamaGuard backend for prompt-injection scanning (Phase 5 / 05-01).
+
+    Self-hosted Ollama endpoint by default — single external dep is intentional
+    (org runs `ollama serve` locally; no cloud-AI). `extra="ignore"` so a
+    future server schema can add fields without breaking v0.2 agents (D-1
+    backward-compat policy, inherited semantics).
+    """
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    enabled: bool = False
+    endpoint: str = "http://localhost:11434"
+    model: str = "llama-guard3:8b"
+    # Bounded to keep PreToolUse hook latency budget (<100ms total, see CLAUDE.md).
+    timeout_ms: int = Field(default=500, ge=50, le=10000)
+
+
+class PromptInjectionConfig(SchemaBase):
+    """Prompt-injection scanner config — additive section in Policy (Phase 5).
+
+    schema_version stays at 1: this is an additive change. `extra="ignore"`
+    locally on top of Policy-level `extra="ignore"` so any future sub-field
+    (e.g., per-category severity overrides) does not break older agents.
+    """
+
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
+
+    enabled: bool = True
+    severity: Literal["info", "warn", "block"] = "warn"
+    regex_patterns: list[str] = Field(default_factory=list)
+    allowlist_patterns: list[str] = Field(default_factory=list)
+    llama_guard: LlamaGuardConfig = Field(default_factory=LlamaGuardConfig)
+
+
 class Policy(SchemaBase):
     # Backward-compat (D-1): v0.1-агенты, принимающие будущую расширенную политику,
     # должны игнорировать неизвестные поля верхнего уровня вместо ошибки валидации.
@@ -207,3 +242,8 @@ class Policy(SchemaBase):
     required_skills: list[RequiredSkill] = Field(default_factory=list)
     required_agents: list[RequiredAgent] = Field(default_factory=list)
     managed_claude_md_blocks: list[ManagedClaudeMdBlock] = Field(default_factory=list)
+    # Phase 5 / 05-01: prompt-injection scanner config (PI-01..04 baseline).
+    # Additive — schema_version stays 1. v0.1/v0.2 agents tolerate via Policy
+    # `extra="ignore"`; field uses default_factory so policies without this
+    # section parse cleanly.
+    prompt_injection: PromptInjectionConfig = Field(default_factory=PromptInjectionConfig)
