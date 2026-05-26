@@ -85,36 +85,27 @@
 3. Severity finding'а берётся из `policy.prompt_injection.severity` (warn по умолчанию, опция block)
 4. Policy section `prompt_injection` редактируется в /policy UI: enabled, severity, regex_patterns, allowlist_patterns, llama_guard toggle
 5. PreToolUse latency остаётся <100ms при выключенном LlamaGuard; тесты покрывают match/no-match/allowlist/llama_guard mock
-**Plans:** TBD
+**Plans:** 6 plans
+Plans:
+- [ ] 05-01-PLAN.md — PromptInjectionConfig + LlamaGuardConfig Pydantic schema + default regex catalog (15+ patterns)
+- [ ] 05-02-PLAN.md — prompt_injection_engine: regex + allowlist + Ollama LlamaGuard client + fail-open
+- [ ] 05-03-PLAN.md — enforce.decide() integration: PI step, severity→exit-code mapping, finding emit
+- [ ] 05-04-PLAN.md — findings_hook/ buffer + flusher (clone audit_hook) + server batch endpoint
+- [ ] 05-05-PLAN.md — UI «Prompt-Injection» card on /policy + form parser + ReDoS publish-time guard
+- [ ] 05-06-PLAN.md — Integration + e2e + backward-compat tests (≥30 new tests, full pipeline)
 **UI hint**: yes
 
-### Phase 6: SIEM Export
-**Goal:** Splunk HEC + syslog + webhook каналы с retry/DLQ и health-индикаторами
-**Mode:** mvp
-**Depends on:** Phase 1, Phase 2, Phase 5 (источники событий — audit + findings)
-**Requirements:** SIEM-01, SIEM-02, SIEM-03, SIEM-04
-**Success Criteria:**
-1. Findings и audit events стримятся в Splunk HEC (URL + token хранится Fernet-шифрованно в БД)
-2. Syslog (UDP/TCP, RFC 5424) и generic webhook (POST + HMAC SHA256 в `X-CCGuard-Signature` header) работают как альтернативные/параллельные каналы
-3. Failure событий retry с exponential backoff (max 5 попыток); после исчерпания — dead-letter queue в БД
-4. Settings UI: вкладка «SIEM» с CRUD для каналов, health-индикатор (last_success_at, dlq_size) per-channel, кнопка «Test connection»
-5. Тесты: mock Splunk HEC accept/reject, syslog format compliance (RFC 5424), webhook HMAC verification, DLQ rehydrate
-**Plans:** TBD
-**UI hint**: yes
+## Deferred to Backlog (v0.3+)
 
-### Phase 7: Compliance Mapping
-**Goal:** NIST AI RMF / SOC2 / EU AI Act matrix + auto-generated PDF evidence
-**Mode:** mvp
-**Depends on:** Phase 1 (audit log — источник evidence для SOC2 CC6/CC7), Phase 6 (SIEM export — часть compliance story)
-**Requirements:** COMP-01, COMP-02, COMP-03, COMP-04
-**Success Criteria:**
-1. Static mapping policy-правил ccguard на NIST AI RMF 1.0 controls (Govern 1.1, Map 2.x, Measure 3.x, Manage 4.x) хранится как YAML и рендерится в UI
-2. SOC2 CC6 + CC7 evidence-секции генерируются из audit log (например, «logical access events за период», «system anomalies за период»)
-3. EU AI Act Article 9/12/14 чеклист с per-item статусом covered/partial/missing на основе текущей policy
-4. Web UI /compliance показывает matrix «контроль × статус» с drill-down на supporting evidence; кнопка «Download PDF report» генерирует через reportlab
-5. Тесты: маппинг complete (нет broken refs), evidence-секция на seed-данных, PDF generation smoke (валидный файл, expected headings)
-**Plans:** TBD
-**UI hint**: yes
+Following phases were planned for v0.2 but moved to backlog on 2026-05-27 per user decision to ship v0.2 with Phases 1-5 (Behavioral EDR core) and defer compliance/SIEM tooling to a follow-up milestone.
+
+### Phase 6: SIEM Export — DEFERRED
+Splunk HEC + syslog + webhook каналы с retry/DLQ и health-индикаторами. Requirements: SIEM-01..04.
+
+### Phase 7: Compliance Mapping — DEFERRED
+NIST AI RMF / SOC2 / EU AI Act matrix + auto-generated PDF evidence. Requirements: COMP-01..04.
+
+Both phases retain their original requirements in REQUIREMENTS.md and will be planned in the next milestone.
 
 ## Progress
 
@@ -124,7 +115,7 @@
 | 2. Anomaly Detection | 0/0 | Not started | - |
 | 3. LLM Content Scanner | 0/0 | Not started | - |
 | 4. Push-Install | 0/0 | Not started | - |
-| 5. Prompt-Injection Detection | 0/0 | Not started | - |
+| 5. Prompt-Injection Detection | 0/6 | Planned | - |
 | 6. SIEM Export | 0/0 | Not started | - |
 | 7. Compliance Mapping | 0/0 | Not started | - |
 
