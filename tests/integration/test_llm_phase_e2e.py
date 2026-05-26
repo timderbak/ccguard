@@ -140,7 +140,9 @@ def _make_e2e_app(
     fake_anthropic = type("FakeAnthropic", (), {})()
     fake_anthropic.messages = SimpleNamespace(create=mock_create)
 
-    def _fake_client_factory(api_key: str):  # noqa: ARG001
+    def _fake_client_factory(*args, **kwargs):  # noqa: ARG001
+        # Accept arbitrary args/kwargs (e.g. ``timeout=30.0`` added in WR-03)
+        # so the test mock survives future SDK-kwarg additions.
         return fake_anthropic
 
     patcher = patch(

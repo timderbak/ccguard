@@ -39,6 +39,26 @@ logger = logging.getLogger("ccguard.agent.inventory_scan")
 DEFAULT_TIMEOUT_SEC = 30.0
 
 
+def _scrub_path(path: Path, claude_home: Path) -> str:
+    """Return a server-safe, PII-free representation of ``path``.
+
+    WR-05: absolute file paths leak the developer's OS username
+    (``/Users/<x>/.claude/...`` on macOS, ``C:\\Users\\<x>\\.claude\\...``
+    on Windows). The path is metadata, not load-bearing for classification,
+    so we scrub the leading home segment to ``~/.claude/<rel>`` before
+    sending it to the server (where it lands in logs + Anthropic user
+    messages).
+    """
+    try:
+        rel = path.resolve().relative_to(claude_home.resolve())
+    except (ValueError, OSError):
+        # Fallback: best-effort tail (last 2 segments) so the LLM still has
+        # filename context but no full filesystem path is leaked.
+        parts = path.parts[-2:]
+        return "~/.claude/" + "/".join(parts)
+    return "~/.claude/" + rel.as_posix()
+
+
 def collect_scannable_files(claude_home: Path) -> list[ScanRequestItem]:
     """Walk a Claude home directory and return scannable items.
 
@@ -63,7 +83,7 @@ def collect_scannable_files(claude_home: Path) -> list[ScanRequestItem]:
     agents_dir = claude_home / "agents"
     if agents_dir.is_dir():
         for path in sorted(agents_dir.glob("*.md")):
-            item = _read_and_pack(path, scope="agent")
+            item = _read_and_pack(path, scope="agent", claude_home=claude_home)
             if item is not None:
                 items.append(item)
 
@@ -73,15 +93,23 @@ def collect_scannable_files(claude_home: Path) -> list[ScanRequestItem]:
         for skill_dir in sorted(p for p in skills_dir.iterdir() if p.is_dir()):
             skill_file = skill_dir / "SKILL.md"
             if skill_file.is_file():
-                item = _read_and_pack(skill_file, scope="skill")
+                item = _read_and_pack(skill_file, scope="skill", claude_home=claude_home)
                 if item is not None:
                     items.append(item)
 
     return items
 
 
-def _read_and_pack(path: Path, *, scope: str) -> ScanRequestItem | None:
-    """Read one file, mask, base64-encode. Returns None on read failure."""
+def _read_and_pack(
+    path: Path, *, scope: str, claude_home: Path
+) -> ScanRequestItem | None:
+    """Read one file, mask, base64-encode. Returns None on read failure.
+
+    WR-05: ``file_path`` is scrubbed to a home-relative form
+    (``~/.claude/...``) before being attached to the request, so the
+    server's logs and the Anthropic user message never carry the OS
+    username.
+    """
     try:
         raw_bytes = path.read_bytes()
     except OSError as exc:
@@ -90,7 +118,8 @@ def _read_and_pack(path: Path, *, scope: str) -> ScanRequestItem | None:
     text = raw_bytes.decode("utf-8", errors="replace")
     masked = mask_content(text)
     b64 = base64.b64encode(masked.encode("utf-8")).decode("ascii")
-    return ScanRequestItem(file_path=str(path), scope=scope, content_b64=b64)  # type: ignore[arg-type]
+    scrubbed = _scrub_path(path, claude_home)
+    return ScanRequestItem(file_path=scrubbed, scope=scope, content_b64=b64)  # type: ignore[arg-type]
 
 
 def send_scan_batch(
