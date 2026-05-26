@@ -191,7 +191,7 @@ def _publish_policy_with_pi(
                 "enabled": False,
                 "endpoint": "http://localhost:11434",
                 "model": "llama-guard3:8b",
-                "timeout_ms": 500,
+                "timeout_ms": 150,
             },
         },
     }

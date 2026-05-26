@@ -53,7 +53,7 @@ def _form_with_pi(csrf: str, **pi_overrides: str) -> dict[str, str]:
         "prompt_injection.allowlist_patterns": "",
         "prompt_injection.llama_guard.enabled": "",
         "prompt_injection.llama_guard.endpoint": "http://localhost:11434",
-        "prompt_injection.llama_guard.timeout_ms": "500",
+        "prompt_injection.llama_guard.timeout_ms": "150",
     }
     # Allow caller to remove a key by passing the empty sentinel via __delete__.
     for k, v in pi_overrides.items():
@@ -122,7 +122,7 @@ def test_parse_happy_path_persists_pi(client_session):
     assert pi["regex_patterns"] == ["foo", "bar"]
     assert pi["llama_guard"]["enabled"] is True
     assert pi["llama_guard"]["endpoint"] == "http://localhost:11434"
-    assert pi["llama_guard"]["timeout_ms"] == 500
+    assert pi["llama_guard"]["timeout_ms"] == 150
 
 
 def test_checkbox_missing_means_unchecked(client_session):
@@ -269,12 +269,13 @@ def test_bad_timeout_low(client_session):
         follow_redirects=False,
     )
     assert r.status_code == 200
-    assert "timeout_ms должен быть в диапазоне 50–10000 мс." in r.text
+    assert "timeout_ms должен быть в диапазоне 50–200 мс." in r.text
 
 
 def test_bad_timeout_high(client_session):
     client, sid, csrf, _engine = client_session
-    form = _form_with_pi(csrf, prompt_injection__llama_guard__timeout_ms="10001")
+    # CR-04: upper bound clamped 10000→200 so PreToolUse hook stays inside SLA.
+    form = _form_with_pi(csrf, prompt_injection__llama_guard__timeout_ms="201")
     r = client.post(
         "/policy/draft",
         data=form,
@@ -282,7 +283,7 @@ def test_bad_timeout_high(client_session):
         follow_redirects=False,
     )
     assert r.status_code == 200
-    assert "timeout_ms должен быть в диапазоне 50–10000 мс." in r.text
+    assert "timeout_ms должен быть в диапазоне 50–200 мс." in r.text
 
 
 def test_bad_timeout_non_int(client_session):
@@ -295,7 +296,7 @@ def test_bad_timeout_non_int(client_session):
         follow_redirects=False,
     )
     assert r.status_code == 200
-    assert "timeout_ms должен быть в диапазоне 50–10000 мс." in r.text
+    assert "timeout_ms должен быть в диапазоне 50–200 мс." in r.text
 
 
 def test_bad_severity(client_session):
@@ -334,7 +335,7 @@ def test_backward_compat_missing_pi_fields(client_session):
     assert pi["allowlist_patterns"] == []
     assert pi["llama_guard"]["enabled"] is False
     assert pi["llama_guard"]["endpoint"] == "http://localhost:11434"
-    assert pi["llama_guard"]["timeout_ms"] == 500
+    assert pi["llama_guard"]["timeout_ms"] == 150
 
 
 def test_existing_sections_not_broken(client_session):

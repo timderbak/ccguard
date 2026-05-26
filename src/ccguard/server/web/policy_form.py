@@ -138,7 +138,7 @@ def _parse_prompt_injection(form: Mapping[str, str]) -> dict[str, Any]:
     - invalid regex in allowlist_patterns ``re:`` prefix
     - severity not in {info, warn, block}
     - bad LlamaGuard endpoint URL (only when LG enabled)
-    - timeout_ms out of range [50, 10000] or non-integer
+    - timeout_ms out of range [50, 200] or non-integer (CR-04)
     """
     # 1) regex_patterns — compile + ReDoS probe.
     raw_patterns = _lines_to_list(form.get("prompt_injection.regex_patterns", ""))
@@ -181,14 +181,15 @@ def _parse_prompt_injection(form: Mapping[str, str]) -> dict[str, Any]:
             "Endpoint LlamaGuard должен быть валидным URL (http:// или https://)."
         )
 
-    raw_timeout = form.get("prompt_injection.llama_guard.timeout_ms", "500")
+    # CR-04: range tightened 50–10000 → 50–200ms to fit PreToolUse <100ms SLA.
+    raw_timeout = form.get("prompt_injection.llama_guard.timeout_ms", "150")
     try:
         timeout_ms = int(raw_timeout)
-        if not (50 <= timeout_ms <= 10000):
+        if not (50 <= timeout_ms <= 200):
             raise ValueError()
     except (ValueError, TypeError):
         raise PromptInjectionFormError(
-            "timeout_ms должен быть в диапазоне 50–10000 мс."
+            "timeout_ms должен быть в диапазоне 50–200 мс."
         )
 
     return {

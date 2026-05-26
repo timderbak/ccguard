@@ -23,6 +23,15 @@ from ccguard.agent.prompt_injection_engine import ScanResult, scan
 from ccguard.schemas.policy import LlamaGuardConfig, PromptInjectionConfig
 
 
+@pytest.fixture(autouse=True)
+def _reset_engine_state() -> object:
+    """CR-04: engine caches a module-level httpx.Client. Reset between tests
+    so each test sees a fresh client built via the monkeypatched factory."""
+    engine._reset_for_tests()
+    yield
+    engine._reset_for_tests()
+
+
 @pytest.fixture
 def cfg_default() -> PromptInjectionConfig:
     return PromptInjectionConfig(enabled=True)

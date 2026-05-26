@@ -69,7 +69,7 @@ def test_all_locked_russian_strings_present(client_session):
         "LlamaGuard (опционально)",
         "Включить LlamaGuard (deep-scan через локальный Ollama)",
         "endpoint (URL Ollama API)",
-        "timeout_ms (50–10000; при таймауте — fail-open)",
+        "timeout_ms (50–200; при таймауте — fail-open)",
         "Опционально — deep-scan через локальный Ollama. По умолчанию выключен. При недоступности — fail-open, tool-call разрешается.",
     ]
     for s in locked:
@@ -95,7 +95,7 @@ def test_defaults_rendered_no_draft(client_session):
     """No draft + baseline policy without explicit prompt_injection: Pydantic defaults render.
 
     Expected: enabled checked, severity=warn selected, LG endpoint=http://localhost:11434,
-    LG timeout=500, empty-state helper for regex.
+    LG timeout=150 (CR-04), empty-state helper for regex.
     """
     client, sid, _csrf, _engine = client_session
     r = client.get("/policy", cookies={"ccg_session": sid})
@@ -116,8 +116,8 @@ def test_defaults_rendered_no_draft(client_session):
     assert m is not None, "warn option should be selected by default"
     # LG endpoint default URL appears
     assert "http://localhost:11434" in r.text
-    # LG timeout default 500 appears (as value="500")
-    assert 'value="500"' in r.text
+    # LG timeout default 150 appears (as value="150") — CR-04
+    assert 'value="150"' in r.text
     # Empty-state helper for regex_patterns
     assert "Пусто — используется встроенный набор паттернов." in r.text
     # Empty-state helper for allowlist
@@ -143,7 +143,7 @@ def test_draft_values_prefill(client_session):
                 "llama_guard": {
                     "enabled": True,
                     "endpoint": "http://example.com:11434",
-                    "timeout_ms": 750,
+                    "timeout_ms": 175,
                 },
             },
         },
@@ -165,7 +165,7 @@ def test_draft_values_prefill(client_session):
     assert "bar_pat" in r.text
     assert "allow1" in r.text
     assert "http://example.com:11434" in r.text
-    assert 'value="750"' in r.text
+    assert 'value="175"' in r.text
     # block selected
     import re as _re
     m = _re.search(
@@ -219,7 +219,7 @@ def test_validation_error_notice_renders(client_session):
         "prompt_injection.allowlist_patterns": "",
         "prompt_injection.llama_guard.enabled": "",
         "prompt_injection.llama_guard.endpoint": "http://localhost:11434",
-        "prompt_injection.llama_guard.timeout_ms": "500",
+        "prompt_injection.llama_guard.timeout_ms": "150",
     }
     r = client.post(
         "/policy/draft",

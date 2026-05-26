@@ -44,20 +44,21 @@ def test_llama_guard_defaults() -> None:
     assert lg.enabled is False
     assert lg.endpoint == "http://localhost:11434"
     assert lg.model == "llama-guard3:8b"
-    assert lg.timeout_ms == 500
+    # CR-04: default lowered 500→150 to fit PreToolUse <100ms SLA.
+    assert lg.timeout_ms == 150
 
 
 def test_llama_guard_timeout_bounds() -> None:
-    """Test 3: timeout_ms ∈ [50, 10000]."""
+    """Test 3: timeout_ms ∈ [50, 200] (CR-04: upper bound clamped from 10000)."""
     # Invalid: below lower bound
     with pytest.raises(ValidationError):
         LlamaGuardConfig(timeout_ms=49)
-    # Invalid: above upper bound
+    # Invalid: above upper bound (CR-04: clamped to 200ms)
     with pytest.raises(ValidationError):
-        LlamaGuardConfig(timeout_ms=10001)
+        LlamaGuardConfig(timeout_ms=201)
     # Valid edges
     assert LlamaGuardConfig(timeout_ms=50).timeout_ms == 50
-    assert LlamaGuardConfig(timeout_ms=10000).timeout_ms == 10000
+    assert LlamaGuardConfig(timeout_ms=200).timeout_ms == 200
 
 
 def test_prompt_injection_severity_literal() -> None:

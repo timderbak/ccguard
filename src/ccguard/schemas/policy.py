@@ -198,7 +198,10 @@ class LlamaGuardConfig(SchemaBase):
     endpoint: str = "http://localhost:11434"
     model: str = "llama-guard3:8b"
     # Bounded to keep PreToolUse hook latency budget (<100ms total, see CLAUDE.md).
-    timeout_ms: int = Field(default=500, ge=50, le=10000)
+    # CR-04: default lowered 500→150 and upper bound clamped 10000→200 so a
+    # LlamaGuard scan cannot blow the 100ms SLA. Admins who need a longer
+    # budget should switch to async/fire-and-forget (deferred to v0.3).
+    timeout_ms: int = Field(default=150, ge=50, le=200)
 
 
 class PromptInjectionConfig(SchemaBase):

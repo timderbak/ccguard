@@ -63,6 +63,17 @@ _MAX_LG_INPUT_CHARS = 4096
 
 _ADMIN_FLAGS = re.IGNORECASE | re.DOTALL
 
+# CR-04: latency budget knob. LlamaGuardConfig.timeout_ms is now clamped to
+# 200ms at the schema level, but a defensive warn-log fires once if an
+# (older, hand-edited YAML) policy supplies a value above this threshold.
+_LG_TIMEOUT_WARN_MS = 200
+
+# CR-04: module-level lazy httpx.Client so each LlamaGuard call reuses the
+# connection pool (no TCP+TLS handshake on every PreToolUse). Initialized
+# on first call and never closed — process is short-lived (CLI hook).
+_lg_client: httpx.Client | None = None
+_lg_timeout_warned: bool = False
+
 
 @dataclass(frozen=True, slots=True)
 class ScanResult:
@@ -237,6 +248,20 @@ def _llama_guard_scan(
         - Regular ``ScanResult`` with source ``llama_guard`` on unsafe
           verdict.
     """
+    global _lg_client, _lg_timeout_warned
+
+    # CR-04: warn-once on out-of-policy timeout from a hand-edited YAML that
+    # bypassed the schema clamp. Use the warning to surface drift; still
+    # respect the configured value so admin behaviour is observable.
+    if cfg.timeout_ms > _LG_TIMEOUT_WARN_MS and not _lg_timeout_warned:
+        log.warning(
+            "prompt_injection.llama_guard: timeout_ms=%d exceeds recommended "
+            "<%dms ceiling; PreToolUse <100ms SLA may be violated",
+            cfg.timeout_ms,
+            _LG_TIMEOUT_WARN_MS,
+        )
+        _lg_timeout_warned = True
+
     truncated = text[:_MAX_LG_INPUT_CHARS]
     payload = {
         "model": cfg.model,
@@ -245,9 +270,17 @@ def _llama_guard_scan(
         "options": {"temperature": 0.0, "num_predict": 16},
     }
 
+    # CR-04: reuse a module-level Client to avoid per-call TCP+TLS handshake
+    # (~5–30ms locally). Lazy-init keeps import cost on the PreToolUse hot
+    # path at zero. The Client uses the per-call timeout so the cap is
+    # enforced regardless of the lazy-init.
+    timeout_s = cfg.timeout_ms / 1000.0
+    if _lg_client is None:
+        _lg_client = httpx.Client(timeout=timeout_s)
     try:
-        with httpx.Client(timeout=cfg.timeout_ms / 1000.0) as client:
-            resp = client.post(f"{cfg.endpoint}/api/generate", json=payload)
+        resp = _lg_client.post(
+            f"{cfg.endpoint}/api/generate", json=payload, timeout=timeout_s
+        )
     except (httpx.HTTPError, httpx.TimeoutException):
         return None
 
@@ -301,6 +334,18 @@ def _llama_guard_scan(
         source="llama_guard",
         rule_id="prompt_injection.llama_guard",
     )
+
+
+def _reset_for_tests() -> None:
+    """Reset module-level state. Test-only — never call from agent code."""
+    global _lg_client, _lg_timeout_warned
+    if _lg_client is not None:
+        try:
+            _lg_client.close()
+        except Exception:
+            pass
+    _lg_client = None
+    _lg_timeout_warned = False
 
 
 __all__ = ["ScanResult", "Source", "scan"]

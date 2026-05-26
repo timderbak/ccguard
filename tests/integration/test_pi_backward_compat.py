@@ -62,7 +62,7 @@ def _v02_policy_yaml_with_pi() -> str:
                 "enabled": False,
                 "endpoint": "http://localhost:11434",
                 "model": "llama-guard3:8b",
-                "timeout_ms": 500,
+                "timeout_ms": 150,
             },
         },
     }

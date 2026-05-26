@@ -494,7 +494,8 @@ def _policy_with_pi_form_overrides(session: Session, form: dict[str, str]):
     raw_timeout_str = form.get("prompt_injection.llama_guard.timeout_ms", "")
     try:
         raw_timeout = int(raw_timeout_str)
-        if not (50 <= raw_timeout <= 10000):
+        # CR-04: upper bound clamped 10000→200ms to match LlamaGuardConfig schema.
+        if not (50 <= raw_timeout <= 200):
             raw_timeout = policy_obj.prompt_injection.llama_guard.timeout_ms
     except (ValueError, TypeError):
         raw_timeout = policy_obj.prompt_injection.llama_guard.timeout_ms

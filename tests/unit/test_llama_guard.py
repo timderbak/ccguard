@@ -31,6 +31,16 @@ from ccguard.schemas.policy import LlamaGuardConfig, PromptInjectionConfig
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
+@pytest.fixture(autouse=True)
+def _reset_engine_state() -> object:
+    """CR-04: engine now caches a module-level httpx.Client. Reset between
+    tests so each test sees a fresh client built via the monkeypatched
+    httpx.Client factory."""
+    engine._reset_for_tests()
+    yield
+    engine._reset_for_tests()
+
+
 def _patch_httpx_client(monkeypatch: pytest.MonkeyPatch, handler: Handler) -> None:
     """Replace ``httpx.Client`` inside the engine module with one that uses
     a MockTransport while preserving the original timeout argument."""
@@ -51,7 +61,7 @@ def lg_cfg() -> LlamaGuardConfig:
         enabled=True,
         endpoint="http://localhost:11434",
         model="llama-guard3:8b",
-        timeout_ms=500,
+        timeout_ms=150,
     )
 
 
