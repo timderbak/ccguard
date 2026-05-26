@@ -28,6 +28,12 @@ import anthropic
 MODEL: Final[str] = "claude-haiku-4-5-20251001"
 MAX_TOKENS: Final[int] = 512
 
+# WR-03: per-request HTTP timeout for Anthropic SDK calls. Without this, the
+# SDK default (10 minutes) lets a hung API call hold ScanService._lock for
+# the same duration, freezing the scanner subsystem. Mirror the agent-side
+# DEFAULT_TIMEOUT_SEC=30.0 from inventory_scan.py.
+LLM_REQUEST_TIMEOUT_SEC: Final[float] = 30.0
+
 # Haiku 4.5 pricing — D-06.
 INPUT_CENTS_PER_MTOK: Final[int] = 100  # $1 / MTok input
 OUTPUT_CENTS_PER_MTOK: Final[int] = 500  # $5 / MTok output
@@ -201,7 +207,11 @@ class LLMClient:
     """Single-purpose async wrapper around `anthropic.AsyncAnthropic`."""
 
     def __init__(self, api_key: str) -> None:
-        self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        # WR-03: cap per-request HTTP timeout so a hung Anthropic call cannot
+        # hold ScanService._lock for the SDK default (10 minutes).
+        self._client = anthropic.AsyncAnthropic(
+            api_key=api_key, timeout=LLM_REQUEST_TIMEOUT_SEC
+        )
 
     async def scan_content(
         self,
