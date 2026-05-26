@@ -14,6 +14,30 @@ from ccguard.schemas.finding import Severity
 # kebab-case: lowercase letters/digits, dash-separated, no leading/trailing/double dash.
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
+# Safe single-segment identifier for filesystem path construction
+# (CR-01, Phase 4 review): alphanumeric + underscore + dot + hyphen, max 64
+# chars, must start with an alphanumeric. Used for RequiredSkill.name and
+# RequiredAgent.name which are interpolated into paths under ~/.claude/.
+# Bans path separators, leading dots (no "."/".."), absolute paths.
+_SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$")
+
+
+def _validate_safe_name(v: str) -> str:
+    """Reject any value that could escape a single path segment.
+
+    Defense for CR-01 (Phase 4 review): RequiredSkill.name / RequiredAgent.name
+    are interpolated into ``~/.claude/skills/<name>/SKILL.md`` and
+    ``~/.claude/agents/<name>.md`` on the agent. A value like ``"../etc"`` or
+    ``"/abs/path"`` would escape the sandbox. Enforce schema-level so both
+    server publish and agent re-validate (see WR-03) reject it.
+    """
+    if v in {".", ".."} or "/" in v or "\\" in v or not _SAFE_NAME_RE.match(v):
+        raise ValueError(
+            f"name must be a safe single-segment identifier "
+            f"(^[a-zA-Z0-9][a-zA-Z0-9_.-]{{0,63}}$, no '/', no '..'): {v!r}"
+        )
+    return v
+
 
 class RuleBase(SchemaBase):
     severity: Severity = "warn"
@@ -120,12 +144,22 @@ class RequiredSkill(SchemaBase):
     frontmatter_type: str = "skill"
     content: str
 
+    @field_validator("name")
+    @classmethod
+    def _safe_name(cls, v: str) -> str:
+        return _validate_safe_name(v)
+
 
 class RequiredAgent(SchemaBase):
     """Mandatory subagent (`~/.claude/agents/<name>.md`) — PUSH-03."""
 
     name: str
     content: str
+
+    @field_validator("name")
+    @classmethod
+    def _safe_name(cls, v: str) -> str:
+        return _validate_safe_name(v)
 
 
 class ManagedClaudeMdBlock(SchemaBase):

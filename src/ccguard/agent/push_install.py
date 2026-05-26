@@ -29,6 +29,23 @@ from ccguard.agent.atomic_io import atomic_write_bytes
 __all__ = ["apply"]
 
 
+def _assert_inside(path: Path, base: Path) -> None:
+    """Defense-in-depth (CR-01): reject any computed target outside `base`.
+
+    The Pydantic ``_SAFE_NAME_RE`` validator on ``RequiredSkill.name`` /
+    ``RequiredAgent.name`` is the primary defense; this assertion is the
+    belt-and-braces check so that a future schema regression cannot escape
+    the ``~/.claude`` sandbox. Uses ``resolve(strict=False)`` so the file
+    need not exist yet.
+    """
+    resolved = path.resolve(strict=False)
+    base_resolved = base.resolve(strict=False)
+    if not resolved.is_relative_to(base_resolved):
+        raise ValueError(
+            f"refusing to write outside sandbox: {resolved} not under {base_resolved}"
+        )
+
+
 # ---------------------------------------------------------------------------
 # CLAUDE.md marker merge
 # ---------------------------------------------------------------------------
@@ -238,15 +255,19 @@ def apply(
     current_file: Path | None = None
     applied = 0
     try:
+        claude_root = home / ".claude"
+
         # 1. Skills
         for s in policy.get("required_skills") or []:
             current_file = home / ".claude" / "skills" / s["name"] / "SKILL.md"
+            _assert_inside(current_file, claude_root)
             atomic_write_bytes(current_file, s["content"].encode("utf-8"))
             applied += 1
 
         # 2. Agents
         for a in policy.get("required_agents") or []:
             current_file = home / ".claude" / "agents" / f"{a['name']}.md"
+            _assert_inside(current_file, claude_root)
             atomic_write_bytes(current_file, a["content"].encode("utf-8"))
             applied += 1
 
