@@ -7,9 +7,9 @@ outcome (success or rollback) to POST /api/v1/audit with
 into the CLI caller — every failure path (apply exception, audit POST
 network error, server 5xx) is swallowed and logged at WARNING.
 
-Empty no-op applies (``applied_count == 0`` and ``result == "success"``) do
-NOT POST to /api/v1/audit, to avoid logging noise from agents talking to a
-v0.1 server that never publishes mandatory sections.
+Per Phase 4 review WR-06: empty no-op applies (``applied_count == 0`` and
+``result == "success"``) ARE posted so admins can distinguish "agent ran
+with no work" from "agent never reported". Server-side UI collapses noise.
 """
 
 from __future__ import annotations
@@ -261,9 +261,12 @@ def _apply_and_report(
     CLI caller. Any exception from ``push_install.apply`` or the audit POST
     is caught and logged at WARNING.
 
-    Empty no-op apply (success with applied_count==0) is intentionally NOT
-    posted to /api/v1/audit to avoid noise from agents talking to v0.1
-    servers that publish no mandatory sections.
+    WR-06: empty no-op apply (success with applied_count==0) IS now posted
+    to /api/v1/audit. Previously it was skipped to avoid noise, but that
+    made admins unable to distinguish three operationally distinct cases:
+    "agent ran with no work", "agent never received the policy", and
+    "agent crashed". For SecOps visibility we always report; the server
+    UI can collapse no-ops if needed.
     """
     # WR-03: re-validate the cached policy dict through Policy before apply.
     # The validation done at sync time proves the *server response* was valid;
@@ -295,13 +298,8 @@ def _apply_and_report(
         )
         return
 
-    result = apply_result.get("result")
-    applied_count = int(apply_result.get("applied_count") or 0)
-
-    # Skip no-op (success with nothing applied). Always report rollbacks.
-    if result == "success" and applied_count == 0:
-        return
-
+    # WR-06: always report — including success/applied_count==0 — so admins
+    # can distinguish "agent ran, nothing to apply" from "agent silent".
     _post_policy_apply_event(
         server_url=server_url,
         token=token,

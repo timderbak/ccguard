@@ -79,12 +79,23 @@ def _policy_with_skill(revision: int = 7) -> dict:
                 "env": {},
             }
         ],
-        "meta": {"revision": revision},
+        # WR-03 (Phase 4 review): policy is re-validated through
+        # Policy.model_validate before apply — meta.updated_at is required.
+        "meta": {"revision": revision, "updated_at": "2026-05-26T00:00:00Z"},
     }
 
 
 def _empty_policy() -> dict:
-    return {"meta": {"revision": 1}}
+    # WR-03 + WR-06 (Phase 4 review): policy is re-validated through
+    # `Policy.model_validate` before apply, so the dict must satisfy the
+    # full schema (meta.updated_at is required). The body is intentionally
+    # empty of all required_* sections so apply is a true no-op.
+    return {
+        "meta": {
+            "revision": 1,
+            "updated_at": "2026-05-26T00:00:00Z",
+        }
+    }
 
 
 # ---- tests ------------------------------------------------------------------
@@ -196,27 +207,16 @@ def test_apply_and_report_audit_post_500_does_not_raise(
     assert (home / ".claude" / "skills" / "secure-coding" / "SKILL.md").exists()
 
 
-def test_apply_and_report_empty_policy_does_not_post_audit(
+def test_apply_and_report_empty_policy_posts_noop_audit(
     monkeypatch: pytest.MonkeyPatch,
     client: TestClient,
     tmp_path: Path,
 ) -> None:
-    """No-op apply (no required_* sections) must NOT POST to /api/v1/audit."""
-    posted: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        posted.append(request.url.path)
-        return httpx.Response(status_code=200, content=b"{}", request=request)
-
-    transport = httpx.MockTransport(handler)
-    real_init = httpx.Client.__init__
-
-    def patched_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
-        kwargs.pop("transport", None)
-        kwargs["transport"] = transport
-        real_init(self, *args, **kwargs)
-
-    monkeypatch.setattr(httpx.Client, "__init__", patched_init)
+    """WR-06: no-op apply (no required_* sections) MUST POST a
+    success/applied_count=0 audit event so admins can distinguish an
+    agent that ran with no work from an agent that never reported.
+    """
+    _patch_httpx_to_testclient(monkeypatch, client)
 
     home = tmp_path / "home"
     home.mkdir()
@@ -229,13 +229,14 @@ def test_apply_and_report_empty_policy_does_not_post_audit(
         home=home,
     )
 
-    assert posted == [], f"expected no POST for empty no-op, got: {posted}"
-
-    # Cross-check: no row was persisted server-side either.
+    # Server-side: exactly one PolicyApplyEvent with applied_count==0.
     engine = client.app.state.engine  # type: ignore[attr-defined]
     with Session(engine) as s:
         rows = list(s.exec(select(PolicyApplyEvent)))
-        assert len(rows) == 0
+        assert len(rows) == 1
+        assert rows[0].result == "success"
+        assert rows[0].applied_count == 0
+        assert rows[0].machine_id == "m-empty"
 
 
 def test_apply_and_report_is_idempotent(
