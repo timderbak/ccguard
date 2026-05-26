@@ -60,7 +60,7 @@ from ccguard.server.db.models import (
     ScanResult,
 )
 from ccguard.server.services.llm_client import ScanOutcome
-from ccguard.server.services.settings_service import get_setting
+from ccguard.server.services.settings_service import get_setting, parse_budget
 
 # --- Constants -------------------------------------------------------------
 
@@ -202,11 +202,7 @@ class ScanService:
         # pass the gate. Single-process only — see module docstring.
         async with self._lock:
             with Session(self._engine) as s:
-                budget_str = get_setting(s, "daily_call_budget") or "0"
-                try:
-                    budget = int(budget_str)
-                except ValueError:
-                    budget = 0
+                budget = parse_budget(get_setting(s, "daily_call_budget"))
                 day_start = _utc_day_start(now)
                 used = s.exec(
                     select(func.count())  # type: ignore[arg-type]
@@ -323,11 +319,7 @@ class ScanService:
         with Session(self._engine) as s:
             rows = list(s.exec(select(LLMCallLog).where(LLMCallLog.ts >= day_start)))
             enabled = (get_setting(s, "llm_scanner_enabled") or "false").lower() == "true"
-            budget_str = get_setting(s, "daily_call_budget") or "0"
-        try:
-            budget = int(budget_str)
-        except ValueError:
-            budget = 0
+            budget = parse_budget(get_setting(s, "daily_call_budget"))
         return {
             "used": len(rows),
             "budget": budget,

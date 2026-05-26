@@ -502,12 +502,11 @@ def _settings_context(request: Request, session: Session, user: str) -> dict:
     from ccguard.server.services.settings_service import get_setting
     from ccguard.server.db.models import ScanResult
 
+    from ccguard.server.services.settings_service import parse_budget
+
     cfg = _config(request)
     enabled = (get_setting(session, "llm_scanner_enabled") or "false").lower() == "true"
-    try:
-        budget = int(get_setting(session, "daily_call_budget") or "0")
-    except ValueError:
-        budget = 0
+    budget = parse_budget(get_setting(session, "daily_call_budget"))
     scans = list(
         session.exec(
             select(ScanResult).order_by(ScanResult.scanned_at.desc()).limit(10)  # type: ignore[attr-defined]
@@ -544,16 +543,13 @@ def _llm_usage_summary(session: Session) -> dict:
     """
     from datetime import UTC, datetime
     from ccguard.server.db.models import LLMCallLog
-    from ccguard.server.services.settings_service import get_setting
+    from ccguard.server.services.settings_service import get_setting, parse_budget
 
     now = datetime.now(UTC)
     day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     rows = list(session.exec(select(LLMCallLog).where(LLMCallLog.ts >= day_start)))
     enabled = (get_setting(session, "llm_scanner_enabled") or "false").lower() == "true"
-    try:
-        budget = int(get_setting(session, "daily_call_budget") or "0")
-    except ValueError:
-        budget = 0
+    budget = parse_budget(get_setting(session, "daily_call_budget"))
     return {
         "used": len(rows),
         "budget": budget,
