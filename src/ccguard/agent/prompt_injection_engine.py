@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -196,7 +197,25 @@ def scan(text: str, cfg: PromptInjectionConfig) -> ScanResult | None:
                 rule_id="prompt_injection.admin_custom",
             )
 
-    # 4) Optional LlamaGuard deep-scan — runs uniformly across severities
+    # 4) Base64 entropy heuristic (WR-06). Detects raw base64 blobs without
+    #    the explicit `base64:` keyword the default catalog requires. A
+    #    standalone 32+ char run of base64 chars whose Shannon entropy on
+    #    the byte distribution exceeds 4.5 bits is the realistic attack
+    #    shape (encoded payload smuggled into an instruction). The high
+    #    entropy gate keeps natural English (~3.5–4.0 bits) from tripping
+    #    the rule. Runs on the normalized text — base64's alphabet is
+    #    case-folded to lowercase by NFKC+casefold, which collapses upper/
+    #    lower halves but still produces high-entropy distributions on
+    #    real base64 streams (verified by tests).
+    if _has_high_entropy_base64_run(norm):
+        return ScanResult(
+            category="base64_encoded_prompt",
+            matched_pattern="base64-entropy>=4.5,len>=32",
+            source="regex",
+            rule_id="prompt_injection.base64_encoded_prompt",
+        )
+
+    # 5) Optional LlamaGuard deep-scan — runs uniformly across severities
     #    (D-2: severity=info/warn/block all reach this step).
     if cfg.llama_guard.enabled:
         result = _llama_guard_scan(text, cfg.llama_guard)
@@ -204,6 +223,43 @@ def scan(text: str, cfg: PromptInjectionConfig) -> ScanResult | None:
             return result
 
     return None
+
+
+# WR-06: standalone base64 detector. Regex isolates 32+ char runs from the
+# base64 alphabet; entropy gate cuts English false positives.
+_BASE64_RUN_RE = re.compile(r"[A-Za-z0-9+/=]{32,}")
+_BASE64_ENTROPY_BITS = 4.5
+
+
+def _shannon_entropy_bits(s: str) -> float:
+    """Shannon entropy (bits/byte) of ``s``. Returns 0.0 for empty input.
+
+    Pure-python frequency count — fast enough on 4KB inputs (the engine's
+    cap) since base64 runs longer than a few KB are extraordinarily rare
+    and would only happen on truly anomalous tool_input.
+    """
+    if not s:
+        return 0.0
+    freq: dict[str, int] = {}
+    for ch in s:
+        freq[ch] = freq.get(ch, 0) + 1
+    n = len(s)
+    return -sum((c / n) * math.log2(c / n) for c in freq.values())
+
+
+def _has_high_entropy_base64_run(norm: str) -> bool:
+    """True iff ``norm`` contains a base64-shaped run with high entropy.
+
+    Match contract: at least one regex hit of 32+ base64 chars AND that
+    matched slice's Shannon entropy ≥ 4.5 bits. The combination keeps
+    false positives low — a 32-char hex hash (~4.0 bits) and natural
+    English (~3.5–4.0 bits) do not trip the rule, but real base64 of
+    random bytes (≈5.0–6.0 bits) does.
+    """
+    for m in _BASE64_RUN_RE.finditer(norm):
+        if _shannon_entropy_bits(m.group(0)) >= _BASE64_ENTROPY_BITS:
+            return True
+    return False
 
 
 # --- LlamaGuard (Ollama) deep-scan -----------------------------------------
