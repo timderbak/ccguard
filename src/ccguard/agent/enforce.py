@@ -57,9 +57,16 @@ def _fingerprint(tool_input: dict) -> str:
 
 
 @lru_cache(maxsize=4)
-def _load_policy(path: str) -> Policy | None:
-    """Загрузить policy из файла. lru_cache по path кэширует на время процесса
-    (для CLI-вызова это эффективно: процесс короткоживущий)."""
+def _load_policy_cached(path: str, mtime_ns: int) -> Policy | None:
+    """Underlying cached loader keyed on (path, mtime_ns).
+
+    WR-08: keying on ``mtime_ns`` is what makes the cache safe across
+    process re-use — when Claude Code keeps the hook process warm and
+    the policy file is rewritten on disk by a new publish, the next
+    call sees a different mtime and re-parses. ``mtime_ns=0`` carries
+    the "file does not exist" case so the cache still helps the
+    no-policy branch.
+    """
     p = Path(path)
     if not p.exists():
         return None
@@ -68,6 +75,23 @@ def _load_policy(path: str) -> Policy | None:
         return Policy.model_validate(data)
     except Exception:
         return None
+
+
+def _load_policy(path: str) -> Policy | None:
+    """Загрузить policy из файла.
+
+    WR-08: lru_cache по (path, mtime_ns) — кэш инвалидируется при
+    перезаписи файла, что важно если Claude Code держит hook-процесс
+    горячим между PreToolUse вызовами и админ опубликовал новую
+    политику. Без mtime в ключе кэш возвращал бы устаревшую политику до
+    конца жизни процесса.
+    """
+    p = Path(path)
+    try:
+        mtime_ns = p.stat().st_mtime_ns if p.exists() else 0
+    except OSError:
+        mtime_ns = 0
+    return _load_policy_cached(path, mtime_ns)
 
 
 def _compile_regexes(patterns: list[str]) -> list[re.Pattern[str]]:
