@@ -5,6 +5,7 @@
 <form method="GET" action="/findings" class="bg-white rounded-lg shadow p-4 mb-4 flex gap-4">
     <select name="severity" class="rounded border border-slate-300 text-sm">
         <option value="">все уровни</option>
+        <option value="critical" {% if filters.severity == "critical" %}selected{% endif %}>critical</option>
         <option value="block" {% if filters.severity == "block" %}selected{% endif %}>block</option>
         <option value="warn"  {% if filters.severity == "warn"  %}selected{% endif %}>warn</option>
         <option value="info"  {% if filters.severity == "info"  %}selected{% endif %}>info</option>
