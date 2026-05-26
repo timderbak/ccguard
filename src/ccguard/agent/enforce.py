@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import hashlib
 import json
+import logging
 import re
 import sys
 from datetime import UTC, datetime
@@ -15,12 +16,38 @@ from urllib.parse import urlparse
 import yaml
 
 from ccguard.agent.audit import make_audit_logger, write_audit
+from ccguard.agent.findings_hook.buffer import emit_finding
+from ccguard.agent.prompt_injection_engine import ScanResult
+from ccguard.agent.prompt_injection_engine import scan as pi_scan
 from ccguard.schemas import (
     AuditEntry,
     EnforceDecision,
     EnforceHookInput,
     Policy,
 )
+
+log = logging.getLogger(__name__)
+
+# Phase 5 / 05-03: fields scanned by prompt_injection step. Order matters —
+# _extract_pi_payload concatenates in this order so callers see deterministic
+# matched_pattern positions when LlamaGuard / regex reports offsets.
+_PI_PAYLOAD_FIELDS = ("command", "prompt", "instructions", "description", "content")
+
+
+def _extract_pi_payload(tool_input: dict) -> str:
+    """Concatenate the known string fields of ``tool_input`` for PI scanning.
+
+    Non-string values are silently skipped (defensive: Claude Code tool schemas
+    occasionally pass int/None for some fields, and the PI engine takes ``str``).
+    Returns ``""`` when no recognized fields exist — the engine short-circuits
+    on empty text.
+    """
+    parts: list[str] = []
+    for key in _PI_PAYLOAD_FIELDS:
+        v = tool_input.get(key)
+        if isinstance(v, str):
+            parts.append(v)
+    return "\n".join(parts)
 
 
 def _fingerprint(tool_input: dict) -> str:
@@ -139,6 +166,58 @@ def decide(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
     """Маршрутизация по tool_name на конкретный матчер. Только PreToolUse релевантно."""
     if payload.hook_event_name != "PreToolUse":
         return EnforceDecision(permission="allow", reason="not PreToolUse")
+
+    # --- Phase 5 / 05-03: prompt-injection step ---
+    # Runs BEFORE existing _decide_* dispatch so a block-severity injection match
+    # short-circuits with deny. warn/info severity matches emit a finding and
+    # fall through to existing rules (so v0.1 enforcement still applies).
+    pi_cfg = policy.prompt_injection
+    if pi_cfg.enabled:
+        text = _extract_pi_payload(payload.tool_input)
+        pi_result: ScanResult | None
+        try:
+            pi_result = pi_scan(text, pi_cfg)
+        except Exception as exc:  # engine crash → fail-mode driven
+            if policy.block_fail_mode == "closed":
+                return EnforceDecision(
+                    permission="deny",
+                    reason=f"prompt-injection engine error (fail-closed): {exc!r}",
+                    rule_id="prompt_injection.engine_error",
+                )
+            # fail-open: log + continue into existing pipeline
+            log.warning("prompt_injection engine crashed (fail-open): %r", exc)
+            pi_result = None
+
+        if pi_result is not None:
+            # model_missing marker (D-3): NOT a real detection, never blocks.
+            # Emitted at info severity regardless of policy.severity.
+            if pi_result.rule_id == "prompt_injection.llama_guard.model_missing":
+                emit_finding(
+                    rule_id=pi_result.rule_id,
+                    severity="info",
+                    title="LlamaGuard model unavailable on Ollama",
+                    source=pi_result.source,
+                    matched_pattern=pi_result.matched_pattern,
+                    tool_name=payload.tool_name,
+                )
+                # fall through to existing pipeline
+            else:
+                emit_finding(
+                    rule_id=pi_result.rule_id,
+                    severity=pi_cfg.severity,
+                    title=f"Prompt-injection match ({pi_result.category})",
+                    source=pi_result.source,
+                    matched_pattern=pi_result.matched_pattern,
+                    tool_name=payload.tool_name,
+                )
+                if pi_cfg.severity == "block":
+                    return EnforceDecision(
+                        permission="deny",
+                        reason=f"prompt-injection: {pi_result.category}",
+                        rule_id=pi_result.rule_id,
+                    )
+                # warn / info → fall through to existing pipeline
+    # --- end Phase 5 step ---
 
     tool = payload.tool_name
     ti = payload.tool_input
