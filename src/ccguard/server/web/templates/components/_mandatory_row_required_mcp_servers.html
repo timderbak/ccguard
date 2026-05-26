@@ -14,9 +14,10 @@
     </label>
   </div>
   <label class="block">
-    <span class="text-xs text-slate-500">args (по одному на строку)</span>
-    <textarea name="required_mcp_servers[{{ i }}].args" rows="3"
-              class="mt-1 block w-full rounded border-slate-300 font-mono">{{ item.args_text | default(item.args | default([]) | join('\n')) }}</textarea>
+    <span class="text-xs text-slate-500">args (через запятую)</span>
+    <input type="text" name="required_mcp_servers[{{ i }}].args"
+           value="{{ item.args_text | default(item.args | default([]) | join(', ')) }}"
+           class="mt-1 block w-full rounded border-slate-300 font-mono" />
   </label>
   <label class="block">
     <span class="text-xs text-slate-500">env (JSON object, например {"KEY":"value"})</span>
