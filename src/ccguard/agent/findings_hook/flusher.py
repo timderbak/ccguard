@@ -150,35 +150,6 @@ def _bump_retry(
     )
 
 
-def _post_batch(
-    url: str,
-    headers: dict,
-    rows: list[dict],
-) -> tuple[bool, int | None]:
-    """POST a batch; return (success, status_code).
-
-    Retries with exp backoff (1, 2) BEFORE each retry. A 2xx response returns
-    (True, status); any non-2xx or exception eventually returns (False, last
-    seen status or None). Per-call function so the surrounding flush loop
-    stays readable.
-    """
-    body = json.dumps(rows).encode("utf-8")
-    last_status: int | None = None
-    for attempt in range(_MAX_ATTEMPTS):
-        if attempt > 0:
-            time.sleep(_BACKOFF_SECONDS[attempt - 1])
-        try:
-            with httpx.Client(timeout=_HTTP_TIMEOUT_S) as client:
-                resp = client.post(url, content=body, headers=headers)
-            last_status = resp.status_code
-            if 200 <= resp.status_code < 300:
-                return True, resp.status_code
-        except Exception:
-            last_status = None
-            continue
-    return False, last_status
-
-
 def flush() -> None:
     """Drain undelivered findings → POST batches → mark delivered.
 
