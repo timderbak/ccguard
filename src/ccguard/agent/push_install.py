@@ -284,9 +284,14 @@ def apply(
             else:
                 existing_json = {}
             merged = _merge_mcp_servers(existing_json, policy["required_mcp_servers"])
+            # CR-02: ~/.claude.json holds admin-supplied MCP `env` dicts that
+            # are documented as the channel for API keys / tokens. On multi-
+            # user dev hosts (CCGuard's target environment) world-readable
+            # mode would leak those secrets to every local UID.
             atomic_write_bytes(
                 current_file,
                 (json.dumps(merged, indent=2) + "\n").encode("utf-8"),
+                mode=0o600,
             )
             applied += 1
 

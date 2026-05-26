@@ -17,7 +17,7 @@ __all__ = ["atomic_write_bytes"]
 _TMP_PREFIX = ".ccguard-tmp-"
 
 
-def atomic_write_bytes(path: Path, data: bytes) -> None:
+def atomic_write_bytes(path: Path, data: bytes, *, mode: int = 0o644) -> None:
     """Atomically write `data` to `path`.
 
     - Creates `path.parent` if missing.
@@ -25,7 +25,12 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
       `os.replace` is atomic).
     - fsync + close + os.replace.
     - On any exception the temp file is unlinked silently.
-    - Final file permissions default to 0o644 (umask-respecting).
+    - Final file permissions are set EXACTLY to ``mode`` via ``os.chmod`` —
+      this is NOT umask-respecting. Default is ``0o644`` (preserves prior
+      behavior for caller sites that produce non-sensitive content). Callers
+      writing files that may contain secrets (e.g. ``~/.claude.json`` whose
+      ``mcpServers[*].env`` carries admin-supplied API keys) MUST pass
+      ``mode=0o600`` — see CR-02 (Phase 4 review).
 
     POSIX-only by project constraint — no Windows fallback path.
     """
@@ -46,8 +51,9 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
             os.fsync(tmp.fileno())
         finally:
             tmp.close()
-        # Default tempfile mode is 0o600; normalize to umask-respecting 0o644.
-        os.chmod(tmp_path, 0o644)
+        # Set mode EXACTLY (not umask-respecting). Default 0o644; secrets-
+        # bearing files MUST pass mode=0o600 from the call site.
+        os.chmod(tmp_path, mode)
         os.replace(tmp_path, path)
     except BaseException:
         try:
