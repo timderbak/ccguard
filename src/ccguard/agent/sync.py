@@ -23,6 +23,7 @@ from typing import Any
 
 import httpx
 import yaml
+from pydantic import ValidationError
 
 from ccguard.agent.audit import read_audit_entries
 from ccguard.agent.config import AgentConfig
@@ -264,6 +265,27 @@ def _apply_and_report(
     posted to /api/v1/audit to avoid noise from agents talking to v0.1
     servers that publish no mandatory sections.
     """
+    # WR-03: re-validate the cached policy dict through Policy before apply.
+    # The validation done at sync time proves the *server response* was valid;
+    # it does NOT prove that the on-disk cache is still valid at apply time.
+    # Local tamper of ~/.config/ccguard/policy.yaml (same UID, common on dev
+    # workstations) is the threat. Combined with CR-01's path-traversal
+    # validator on RequiredSkill/RequiredAgent name, this forecloses arbitrary
+    # writes via cache tamper.
+    try:
+        Policy.model_validate(policy)
+    except ValidationError as exc:
+        _log.warning(
+            "policy cache failed re-validation; skipping apply: %s", exc
+        )
+        return
+    except Exception as exc:  # noqa: BLE001 — defense in depth
+        _log.warning(
+            "policy cache re-validation raised unexpectedly: %s: %s",
+            type(exc).__name__, exc,
+        )
+        return
+
     try:
         apply_result = push_install_apply(policy, home=home)
     except Exception as exc:  # noqa: BLE001 — defense in depth
