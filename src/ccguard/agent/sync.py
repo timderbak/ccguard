@@ -239,9 +239,14 @@ def _post_policy_apply_event(
                 },
             )
             if r.status_code >= 400:
+                # WR-09: do NOT log the response body. A misconfigured
+                # reverse proxy that echoes request headers could leak the
+                # X-CCGuard-Token into agent logs. Status code + fixed
+                # category is enough for operations.
                 _log.warning(
-                    "policy_apply audit POST returned %s: %s",
-                    r.status_code, r.text[:200],
+                    "policy_apply audit POST returned %s (category=%s)",
+                    r.status_code,
+                    "client_error" if r.status_code < 500 else "server_error",
                 )
     except Exception as exc:  # noqa: BLE001 — best-effort, never raise
         _log.warning("policy_apply audit POST failed: %s: %s", type(exc).__name__, exc)
