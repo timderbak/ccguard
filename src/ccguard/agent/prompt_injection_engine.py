@@ -33,6 +33,8 @@ Latency budget (perf test enforces 30ms on 4KB × 30 admin patterns):
 
 from __future__ import annotations
 
+import hashlib
+import logging
 import re
 import unicodedata
 from dataclasses import dataclass
@@ -42,7 +44,13 @@ from typing import Literal
 import httpx
 
 from ccguard.agent.prompt_injection_patterns import get_default_patterns
+from ccguard.agent.prompt_injection_safety import (
+    is_structurally_unsafe,
+    probe_redos_safe,
+)
 from ccguard.schemas.policy import LlamaGuardConfig, PromptInjectionConfig
+
+log = logging.getLogger(__name__)
 
 Source = Literal["regex", "llama_guard", "allowlist"]
 
@@ -78,18 +86,36 @@ def _normalize(s: str) -> str:
 
 @lru_cache(maxsize=4)
 def _compiled_admin(patterns_tuple: tuple[str, ...]) -> tuple[re.Pattern[str], ...]:
-    """Compile admin custom patterns; silently skip invalid regex.
+    """Compile admin custom patterns; silently skip invalid or ReDoS-unsafe regex.
 
-    Validation happens on the server at publish-time (plan 05-05). Here we
-    defensively skip ``re.error`` so a malformed pattern slipping through
-    cannot crash the PreToolUse hook (fail-open principle).
+    Validation happens on the server at publish-time (plan 05-05), but admin
+    patterns can also reach the agent via hand-edited YAML or pre-Phase-5
+    policies. CR-01 defense-in-depth: structurally reject nested-quantifier
+    shapes and run a 50ms adversarial probe on each compiled pattern. Slow
+    patterns are dropped with a warning log; the PreToolUse hook stays
+    inside its 100ms budget regardless of policy source.
     """
     out: list[re.Pattern[str]] = []
     for raw in patterns_tuple:
+        if is_structurally_unsafe(raw):
+            log.warning(
+                "prompt_injection: dropping structurally-unsafe admin pattern "
+                "(nested quantifier): hash=%s",
+                hashlib.sha256(raw.encode()).hexdigest()[:12],
+            )
+            continue
         try:
-            out.append(re.compile(raw, _ADMIN_FLAGS))
+            compiled = re.compile(raw, _ADMIN_FLAGS)
         except re.error:
             continue
+        if not probe_redos_safe(compiled):
+            log.warning(
+                "prompt_injection: dropping admin pattern that exceeded "
+                "ReDoS probe budget: hash=%s",
+                hashlib.sha256(raw.encode()).hexdigest()[:12],
+            )
+            continue
+        out.append(compiled)
     return tuple(out)
 
 
