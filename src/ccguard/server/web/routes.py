@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import yaml
@@ -266,6 +267,37 @@ def findings_page(
     )
 
 
+_TIMEFRAME_HOURS = {"1h": 1, "24h": 24, "7d": 24 * 7}
+
+
+def _policy_apply_events(
+    session: Session,
+    *,
+    machine_id_like: str | None,
+    timeframe: str,
+    limit: int = 200,
+) -> tuple[list, int]:
+    """Query PolicyApplyEvent for /audit?event_source=policy_apply.
+
+    Uses the ``ix_policy_apply_result_ts`` composite index implicitly via the
+    ``ORDER BY ts DESC`` clause (SQLite picks the index by ts). Filters mirror
+    the tool_use path: machine_id substring + timeframe window.
+    """
+    from ccguard.server.db.models import PolicyApplyEvent
+
+    hours = _TIMEFRAME_HOURS.get(timeframe, 24)
+    cutoff = datetime.now(UTC) - timedelta(hours=hours)
+    stmt = select(PolicyApplyEvent).where(PolicyApplyEvent.ts >= cutoff)  # type: ignore[arg-type]
+    if machine_id_like:
+        stmt = stmt.where(
+            PolicyApplyEvent.machine_id.like(f"%{machine_id_like}%")  # type: ignore[attr-defined]
+        )
+    stmt = stmt.order_by(PolicyApplyEvent.ts.desc())  # type: ignore[attr-defined]
+    rows = list(session.exec(stmt.limit(limit)))
+    total = len(rows)  # adequate for v0.2 admin UI; matches list_events shape
+    return rows, total
+
+
 @router.get("/audit", response_class=HTMLResponse)
 def audit_page(
     request: Request,
@@ -273,6 +305,7 @@ def audit_page(
     tool_name: str = "",
     decision: str = "",
     timeframe: str = "24h",
+    event_source: str = "",
     user: str = Depends(require_session),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
@@ -282,24 +315,39 @@ def audit_page(
         decision = ""
     if timeframe not in ("1h", "24h", "7d"):
         timeframe = "24h"
-    events, total = list_events(
-        session,
-        machine_id_like=machine_id or None,
-        tool_name=tool_name or None,
-        decision=decision or None,
-        timeframe=timeframe,  # type: ignore[arg-type]
-        limit=200,
-    )
-    # Timeline always renders the last 24 hours (UI-SPEC card heading
-    # "Активность за 24 часа") regardless of the user-selected timeframe.
-    buckets = timeline_buckets(
-        session,
-        hours=24,
-        machine_id_like=machine_id or None,
-        tool_name=tool_name or None,
-        decision=decision or None,
-    )
-    max_count = max((b["count"] for b in buckets), default=0)
+    # Whitelist event_source; anything other than "policy_apply" → default
+    # tool_use branch (preserves v0.1 byte-equality).
+    if event_source != "policy_apply":
+        event_source = ""
+
+    if event_source == "policy_apply":
+        events, total = _policy_apply_events(
+            session,
+            machine_id_like=machine_id or None,
+            timeframe=timeframe,
+            limit=200,
+        )
+        buckets: list = []
+        max_count = 0
+    else:
+        events, total = list_events(
+            session,
+            machine_id_like=machine_id or None,
+            tool_name=tool_name or None,
+            decision=decision or None,
+            timeframe=timeframe,  # type: ignore[arg-type]
+            limit=200,
+        )
+        # Timeline always renders the last 24 hours (UI-SPEC card heading
+        # "Активность за 24 часа") regardless of the user-selected timeframe.
+        buckets = timeline_buckets(
+            session,
+            hours=24,
+            machine_id_like=machine_id or None,
+            tool_name=tool_name or None,
+            decision=decision or None,
+        )
+        max_count = max((b["count"] for b in buckets), default=0)
     return templates.TemplateResponse(
         request,
         "audit_feed.html",
@@ -311,6 +359,8 @@ def audit_page(
                 "decision": decision,
                 "timeframe": timeframe,
             },
+            "event_source": event_source,
+            "result_column_visible": event_source == "policy_apply",
             "events": events,
             "total": total,
             "limit": 200,

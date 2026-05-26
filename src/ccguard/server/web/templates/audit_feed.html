@@ -31,18 +31,31 @@
         <option value="7d"  {% if filters.timeframe == "7d"  %}selected{% endif %}>за 7 дней</option>
     </select>
 
+    <label class="sr-only" for="f-event-source">Источник</label>
+    <select id="f-event-source" name="event_source"
+            class="rounded border border-slate-300 text-sm px-2 py-1 focus:ring-2 focus:ring-slate-400 focus:border-slate-500">
+        <option value="" {% if event_source != "policy_apply" %}selected{% endif %}>tool_use</option>
+        <option value="policy_apply" {% if event_source == "policy_apply" %}selected{% endif %}>События политики</option>
+    </select>
+
     <button class="bg-slate-900 text-white text-sm rounded px-4 py-2">Фильтр</button>
     <a href="/audit" class="text-sm text-slate-500 hover:underline self-center">Сбросить</a>
 </form>
 
+{% if event_source != "policy_apply" %}
 <div class="bg-white rounded-lg shadow p-4 mb-4"
      hx-get="/_partials/audit/timeline"
      hx-trigger="every 30s"
      hx-include="closest form">
     {% include "components/_audit_timeline.html" %}
 </div>
+{% endif %}
 
 <div class="bg-white rounded-lg shadow p-4">
-    {% include "components/_audit_events_table.html" %}
+    {% if event_source == "policy_apply" %}
+        {% include "components/_audit_policy_apply_table.html" %}
+    {% else %}
+        {% include "components/_audit_events_table.html" %}
+    {% endif %}
 </div>
 {% endblock %}

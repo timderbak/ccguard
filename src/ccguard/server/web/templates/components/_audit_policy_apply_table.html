@@ -1,0 +1,43 @@
+<table class="w-full text-sm">
+    <thead>
+        <tr class="text-sm text-slate-500 border-b text-left">
+            <th class="py-2">Когда</th>
+            <th>Машина</th>
+            <th>Источник</th>
+            <th>Подробности</th>
+            <th>Результат</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for e in events %}
+        <tr class="border-b last:border-0">
+            <td class="py-2 whitespace-nowrap text-slate-600">{{ e.ts.isoformat(timespec="seconds") }}</td>
+            <td>
+                <a href="/machines/{{ e.machine_id }}" class="hover:underline font-mono">{{ e.machine_id[:12] }}</a>
+            </td>
+            <td class="font-mono text-slate-500 py-2">policy_apply</td>
+            <td class="text-slate-700 truncate max-w-md">
+                {% if e.result == 'success' %}
+                <span class="font-mono text-xs text-slate-700">applied={{ e.applied_count }}, snapshot={{ (e.snapshot_id or '')[:8] }}</span>
+                {% else %}
+                <span class="font-mono text-xs text-slate-700"><span class="text-amber-600">reason=</span>{{ e.reason or '' }}, failed_file={{ e.failed_file or '' }}, snapshot={{ (e.snapshot_id or '')[:8] }}</span>
+                {% endif %}
+            </td>
+            <td class="text-center">
+                {% if e.result == 'success' %}
+                <span class="inline-block rounded-full px-2 py-0.5 text-xs font-semibold bg-emerald-600 text-white">success</span>
+                {% else %}
+                <span class="inline-block rounded-full px-2 py-0.5 text-xs font-semibold bg-red-600 text-white">rollback</span>
+                {% endif %}
+            </td>
+        </tr>
+    {% else %}
+        <tr><td colspan="5" class="py-6 text-center text-slate-400">Событий нет.</td></tr>
+    {% endfor %}
+    </tbody>
+    {% if total > limit %}
+    <tfoot>
+        <tr><td colspan="5" class="py-3 text-center text-slate-400 text-sm">Показано {{ events|length }} из {{ total }} событий за период. Сузьте фильтры если нужно больше.</td></tr>
+    </tfoot>
+    {% endif %}
+</table>
