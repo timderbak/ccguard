@@ -28,6 +28,8 @@
         {% include "components/_risk_badge.html" %}
         {% if rescan_notice == 'budget_exhausted' %}
           <span class="text-xs text-amber-600 ml-2">бюджет исчерпан</span>
+        {% elif rescan_notice == 'budget_zero' %}
+          <span class="text-xs text-amber-600 ml-2">бюджет равен 0; задайте лимит на /settings</span>
         {% elif rescan_notice == 'scanner_disabled' %}
           <span class="text-xs text-slate-500 ml-2">сканер выключен</span>
         {% endif %}

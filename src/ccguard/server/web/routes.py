@@ -669,6 +669,11 @@ def admin_scan_rescan(
     notice: str | None = None
     if not usage["enabled"]:
         notice = "scanner_disabled"
+    elif usage["budget"] == 0:
+        # WR-01: budget=0 with scanner enabled is a distinct admin-mistake
+        # state, not "exhausted today". Surface a different notice so the
+        # operator knows to raise the limit on /settings.
+        notice = "budget_zero"
     elif usage["used"] >= usage["budget"]:
         notice = "budget_exhausted"
 
