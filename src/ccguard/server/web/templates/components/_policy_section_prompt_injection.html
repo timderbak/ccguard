@@ -1,0 +1,87 @@
+<details open class="bg-white rounded-lg shadow p-4">
+  <summary class="cursor-pointer font-semibold">Prompt-Injection</summary>
+
+  {% if errors is defined and errors.prompt_injection %}
+    <p class="text-sm text-red-600 mb-3 mt-3">{{ errors.prompt_injection }}</p>
+  {% endif %}
+
+  <div class="mt-4 space-y-4 text-sm">
+
+    {# 1. Enabled toggle #}
+    <label class="flex items-center gap-2">
+      <input type="checkbox" name="prompt_injection.enabled" value="1"
+             {% if policy.prompt_injection.enabled %}checked{% endif %}
+             class="rounded border-slate-300 focus:ring-2 focus:ring-slate-500" />
+      Включить детекцию prompt-injection
+    </label>
+
+    {# 2. Severity dropdown #}
+    <label class="block">
+      <span class="text-xs text-slate-500">severity (действие при срабатывании)</span>
+      <select name="prompt_injection.severity"
+              class="mt-1 block w-48 rounded border-slate-300 px-2 py-1 text-sm
+                     focus:ring-2 focus:ring-slate-400 focus:border-slate-500">
+        <option value="info"  {% if policy.prompt_injection.severity == 'info'  %}selected{% endif %}>info — только в /findings</option>
+        <option value="warn"  {% if policy.prompt_injection.severity == 'warn'  %}selected{% endif %}>warn — разрешить, но залогировать</option>
+        <option value="block" {% if policy.prompt_injection.severity == 'block' %}selected{% endif %}>block — запретить вызов</option>
+      </select>
+    </label>
+
+    {# 3. Regex patterns #}
+    <label class="block">
+      <span class="text-xs text-slate-500">regex_patterns (по одному паттерну на строку, добавляются к встроенному набору)</span>
+      <textarea name="prompt_injection.regex_patterns"
+                class="mt-1 block w-full rounded border-slate-300 font-mono text-sm min-h-[120px]"
+                spellcheck="false"
+                placeholder="(?i)ignore previous instructions&#10;(?i)act as DAN">{{ policy.prompt_injection.regex_patterns | join('\n') }}</textarea>
+      <span class="text-xs text-slate-400 mt-1 block">
+        {% if not policy.prompt_injection.regex_patterns %}Пусто — используется встроенный набор паттернов.{% else %}Пользовательские паттерны добавляются к встроенному набору.{% endif %}
+      </span>
+    </label>
+
+    {# 4. Allowlist patterns #}
+    <label class="block">
+      <span class="text-xs text-slate-500">allowlist_patterns (по одному на строку; матч → finding не создаётся)</span>
+      <textarea name="prompt_injection.allowlist_patterns"
+                class="mt-1 block w-full rounded border-slate-300 font-mono text-sm min-h-[120px]"
+                spellcheck="false">{{ policy.prompt_injection.allowlist_patterns | join('\n') }}</textarea>
+      <span class="text-xs text-slate-400 mt-1 block">
+        {% if not policy.prompt_injection.allowlist_patterns %}Пусто — allowlist отключён.{% else %}Проверяется до regex-детекции.{% endif %}
+      </span>
+    </label>
+
+    {# 5. LlamaGuard sub-block #}
+    <fieldset class="border border-slate-200 rounded p-3 space-y-2">
+      <legend class="text-sm font-semibold text-slate-700 px-1">LlamaGuard (опционально)</legend>
+
+      <label class="flex items-center gap-2">
+        <input type="checkbox" name="prompt_injection.llama_guard.enabled" value="1"
+               {% if policy.prompt_injection.llama_guard.enabled %}checked{% endif %}
+               class="rounded border-slate-300 focus:ring-2 focus:ring-slate-500" />
+        Включить LlamaGuard (deep-scan через локальный Ollama)
+      </label>
+
+      <label class="block">
+        <span class="text-xs text-slate-500">endpoint (URL Ollama API)</span>
+        <input type="text" name="prompt_injection.llama_guard.endpoint"
+               value="{{ policy.prompt_injection.llama_guard.endpoint | default('http://localhost:11434') }}"
+               class="mt-1 block w-full rounded border-slate-300 font-mono text-sm
+                      focus:ring-2 focus:ring-slate-400 focus:border-slate-500" />
+      </label>
+
+      <label class="block">
+        <span class="text-xs text-slate-500">timeout_ms (50–10000; при таймауте — fail-open)</span>
+        <input type="number" name="prompt_injection.llama_guard.timeout_ms"
+               value="{{ policy.prompt_injection.llama_guard.timeout_ms | default(500) }}"
+               min="50" max="10000" step="50"
+               class="mt-1 block w-32 rounded border-slate-300 font-mono text-sm
+                      focus:ring-2 focus:ring-slate-400 focus:border-slate-500" />
+      </label>
+
+      <p class="text-xs text-slate-400">
+        Опционально — deep-scan через локальный Ollama. По умолчанию выключен. При недоступности — fail-open, tool-call разрешается.
+      </p>
+    </fieldset>
+
+  </div>
+</details>
