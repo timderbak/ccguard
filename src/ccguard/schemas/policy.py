@@ -85,13 +85,28 @@ class RequiredMCPServer(SchemaBase):
     """Mandatory MCP-сервер для установки агентом (Phase 4 / PUSH-01).
 
     `args` / `env` — единый JSON textarea на UI (D-6), хранятся плоско.
-    Метка `_managed_by: ccguard` будет добавлена слоем apply в plan 03 (D-7).
+    Метка `_managed_by: "ccguard"` инжектится сервером при сохранении draft из
+    /policy/mandatory (Phase 4 / 04-02, D-7). Поле опциональное в схеме, чтобы
+    v0.1-агенты, не знающие про эту метку, продолжали валидировать политику —
+    но при `model_dump(mode="json")` оно сериализуется и попадает в ответ
+    /api/v1/policy, где агент plan 03 использует его в merge-логике.
     """
 
     name: str
     command: str
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    # D-7: maintained by ccguard server; admins never set this in the UI.
+    managed_by: str | None = Field(default=None, alias="_managed_by")
+
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+        frozen=False,
+        populate_by_name=True,
+        # Serialize using the alias so JSON keeps `_managed_by` exactly.
+        serialize_by_alias=True,
+    )
 
 
 class RequiredSkill(SchemaBase):

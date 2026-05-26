@@ -360,6 +360,41 @@ def audit_timeline_partial(
     )
 
 
+_MANDATORY_SECTION_TEMPLATES = {
+    "required_mcp_servers": "components/_mandatory_row_required_mcp_servers.html",
+    "required_skills": "components/_mandatory_row_required_skills.html",
+    "required_agents": "components/_mandatory_row_required_agents.html",
+    "managed_claude_md_blocks": "components/_mandatory_row_managed_claude_md_blocks.html",
+}
+
+
+def _build_mandatory_sections_view(policy_obj) -> dict[str, list[dict]]:
+    """Convert Policy.required_* / .managed_claude_md_blocks into template-friendly dicts.
+
+    For ``required_mcp_servers``, pre-serializes ``env`` to a JSON string
+    (``env_text``) and ``args`` to a comma-joined string (``args_text``) so
+    the row partial can render them in a single ``<input>``.
+    """
+    out: dict[str, list[dict]] = {
+        "required_mcp_servers": [],
+        "required_skills": [],
+        "required_agents": [],
+        "managed_claude_md_blocks": [],
+    }
+    for s in getattr(policy_obj, "required_mcp_servers", []) or []:
+        d = s.model_dump(mode="json", by_alias=True)
+        d["args_text"] = ", ".join(d.get("args") or [])
+        d["env_text"] = json.dumps(d.get("env") or {}, ensure_ascii=False)
+        out["required_mcp_servers"].append(d)
+    for s in getattr(policy_obj, "required_skills", []) or []:
+        out["required_skills"].append(s.model_dump(mode="json"))
+    for s in getattr(policy_obj, "required_agents", []) or []:
+        out["required_agents"].append(s.model_dump(mode="json"))
+    for s in getattr(policy_obj, "managed_claude_md_blocks", []) or []:
+        out["managed_claude_md_blocks"].append(s.model_dump(mode="json"))
+    return out
+
+
 @router.get("/policy", response_class=HTMLResponse)
 def policy_editor(
     request: Request,
@@ -394,8 +429,123 @@ def policy_editor(
             "has_draft": draft is not None,
             "diff_lines": diff_lines,
             "csrf_token": _csrf_for(request),
+            "active_tab": "rules",
         },
     )
+
+
+def _render_mandatory_page(
+    request: Request,
+    *,
+    user: str,
+    session: Session,
+    errors: dict[str, str] | None = None,
+    sections_override: dict[str, list[dict]] | None = None,
+    status_code: int = 200,
+) -> HTMLResponse:
+    from ccguard.server.services.policy_service import (
+        diff_policies,
+        get_current_published,
+        get_draft,
+        validate_yaml,
+    )
+    current = get_current_published(session)
+    draft = get_draft(session)
+    source = draft if draft is not None else current
+    if source is None:
+        raise HTTPException(status_code=503, detail="no policy in DB (run bootstrap first)")
+    policy_obj = validate_yaml(source.yaml_text)
+    diff_lines = (
+        diff_policies(current.yaml_text, draft.yaml_text)
+        if current is not None and draft is not None
+        else []
+    )
+    sections = sections_override or _build_mandatory_sections_view(policy_obj)
+    return templates.TemplateResponse(
+        request,
+        "policy_editor_mandatory.html",
+        {
+            "user": user,
+            "sections": sections,
+            "errors": errors or {},
+            "current_rev": current.revision if current else "-",
+            "draft_rev": draft.revision if draft else (current.revision + 1 if current else 1),
+            "has_draft": draft is not None,
+            "diff_lines": diff_lines,
+            "csrf_token": _csrf_for(request),
+            "active_tab": "mandatory",
+        },
+        status_code=status_code,
+    )
+
+
+@router.get("/policy/mandatory", response_class=HTMLResponse)
+def policy_mandatory_editor(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    return _render_mandatory_page(request, user=user, session=session)
+
+
+@router.get("/policy/mandatory/_row", response_class=HTMLResponse)
+def policy_mandatory_row(
+    request: Request,
+    section: str = "",
+    i: int = 0,
+    _user: str = Depends(require_session),
+) -> HTMLResponse:
+    template = _MANDATORY_SECTION_TEMPLATES.get(section)
+    if template is None:
+        raise HTTPException(status_code=404, detail="unknown section")
+    # Empty `item` so the partial renders blank inputs; `i` indexes the form field.
+    return templates.TemplateResponse(
+        request, template, {"i": i, "item": {}},
+    )
+
+
+def _form_to_sections_view(form: dict[str, str]) -> dict[str, list[dict]]:
+    """Reconstruct sections view from raw form values so re-renders preserve user input.
+
+    Mirrors `_build_mandatory_sections_view` shape (with `args_text`/`env_text`).
+    """
+    from ccguard.server.web.policy_form import parse_indexed_list
+    out: dict[str, list[dict]] = {
+        "required_mcp_servers": [],
+        "required_skills": [],
+        "required_agents": [],
+        "managed_claude_md_blocks": [],
+    }
+    for row in parse_indexed_list(form, "required_mcp_servers"):
+        out["required_mcp_servers"].append(
+            {
+                "name": row.get("name", ""),
+                "command": row.get("command", ""),
+                "args_text": row.get("args", ""),
+                "env_text": row.get("env", ""),
+            }
+        )
+    for row in parse_indexed_list(form, "required_skills"):
+        out["required_skills"].append(
+            {
+                "name": row.get("name", ""),
+                "frontmatter_type": row.get("frontmatter_type", ""),
+                "content": row.get("content", ""),
+            }
+        )
+    for row in parse_indexed_list(form, "required_agents"):
+        out["required_agents"].append(
+            {"name": row.get("name", ""), "content": row.get("content", "")}
+        )
+    for row in parse_indexed_list(form, "managed_claude_md_blocks"):
+        out["managed_claude_md_blocks"].append(
+            {
+                "id": row.get("id", ""),
+                "description": row.get("description", ""),
+                "content": row.get("content", ""),
+            }
+        )
+    return out
 
 
 @router.post("/policy/draft")
@@ -404,25 +554,47 @@ async def save_policy_draft(
     user: str = Depends(require_session),
     _csrf: None = Depends(require_csrf),
     session: Session = Depends(get_session),
-) -> RedirectResponse:
+) -> Response:
     from ccguard.server.services.policy_service import (
         get_current_published,
         save_draft,
     )
-    from ccguard.server.web.policy_form import form_to_yaml
+    from ccguard.server.web.policy_form import (
+        MandatorySectionError,
+        form_to_yaml,
+    )
 
     form = await request.form()
+    form_dict = dict(form)
+    tab = form_dict.get("tab", "rules")
+    if tab not in ("rules", "mandatory"):
+        tab = "rules"
     current = get_current_published(session)
     current_rev = current.revision if current else 0
     baseline = yaml.safe_load(current.yaml_text) if current else None
     try:
         yaml_text = form_to_yaml(
-            dict(form), current_revision=current_rev, baseline=baseline,
+            form_dict,
+            current_revision=current_rev,
+            baseline=baseline,
+            tab=tab,
+        )
+    except MandatorySectionError as exc:
+        # Re-render /policy/mandatory with the locked Russian error notice above
+        # the offending card and preserve user input from the submitted form.
+        return _render_mandatory_page(
+            request,
+            user=user,
+            session=session,
+            errors={exc.section: str(exc)},
+            sections_override=_form_to_sections_view(form_dict),
+            status_code=200,
         )
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=str(e))
     save_draft(session, yaml_text=yaml_text, user_id=user)
-    return RedirectResponse(url="/policy", status_code=303)
+    target = "/policy/mandatory" if tab == "mandatory" else "/policy"
+    return RedirectResponse(url=target, status_code=303)
 
 
 @router.post("/policy/publish")

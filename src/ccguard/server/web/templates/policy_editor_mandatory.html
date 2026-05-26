@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}ccguard — политика{% endblock %}
+{% block title %}ccguard — обязательные{% endblock %}
 {% block content %}
 {% include "components/_policy_tab_strip.html" %}
 <h2 class="text-2xl font-semibold mb-2">Редактор политики</h2>
@@ -11,14 +11,12 @@
 
 <form method="POST" action="/policy/draft" class="space-y-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+    <input type="hidden" name="tab" value="mandatory" />
 
-    {% include "components/_policy_section_mcp.html" %}
-    {% include "components/_policy_section_network.html" %}
-    {% include "components/_policy_section_commands.html" %}
-    {% include "components/_policy_section_skills.html" %}
-    {% include "components/_policy_section_hooks.html" %}
-    {% include "components/_policy_section_agents.html" %}
-    {% include "components/_policy_section_env.html" %}
+    {% include "components/_mandatory_section_required_mcp_servers.html" %}
+    {% include "components/_mandatory_section_required_skills.html" %}
+    {% include "components/_mandatory_section_required_agents.html" %}
+    {% include "components/_mandatory_section_managed_claude_md_blocks.html" %}
 
     <div class="flex gap-2 sticky bottom-0 bg-slate-50 py-4">
         <button type="submit"

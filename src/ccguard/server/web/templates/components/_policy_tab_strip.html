@@ -1,0 +1,14 @@
+<nav class="flex gap-2 border-b border-slate-200 mb-6 text-sm" aria-label="Разделы политики">
+  <a href="/policy"
+     class="px-3 py-2 -mb-px border-b-2
+            {% if active_tab == 'rules' %}border-slate-900 text-slate-900 font-semibold
+            {% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
+    Правила
+  </a>
+  <a href="/policy/mandatory"
+     class="px-3 py-2 -mb-px border-b-2
+            {% if active_tab == 'mandatory' %}border-slate-900 text-slate-900 font-semibold
+            {% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
+    Обязательные
+  </a>
+</nav>
