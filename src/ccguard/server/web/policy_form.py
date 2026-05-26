@@ -42,6 +42,14 @@ MANDATORY_ERROR_COPY: dict[str, str] = {
     ),
 }
 
+# WR-02: duplicate-key notices per section (locked Russian copy).
+MANDATORY_DUPLICATE_COPY: dict[str, str] = {
+    "required_mcp_servers": "Дубликат: name MCP-сервера должен быть уникален.",
+    "required_skills": "Дубликат: name скилла должен быть уникален.",
+    "required_agents": "Дубликат: name агента должен быть уникален.",
+    "managed_claude_md_blocks": "Дубликат: id блока должен быть уникален.",
+}
+
 _INDEXED_KEY_RE = re.compile(r"^(?P<prefix>[a-zA-Z_]+)\[(?P<i>\d+)\]\.(?P<field>[a-zA-Z_]+)$")
 _KEBAB_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
@@ -154,6 +162,7 @@ def parse_indexed_list(
 def _parse_required_mcp_servers(form: Mapping[str, str]) -> list[dict[str, Any]]:
     rows = parse_indexed_list(form, "required_mcp_servers")
     result: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
     for row in rows:
         name = row.get("name", "").strip()
         command = row.get("command", "").strip()
@@ -164,6 +173,14 @@ def _parse_required_mcp_servers(form: Mapping[str, str]) -> list[dict[str, Any]]
                 "required_mcp_servers",
                 MANDATORY_ERROR_COPY["required_mcp_servers"],
             )
+        # WR-02: reject duplicate names so admins see UI feedback instead of
+        # silent last-wins overwrite in _merge_mcp_servers on the agent.
+        if name in seen_names:
+            raise MandatorySectionError(
+                "required_mcp_servers",
+                MANDATORY_DUPLICATE_COPY["required_mcp_servers"],
+            )
+        seen_names.add(name)
         try:
             env = json.loads(env_raw)
         except (json.JSONDecodeError, ValueError) as exc:
@@ -197,6 +214,7 @@ def _parse_required_mcp_servers(form: Mapping[str, str]) -> list[dict[str, Any]]
 def _parse_required_skills(form: Mapping[str, str]) -> list[dict[str, Any]]:
     rows = parse_indexed_list(form, "required_skills")
     out: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
     for row in rows:
         name = row.get("name", "").strip()
         content = row.get("content", "")
@@ -204,6 +222,14 @@ def _parse_required_skills(form: Mapping[str, str]) -> list[dict[str, Any]]:
             raise MandatorySectionError(
                 "required_skills", MANDATORY_ERROR_COPY["required_skills"]
             )
+        # WR-02: duplicate names would silently clobber the same file on
+        # the agent side (last-wins). Reject at form time.
+        if name in seen_names:
+            raise MandatorySectionError(
+                "required_skills",
+                MANDATORY_DUPLICATE_COPY["required_skills"],
+            )
+        seen_names.add(name)
         out.append(
             {
                 "name": name,
@@ -217,6 +243,7 @@ def _parse_required_skills(form: Mapping[str, str]) -> list[dict[str, Any]]:
 def _parse_required_agents(form: Mapping[str, str]) -> list[dict[str, Any]]:
     rows = parse_indexed_list(form, "required_agents")
     out: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
     for row in rows:
         name = row.get("name", "").strip()
         content = row.get("content", "")
@@ -224,6 +251,13 @@ def _parse_required_agents(form: Mapping[str, str]) -> list[dict[str, Any]]:
             raise MandatorySectionError(
                 "required_agents", MANDATORY_ERROR_COPY["required_agents"]
             )
+        # WR-02: duplicate agent name clobbers the same file.
+        if name in seen_names:
+            raise MandatorySectionError(
+                "required_agents",
+                MANDATORY_DUPLICATE_COPY["required_agents"],
+            )
+        seen_names.add(name)
         out.append({"name": name, "content": content})
     return out
 
@@ -231,6 +265,7 @@ def _parse_required_agents(form: Mapping[str, str]) -> list[dict[str, Any]]:
 def _parse_managed_claude_md_blocks(form: Mapping[str, str]) -> list[dict[str, Any]]:
     rows = parse_indexed_list(form, "managed_claude_md_blocks")
     out: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
     for row in rows:
         block_id = row.get("id", "").strip()
         content = row.get("content", "")
@@ -239,6 +274,14 @@ def _parse_managed_claude_md_blocks(form: Mapping[str, str]) -> list[dict[str, A
                 "managed_claude_md_blocks",
                 MANDATORY_ERROR_COPY["managed_claude_md_blocks"],
             )
+        # WR-02: duplicate ids — _merge_claude_md_blocks runs sub() twice,
+        # second overwrites first, so only one block survives.
+        if block_id in seen_ids:
+            raise MandatorySectionError(
+                "managed_claude_md_blocks",
+                MANDATORY_DUPLICATE_COPY["managed_claude_md_blocks"],
+            )
+        seen_ids.add(block_id)
         out.append(
             {
                 "id": block_id,
