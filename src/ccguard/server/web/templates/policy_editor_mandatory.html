@@ -9,7 +9,7 @@
     {% if has_draft %}<span class="text-amber-600">· не сохранено</span>{% endif %}
 </p>
 
-<form method="POST" action="/policy/draft" class="space-y-4">
+<form method="POST" action="/policy/draft" class="space-y-4" aria-label="Обязательные разделы политики">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
     <input type="hidden" name="tab" value="mandatory" />
 
