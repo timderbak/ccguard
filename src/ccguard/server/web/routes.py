@@ -198,8 +198,14 @@ def _finding_view_model(row) -> object:
     """
 
     class _FindingVM:
-        __slots__ = ("discovered_at", "machine_id", "rule_id", "severity", "details")
-
+        # WR-08: __slots__ was used here but invites future maintainers to
+        # silently break when adding new attrs. Plain class (no slots) is
+        # the right shape — this is not a hot-path object. The URL-encoding
+        # defense referenced below lives in
+        # `templates/components/_finding_row.html` (the `urlencode` filter
+        # on `finding.details.file_hash` before `hx-post`); the server
+        # handler at `/admin/scan/{file_hash}/rescan` separately validates
+        # len==64 and hex-only.
         def __init__(self, r) -> None:
             self.discovered_at = r.discovered_at
             self.machine_id = r.machine_id
@@ -214,11 +220,6 @@ def _finding_view_model(row) -> object:
             # Normalize details accessor: template uses attribute-style access
             # (``finding.details.risk_score``) — Jinja falls back to item
             # access on plain dicts, which is what we want.
-            # Note: the template URL-encodes file_hash before interpolating
-            # into the hx-post action (WR-06), and the server handler at
-            # /admin/scan/{file_hash}/rescan validates len==64 + hex-only.
-            # Together those provide defense-in-depth against malformed
-            # payloads without rejecting test fixtures here.
             self.details = payload
 
     return _FindingVM(row)
