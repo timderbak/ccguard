@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Literal
 
+from pydantic import field_validator
+from sqlalchemy import Index
 from sqlmodel import Field, SQLModel
 
 
@@ -211,6 +213,58 @@ class LLMCallLog(SQLModel, table=True):
     input_tokens: int
     output_tokens: int
     cost_estimate_cents: int
+
+
+# --- Phase 4 / Plan 04-01: push-install audit foundation -------------------
+
+
+# Allowed values for ``PolicyApplyEvent.result``. SQLModel cannot infer a
+# SQLAlchemy type from ``Literal`` directly, so the column is stored as plain
+# TEXT in SQLite (Phase 1+2 pattern — no engine-level CHECK) and a Pydantic
+# ``field_validator`` enforces the set at the write boundary.
+_POLICY_APPLY_RESULTS: frozenset[str] = frozenset({"success", "rollback"})
+
+
+class PolicyApplyEvent(SQLModel, table=True):
+    """Agent-reported outcome of applying a policy revision (PUSH-01..04 audit).
+
+    One row per apply attempt by the endpoint agent. Drives the
+    ``/audit?event_source=policy_apply`` view (plan 05) and the rollback
+    drill-down (failed_file + reason).
+
+    Composite indexes (machine_id, ts) and (result, ts) match the two common
+    query paths: per-machine timeline and "show all rollbacks across the fleet".
+    Per D-3 NO orphan_deletion fields are added — deferred to v0.3.
+
+    Auto-created via ``SQLModel.metadata.create_all`` (no Alembic per project
+    constraint).
+    """
+
+    __table_args__ = (
+        Index("ix_policy_apply_machine_ts", "machine_id", "ts"),
+        Index("ix_policy_apply_result_ts", "result", "ts"),
+    )
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    ts: datetime = Field(default_factory=_utcnow, index=True)
+    # Stored as plain str in SQLite; the field_validator below enforces the
+    # Literal set ``{"success", "rollback"}`` at the Pydantic write boundary.
+    result: str
+    applied_count: int = 0
+    snapshot_id: str | None = None
+    reason: str | None = None
+    failed_file: str | None = None
+    policy_revision: int
+
+    @field_validator("result")
+    @classmethod
+    def _validate_result(cls, v: str) -> str:
+        if v not in _POLICY_APPLY_RESULTS:
+            raise ValueError(
+                f"result must be one of {sorted(_POLICY_APPLY_RESULTS)}; got: {v!r}"
+            )
+        return v
 
 
 class SettingsRecord(SQLModel, table=True):

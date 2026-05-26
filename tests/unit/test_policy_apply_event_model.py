@@ -144,11 +144,20 @@ def test_policy_apply_event_query_filters_by_result_and_orders_ts_desc() -> None
 
 
 def test_policy_apply_event_result_literal_rejects_invalid_value() -> None:
-    """At the Pydantic write boundary, result must be 'success' or 'rollback'."""
+    """At the Pydantic write boundary (``model_validate``), result must be
+    'success' or 'rollback'.
+
+    Note: SQLModel ``table=True`` skips Pydantic validation on direct ``__init__``
+    (SQLAlchemy compatibility), so the canonical write path used by API code is
+    ``PolicyApplyEvent.model_validate({...})``. That is what we assert here.
+    """
+    # Valid values pass through model_validate
+    ok = PolicyApplyEvent.model_validate(
+        {"machine_id": "m1", "result": "success", "policy_revision": 1}
+    )
+    assert ok.result == "success"
+    # Invalid value is rejected
     with pytest.raises(ValidationError):
-        PolicyApplyEvent(
-            machine_id="m1",
-            result="weird",  # type: ignore[arg-type]
-            applied_count=0,
-            policy_revision=1,
+        PolicyApplyEvent.model_validate(
+            {"machine_id": "m1", "result": "weird", "policy_revision": 1}
         )
