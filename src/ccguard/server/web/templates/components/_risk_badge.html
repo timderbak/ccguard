@@ -1,16 +1,16 @@
 {# Risk badge — reusable pill rendering risk_score by 0-29/30-70/71-100 bands.
    Inputs: ``finding`` with ``.details.risk_score`` and ``.details.category``.
    Renders an em-dash when risk_score is null (non-LLM findings). #}
-{% if finding.details.risk_score is not none %}
-  {% set s = finding.details.risk_score %}
+{% set s = finding.details.get('risk_score') if finding.details else none %}
+{% if s is not none %}
   <span class="inline-block rounded-full px-2 py-0.5 text-xs font-semibold
                {% if s < 30 %}bg-emerald-600 text-white
                {% elif s <= 70 %}bg-amber-600 text-white
                {% else %}bg-red-600 text-white{% endif %}"
-        title="risk_score={{ s }} • {{ finding.details.category }}">
+        title="risk_score={{ s }} • {{ finding.details.get('category', '') }}">
     {{ s }}
   </span>
-  <span class="text-xs text-slate-500 ml-1 font-mono">{{ finding.details.category }}</span>
+  <span class="text-xs text-slate-500 ml-1 font-mono">{{ finding.details.get('category', '') }}</span>
 {% else %}
   <span class="text-slate-400">—</span>
 {% endif %}

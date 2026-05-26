@@ -28,13 +28,19 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy.engine import Engine
+from sqlmodel import Session, select
+
+from ccguard.server.db.models import ScanResult
 
 log = logging.getLogger(__name__)
 
 ANOMALY_JOB_ID: str = "anomaly-tick"
 FIRST_TICK_DELAY_SECONDS: int = 30
 TICK_INTERVAL_HOURS: int = 1
+RESCAN_ALL_JOB_ID: str = "llm-rescan-all"
 
 
 def build_scheduler() -> AsyncIOScheduler:
@@ -88,3 +94,48 @@ async def shutdown_scheduler(scheduler: AsyncIOScheduler) -> None:
 def is_disabled() -> bool:
     """Return True iff ``CCGUARD_DISABLE_SCHEDULER`` is set to a truthy value."""
     return os.environ.get("CCGUARD_DISABLE_SCHEDULER", "").lower() in ("1", "true", "yes")
+
+
+# --- Plan 03-05: global re-scan-all one-shot job ---------------------------
+
+
+def rescan_all_files(engine: Engine) -> None:
+    """Expire every ScanResult row's TTL so the next agent inventory cycle
+    repopulates the cache (D-03: server never stores content).
+
+    Idempotent — running concurrently is safe; rows just get pushed further
+    into the past. Phase 2 anomaly tick path is unaffected.
+    """
+    now_expired = datetime.now(UTC) - timedelta(seconds=1)
+    with Session(engine) as s:
+        rows = list(s.exec(select(ScanResult)))
+        for row in rows:
+            row.ttl_expires_at = now_expired
+            s.add(row)
+        s.commit()
+    log.info("llm rescan-all: expired %d ScanResult rows", len(rows))
+
+
+def enqueue_rescan_all(scheduler: AsyncIOScheduler, engine: Engine) -> None:
+    """Enqueue a one-shot APScheduler job that expires every ScanResult TTL.
+
+    Uses ``DateTrigger(run_date=now)`` so the job fires as soon as the
+    scheduler's event loop picks it up (typically next tick). When the
+    scheduler is disabled (tests, CCGUARD_DISABLE_SCHEDULER=1) the job is
+    executed synchronously in-process so admin UI flows still behave end-to-end
+    and integration tests do not need to spin up the real scheduler.
+    """
+    if scheduler is None or not scheduler.running:
+        # Test / disabled-scheduler path: run inline so the UI's 303-then-GET
+        # cycle observes a consistent post-state.
+        rescan_all_files(engine)
+        return
+    scheduler.add_job(
+        rescan_all_files,
+        trigger=DateTrigger(run_date=datetime.now(UTC)),
+        args=[engine],
+        id=RESCAN_ALL_JOB_ID,
+        replace_existing=True,
+        coalesce=True,
+        max_instances=1,
+    )

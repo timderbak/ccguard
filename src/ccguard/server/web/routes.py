@@ -187,26 +187,75 @@ def revoke_machine(
     return RedirectResponse(url="/machines", status_code=303)
 
 
+def _finding_view_model(row) -> object:
+    """Wrap a :class:`FindingRecord` for template consumption.
+
+    Adds a ``.details`` dict parsed from ``payload_json`` so templates can
+    read ``finding.details.risk_score`` / ``.category`` / ``.file_hash``
+    uniformly. LLM-scanner findings expose these keys; older findings get an
+    empty dict so the badge template renders the em-dash branch.
+    """
+
+    class _FindingVM:
+        __slots__ = ("discovered_at", "machine_id", "rule_id", "severity", "details")
+
+        def __init__(self, r) -> None:
+            self.discovered_at = r.discovered_at
+            self.machine_id = r.machine_id
+            self.rule_id = r.rule_id
+            self.severity = r.severity
+            try:
+                payload = json.loads(r.payload_json) if r.payload_json else {}
+            except (ValueError, TypeError):
+                payload = {}
+            if not isinstance(payload, dict):
+                payload = {}
+            # Normalize details accessor: template uses attribute-style access
+            # (``finding.details.risk_score``) — Jinja falls back to item
+            # access on plain dicts, which is what we want.
+            self.details = payload
+
+    return _FindingVM(row)
+
+
 @router.get("/findings", response_class=HTMLResponse)
 def findings_page(
     request: Request,
     severity: str | None = None,
     rule_id: str | None = None,
     machine_id: str | None = None,
+    scope: str | None = None,
     user: str = Depends(require_session),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
-    from ccguard.server.services.finding_service import query_findings
-    findings = query_findings(
-        session, severity=severity, rule_id=rule_id, machine_id=machine_id, limit=200,
-    )
+    from ccguard.server.db.models import FindingRecord
+    stmt = select(FindingRecord)
+    if severity:
+        stmt = stmt.where(FindingRecord.severity == severity)
+    if rule_id:
+        stmt = stmt.where(FindingRecord.rule_id == rule_id)
+    if machine_id:
+        stmt = stmt.where(FindingRecord.machine_id == machine_id)
+    # Plan 03-05: scope filter — additive AND with rule_id filter above.
+    if scope == "llm":
+        stmt = stmt.where(FindingRecord.rule_id.like("llm.scan.%"))  # type: ignore[attr-defined]
+    elif scope == "non_llm":
+        stmt = stmt.where(~FindingRecord.rule_id.like("llm.scan.%"))  # type: ignore[attr-defined]
+    stmt = stmt.order_by(FindingRecord.discovered_at.desc()).limit(200)  # type: ignore[attr-defined]
+    rows = list(session.exec(stmt))
+    findings = [_finding_view_model(r) for r in rows]
     return templates.TemplateResponse(
         request,
         "findings_feed.html",
         {
             "user": user,
             "findings": findings,
-            "filters": {"severity": severity, "rule_id": rule_id, "machine_id": machine_id},
+            "filters": {
+                "severity": severity,
+                "rule_id": rule_id,
+                "machine_id": machine_id,
+                "scope": scope or "all",
+            },
             "csrf_token": _csrf_for(request),
         },
     )
@@ -442,23 +491,230 @@ def policy_rollback(
     return RedirectResponse(url="/policy", status_code=303)
 
 
+def _settings_context(request: Request, session: Session, user: str) -> dict:
+    """Build the shared template context for /settings GET + validation re-renders."""
+    from ccguard.server.services.token_service import list_tokens
+    from ccguard.server.services.settings_service import get_setting
+    from ccguard.server.db.models import ScanResult
+
+    cfg = _config(request)
+    enabled = (get_setting(session, "llm_scanner_enabled") or "false").lower() == "true"
+    try:
+        budget = int(get_setting(session, "daily_call_budget") or "0")
+    except ValueError:
+        budget = 0
+    scans = list(
+        session.exec(
+            select(ScanResult).order_by(ScanResult.scanned_at.desc()).limit(10)  # type: ignore[attr-defined]
+        )
+    )
+    # initial-render values for the inline usage counter
+    usage = _llm_usage_summary(session)
+    return {
+        "user": user,
+        "tokens": list_tokens(session),
+        "new_token": request.query_params.get("new_token"),
+        "password_msg": request.query_params.get("password_msg"),
+        "server_version": "0.1.0",
+        "csrf_token": _csrf_for(request),
+        "has_api_key": bool(cfg.anthropic_api_key),
+        "llm_settings": {
+            "llm_scanner_enabled": enabled,
+            "daily_call_budget": budget,
+        },
+        "scans": scans,
+        # variables consumed by the inline-included _llm_usage_counter.html
+        "enabled": usage["enabled"],
+        "used": usage["used"],
+        "budget": usage["budget"],
+        "cost_dollars": usage["cost_cents"] / 100.0,
+    }
+
+
+def _llm_usage_summary(session: Session) -> dict:
+    """Synchronous version of ScanService.get_daily_usage for the admin UI.
+
+    Avoids needing an event loop / async context inside the request handler.
+    Mirrors :meth:`ScanService.get_daily_usage` shape exactly.
+    """
+    from datetime import UTC, datetime
+    from ccguard.server.db.models import LLMCallLog
+    from ccguard.server.services.settings_service import get_setting
+
+    now = datetime.now(UTC)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    rows = list(session.exec(select(LLMCallLog).where(LLMCallLog.ts >= day_start)))
+    enabled = (get_setting(session, "llm_scanner_enabled") or "false").lower() == "true"
+    try:
+        budget = int(get_setting(session, "daily_call_budget") or "0")
+    except ValueError:
+        budget = 0
+    return {
+        "used": len(rows),
+        "budget": budget,
+        "cost_cents": sum(r.cost_estimate_cents for r in rows),
+        "enabled": enabled,
+    }
+
+
 @router.get("/settings", response_class=HTMLResponse)
 def settings_page(
     request: Request,
     user: str = Depends(require_session),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
-    from ccguard.server.services.token_service import list_tokens
+    ctx = _settings_context(request, session, user)
+    return templates.TemplateResponse(request, "settings.html", ctx)
+
+
+@router.post("/admin/llm-settings")
+def admin_llm_settings_save(
+    request: Request,
+    daily_call_budget: str = Form(""),
+    enabled: str = Form(""),
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> Response:
+    """Persist Settings.llm_scanner_enabled + daily_call_budget.
+
+    Validation: 0 ≤ daily_call_budget ≤ 10000. On invalid input → 200 with
+    re-rendered /settings template + locked Russian validation message.
+    """
+    from ccguard.server.services.settings_service import set_setting
+
+    try:
+        budget_int = int(daily_call_budget)
+    except (TypeError, ValueError):
+        budget_int = -1
+    if budget_int < 0 or budget_int > 10000:
+        ctx = _settings_context(request, session, user)
+        ctx["validation_error"] = "Бюджет должен быть целым числом от 0 до 10000."
+        return templates.TemplateResponse(request, "settings.html", ctx, status_code=200)
+
+    # Checkbox semantics: present → "true"; absent → "false". FastAPI's Form
+    # default for an unchecked checkbox is the empty string (because the
+    # browser does not include the input at all). Any non-empty value means
+    # the box was checked (HTML always sends "on" unless overridden).
+    set_setting(session, "llm_scanner_enabled", "true" if enabled else "false")
+    set_setting(session, "daily_call_budget", str(budget_int))
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@router.post("/admin/scan/{file_hash}/rescan", response_class=HTMLResponse)
+def admin_scan_rescan(
+    request: Request,
+    file_hash: str,
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Per-row re-scan endpoint (HTMX outerHTML swap).
+
+    Path validation: ``file_hash`` must be 64-char lowercase hex (sha256). The
+    server does not store content (D-02), so we only invalidate the cache TTL
+    and return the existing finding row partial. The next agent inventory
+    cycle will trigger the real re-scan. Inline notices surface budget /
+    disabled states without raising — HTMX gets a valid <tr> either way.
+    """
+    from ccguard.server.db.models import FindingRecord, ScanResult
+    from datetime import UTC, datetime, timedelta
+
+    if len(file_hash) != 64 or any(c not in "0123456789abcdef" for c in file_hash):
+        raise HTTPException(status_code=404, detail="invalid file_hash")
+
+    scan_row = session.exec(
+        select(ScanResult).where(ScanResult.file_hash == file_hash)
+    ).one_or_none()
+    if scan_row is None:
+        raise HTTPException(status_code=404, detail="unknown file_hash")
+
+    # Invalidate cache TTL — next agent cycle re-scans.
+    scan_row.ttl_expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    session.add(scan_row)
+    session.commit()
+
+    # Pull the latest finding row for this file_hash for the partial render.
+    finding_row = session.exec(
+        select(FindingRecord)
+        .where(FindingRecord.rule_id.like("llm.scan.%"))  # type: ignore[attr-defined]
+        .order_by(FindingRecord.discovered_at.desc())  # type: ignore[attr-defined]
+    ).first()
+    # Filter by file_hash in-process (payload_json is JSON text — keep the SQL
+    # simple and let the python side filter).
+    target = None
+    cands = session.exec(
+        select(FindingRecord)
+        .where(FindingRecord.rule_id.like("llm.scan.%"))  # type: ignore[attr-defined]
+        .order_by(FindingRecord.discovered_at.desc())  # type: ignore[attr-defined]
+        .limit(50)
+    )
+    for r in cands:
+        try:
+            payload = json.loads(r.payload_json) if r.payload_json else {}
+        except (ValueError, TypeError):
+            payload = {}
+        if isinstance(payload, dict) and payload.get("file_hash") == file_hash:
+            target = r
+            break
+    if target is None:
+        target = finding_row  # last-resort fallback; should not normally happen
+
+    usage = _llm_usage_summary(session)
+    notice: str | None = None
+    if not usage["enabled"]:
+        notice = "scanner_disabled"
+    elif usage["used"] >= usage["budget"]:
+        notice = "budget_exhausted"
+
+    vm = _finding_view_model(target) if target is not None else None
     return templates.TemplateResponse(
         request,
-        "settings.html",
+        "components/_finding_row.html",
         {
-            "user": user,
-            "tokens": list_tokens(session),
-            "new_token": request.query_params.get("new_token"),
-            "password_msg": request.query_params.get("password_msg"),
-            "server_version": "0.1.0",
+            "finding": vm,
+            "rescan_notice": notice,
             "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+@router.post("/admin/scan/rescan-all")
+def admin_scan_rescan_all(
+    request: Request,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Enqueue a one-shot APScheduler job that expires every ScanResult TTL.
+
+    Per D-03: agent's next inventory cycle repopulates the cache. We never
+    re-scan from the server because we never store content.
+    """
+    from ccguard.server.scheduler import enqueue_rescan_all
+
+    scheduler = getattr(request.app.state, "scheduler", None)
+    engine = request.app.state.engine
+    enqueue_rescan_all(scheduler, engine)
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@router.get("/_partials/settings/llm-usage", response_class=HTMLResponse)
+def llm_usage_partial(
+    request: Request,
+    _user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """HTMX-polled (every 30s) usage strip for the LLM-сканер settings card."""
+    usage = _llm_usage_summary(session)
+    return templates.TemplateResponse(
+        request,
+        "components/_llm_usage_counter.html",
+        {
+            "enabled": usage["enabled"],
+            "used": usage["used"],
+            "budget": usage["budget"],
+            "cost_dollars": usage["cost_cents"] / 100.0,
         },
     )
 
