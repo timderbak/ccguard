@@ -16,7 +16,7 @@ from ccguard.agent.enforce import main_cli as enforce_main_cli
 from ccguard.agent.machine_id import derive_machine_id
 from ccguard.agent.report import build_text_report
 from ccguard.agent.scan import run_scan
-from ccguard.agent.sync import perform_sync
+from ccguard.agent.sync import _apply_and_report, perform_sync
 from ccguard.schemas import Finding, InventoryReport, Policy
 
 app = typer.Typer(
@@ -30,6 +30,22 @@ app = typer.Typer(
 def _claude_home() -> Path:
     import os
     return Path(os.environ.get("CLAUDE_HOME") or os.path.expanduser("~/.claude"))
+
+
+def _apply_and_report_safe(
+    policy: dict,
+    *,
+    server_url: str,
+    token: str,
+    machine_id: str,
+) -> None:
+    """Thin pass-through to sync._apply_and_report — overridable by tests."""
+    _apply_and_report(
+        policy,
+        server_url=server_url,
+        token=token,
+        machine_id=machine_id,
+    )
 
 
 def _do_scan() -> InventoryReport:
@@ -146,6 +162,31 @@ def sync() -> None:
         audit_cursor_path=audit_cursor_path,
         policy_cache_path=cache,
     )
+    # Plan 04-04: push_install — apply mandatory policy sections and report
+    # outcome to /api/v1/audit. Best-effort: any failure here MUST NOT
+    # raise into the CLI. _apply_and_report_safe wraps the inner helper in
+    # a final try/except as belt-and-suspenders.
+    if result.inventory_posted:
+        try:
+            policy_dict: dict = {}
+            if cache.exists():
+                try:
+                    policy_dict = yaml.safe_load(cache.read_text()) or {}
+                except Exception:  # noqa: BLE001
+                    policy_dict = {}
+            mid = derive_machine_id(cfg.install_salt)
+            _apply_and_report_safe(
+                policy_dict,
+                server_url=cfg.server.url,
+                token=cfg.server.token,
+                machine_id=mid,
+            )
+        except Exception as exc:  # noqa: BLE001 — belt-and-suspenders
+            typer.echo(
+                f"warning: policy apply step failed: {type(exc).__name__}: {exc}",
+                err=True,
+            )
+
     # Plan 03-04: trigger LLM content scan AFTER the inventory cycle. The
     # scanner is gated server-side; agent v0.1 servers without /scanner-config
     # will simply 404 and we treat that as "skipped". Never raises — the scan

@@ -294,44 +294,74 @@ def test_apply_and_report_never_raises_when_push_install_blows_up(
 
 def test_cli_sync_command_invokes_apply_and_report(
     monkeypatch: pytest.MonkeyPatch,
-    client: TestClient,
     tmp_path: Path,
 ) -> None:
-    """CLI `ccguard sync` must call _apply_and_report after inventory POST."""
+    """CLI `ccguard sync` must call _apply_and_report_safe after a successful
+    inventory POST, passing the cached policy + agent-derived machine_id.
+
+    We stub :func:`ccguard.agent.cli.perform_sync` so the test does not
+    require a live server; the focus is the integration wiring on the CLI
+    side."""
     from typer.testing import CliRunner
 
     from ccguard.agent import cli as cli_module
+    from ccguard.agent.sync import SyncResult
 
-    _patch_httpx_to_testclient(monkeypatch, client)
-
-    # Redirect CLAUDE_HOME + agent config dir + machine_id source.
-    fake_home = tmp_path / "home"
-    fake_home.mkdir()
-    (fake_home / ".claude").mkdir()
-
-    monkeypatch.setenv("CLAUDE_HOME", str(fake_home / ".claude"))
+    # Redirect agent config dir to a temp location so load_or_create doesn't
+    # touch the developer's real $HOME.
     monkeypatch.setenv("CCGUARD_CONFIG_DIR", str(tmp_path / "ccguard"))
+    monkeypatch.setenv("CLAUDE_HOME", str(tmp_path / "home" / ".claude"))
+    (tmp_path / "home" / ".claude").mkdir(parents=True)
+
+    # Stub perform_sync → successful inventory post + a written policy cache.
+    def fake_perform_sync(*, config, **_kw):  # type: ignore[no-untyped-def]
+        cache_path = config.resolved_cache_path()
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        # Write a minimal policy with one required skill so the apply step
+        # has real work to do (and an audit POST should be sent).
+        import yaml as _yaml
+        cache_path.write_text(_yaml.safe_dump({
+            "meta": {"revision": 3},
+            "required_skills": [
+                {
+                    "name": "demo",
+                    "frontmatter_type": "skill",
+                    "content": "---\nname: demo\n---\nbody\n",
+                }
+            ],
+        }))
+        return SyncResult(
+            inventory_posted=True,
+            policy_updated=True,
+            new_policy_revision=3,
+            server_response={"ok": True},
+        )
+
+    monkeypatch.setattr(cli_module, "perform_sync", fake_perform_sync)
+
+    # Stub run_scan_cycle to be a no-op (we don't care about the LLM scan).
+    import ccguard.agent.inventory_scan as inv_scan
+    monkeypatch.setattr(
+        inv_scan, "run_scan_cycle",
+        lambda **kw: {"skipped": "test"},
+    )
 
     called: dict = {}
-    real_apply_report = cli_module._apply_and_report_safe if hasattr(
-        cli_module, "_apply_and_report_safe"
-    ) else None
 
-    def spy(*args, **kwargs):
+    def spy(policy, *, server_url, token, machine_id):
         called["yes"] = True
-        called["args"] = args
-        called["kwargs"] = kwargs
-        if real_apply_report:
-            return real_apply_report(*args, **kwargs)
+        called["policy_revision"] = policy.get("meta", {}).get("revision")
+        called["machine_id"] = machine_id
 
-    monkeypatch.setattr(cli_module, "_apply_and_report_safe", spy, raising=False)
+    monkeypatch.setattr(cli_module, "_apply_and_report_safe", spy)
 
     runner = CliRunner()
     result = runner.invoke(cli_module.app, ["sync"])
-    # Even if sync flow has issues, the CLI must exit 0 due to best-effort
-    # guarantee. We assert exit_code in (0, 1) — 1 only acceptable from the
-    # pre-existing inventory branch, never from apply branch. The key
-    # assertion is that the spy was called.
+
     assert called.get("yes") is True, (
-        f"expected sync to invoke _apply_and_report_safe; stdout={result.stdout}"
+        f"expected CLI sync to invoke _apply_and_report_safe; stdout={result.stdout}"
     )
+    assert called["policy_revision"] == 3
+    assert isinstance(called["machine_id"], str) and len(called["machine_id"]) > 0
+    # Best-effort guarantee: CLI must exit 0 on the success path.
+    assert result.exit_code == 0, result.stdout

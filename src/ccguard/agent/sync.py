@@ -1,17 +1,37 @@
-"""sync: отправить inventory + findings + audit на сервер, забрать актуальную policy."""
+"""sync: отправить inventory + findings + audit на сервер, забрать актуальную policy.
+
+Plan 04-04 adds :func:`_apply_and_report`: after the agent fetches a fresh
+policy, it invokes :func:`ccguard.agent.push_install.apply` and forwards the
+outcome (success or rollback) to POST /api/v1/audit with
+``event_source=policy_apply``. The function is best-effort: it MUST NOT raise
+into the CLI caller — every failure path (apply exception, audit POST
+network error, server 5xx) is swallowed and logged at WARNING.
+
+Empty no-op applies (``applied_count == 0`` and ``result == "success"``) do
+NOT POST to /api/v1/audit, to avoid logging noise from agents talking to a
+v0.1 server that never publishes mandatory sections.
+"""
 
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import httpx
 import yaml
 
 from ccguard.agent.audit import read_audit_entries
 from ccguard.agent.config import AgentConfig
+# Re-exported under an alias so tests can monkeypatch the call site without
+# touching the original module-level binding in push_install.
+from ccguard.agent.push_install import apply as push_install_apply
 from ccguard.schemas import AuditEntry, Finding, InventoryReport, Policy, SyncPayload
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -165,3 +185,105 @@ def _read_cached_revision(cache_path: Path) -> int | None:
         return int(data.get("meta", {}).get("revision"))
     except (ValueError, KeyError, TypeError, OSError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Plan 04-04: push_install integration hook
+# ---------------------------------------------------------------------------
+
+
+def _policy_revision_from(policy: dict) -> int:
+    """Extract revision from a policy dict; fall back to 0 if absent/malformed."""
+    try:
+        rev = policy.get("meta", {}).get("revision")
+        return int(rev) if rev is not None else 0
+    except (AttributeError, TypeError, ValueError):
+        return 0
+
+
+def _post_policy_apply_event(
+    *,
+    server_url: str,
+    token: str,
+    machine_id: str,
+    apply_result: dict[str, Any],
+    policy_revision: int,
+    timeout_sec: float = 5.0,
+) -> None:
+    """POST a single PolicyApplyEvent to /api/v1/audit. Best-effort: never raises."""
+    body = {
+        "event_source": "policy_apply",
+        "events": [
+            {
+                "machine_id": machine_id,
+                "ts": datetime.now(UTC).isoformat(),
+                "result": apply_result.get("result", "rollback"),
+                "applied_count": int(apply_result.get("applied_count") or 0),
+                "snapshot_id": apply_result.get("snapshot_id"),
+                "reason": apply_result.get("reason"),
+                "failed_file": apply_result.get("failed_file"),
+                "policy_revision": policy_revision,
+            }
+        ],
+    }
+    url = f"{server_url.rstrip('/')}/api/v1/audit"
+    try:
+        with httpx.Client(timeout=timeout_sec) as client:
+            r = client.post(
+                url,
+                content=json.dumps(body),
+                headers={
+                    "X-CCGuard-Token": token,
+                    "Content-Type": "application/json",
+                },
+            )
+            if r.status_code >= 400:
+                _log.warning(
+                    "policy_apply audit POST returned %s: %s",
+                    r.status_code, r.text[:200],
+                )
+    except Exception as exc:  # noqa: BLE001 — best-effort, never raise
+        _log.warning("policy_apply audit POST failed: %s: %s", type(exc).__name__, exc)
+
+
+def _apply_and_report(
+    policy: dict,
+    *,
+    server_url: str,
+    token: str,
+    machine_id: str,
+    home: Path | None = None,
+) -> None:
+    """Apply mandatory policy sections and report outcome to /api/v1/audit.
+
+    Plan 04-04 best-effort guarantee: this function NEVER raises into the
+    CLI caller. Any exception from ``push_install.apply`` or the audit POST
+    is caught and logged at WARNING.
+
+    Empty no-op apply (success with applied_count==0) is intentionally NOT
+    posted to /api/v1/audit to avoid noise from agents talking to v0.1
+    servers that publish no mandatory sections.
+    """
+    try:
+        apply_result = push_install_apply(policy, home=home)
+    except Exception as exc:  # noqa: BLE001 — defense in depth
+        _log.warning(
+            "push_install.apply unexpectedly raised: %s: %s",
+            type(exc).__name__, exc,
+        )
+        return
+
+    result = apply_result.get("result")
+    applied_count = int(apply_result.get("applied_count") or 0)
+
+    # Skip no-op (success with nothing applied). Always report rollbacks.
+    if result == "success" and applied_count == 0:
+        return
+
+    _post_policy_apply_event(
+        server_url=server_url,
+        token=token,
+        machine_id=machine_id,
+        apply_result=apply_result,
+        policy_revision=_policy_revision_from(policy),
+    )
