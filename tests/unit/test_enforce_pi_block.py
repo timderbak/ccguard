@@ -101,7 +101,10 @@ def test_pi_engine_crash_fail_open_continues_pipeline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """scan() raises + block_fail_mode=open → fall through to existing pipeline.
-    No finding emitted (no ScanResult).
+
+    WR-01: a single info finding ``prompt_injection.engine_crash`` is now
+    emitted on the fail-open path so the central server sees engine
+    crashes across the fleet. The decision itself remains ``allow``.
     """
     mock_emit = MagicMock()
     monkeypatch.setattr(enforce_mod, "emit_finding", mock_emit)
@@ -117,7 +120,13 @@ def test_pi_engine_crash_fail_open_continues_pipeline(
     d = decide(pl, pol)
 
     assert d.permission == "allow"
-    assert mock_emit.call_count == 0
+    # WR-01: exactly one info finding with rule_id engine_crash and
+    # matched_pattern carrying the exception class name only (no message).
+    assert mock_emit.call_count == 1
+    kwargs = mock_emit.call_args.kwargs
+    assert kwargs["rule_id"] == "prompt_injection.engine_crash"
+    assert kwargs["severity"] == "info"
+    assert kwargs["matched_pattern"] == "RuntimeError"
 
 
 def test_pi_engine_crash_fail_closed_returns_deny(

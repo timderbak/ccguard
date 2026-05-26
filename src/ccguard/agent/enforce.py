@@ -184,8 +184,25 @@ def decide(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
                     reason=f"prompt-injection engine error (fail-closed): {exc!r}",
                     rule_id="prompt_injection.engine_error",
                 )
-            # fail-open: log + continue into existing pipeline
+            # WR-01: fail-open path now ALSO emits an info finding so the
+            # central server has visibility on engine crashes across the
+            # fleet (cf. LG model-missing marker). Carry only the exception
+            # class name — no message/traceback to avoid leaking user-text
+            # snippets embedded in re.error/etc.
             log.warning("prompt_injection engine crashed (fail-open): %r", exc)
+            try:
+                emit_finding(
+                    rule_id="prompt_injection.engine_crash",
+                    severity="info",
+                    title="Prompt-injection engine crashed (fail-open)",
+                    source="regex",
+                    matched_pattern=type(exc).__name__,
+                    tool_name=payload.tool_name,
+                )
+            except Exception:
+                # emit_finding is best-effort: a buffer-write failure must
+                # not turn a successful fail-open into a deny.
+                pass
             pi_result = None
 
         if pi_result is not None:
