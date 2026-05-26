@@ -263,8 +263,11 @@ def test_flush_batches_large_buffer(
 
     for call in mock.calls:
         body = _json.loads(call["content"])
-        assert isinstance(body, list)
-        assert len(body) <= 100
+        # Envelope shape: {schema_version, machine_id, findings: [...]}.
+        # Findings list inside each request must respect _BATCH_SIZE=100.
+        assert isinstance(body, dict)
+        assert "findings" in body
+        assert len(body["findings"]) <= 100
 
 
 # --- Test 7: flusher_main entrypoint exits 0 (oneshot) -----------------------
