@@ -34,7 +34,7 @@
     </td>
     <td class="text-right">
         {% if finding.rule_id.startswith('llm.scan.') and finding.details.get('file_hash') %}
-        <form hx-post="/admin/scan/{{ finding.details.get('file_hash') }}/rescan"
+        <form hx-post="/admin/scan/{{ finding.details.get('file_hash') | urlencode }}/rescan"
               hx-target="closest tr"
               hx-swap="outerHTML"
               hx-confirm="Пересканировать этот файл? Списание из дневного бюджета."

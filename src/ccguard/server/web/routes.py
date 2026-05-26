@@ -213,6 +213,11 @@ def _finding_view_model(row) -> object:
             # Normalize details accessor: template uses attribute-style access
             # (``finding.details.risk_score``) — Jinja falls back to item
             # access on plain dicts, which is what we want.
+            # Note: the template URL-encodes file_hash before interpolating
+            # into the hx-post action (WR-06), and the server handler at
+            # /admin/scan/{file_hash}/rescan validates len==64 + hex-only.
+            # Together those provide defense-in-depth against malformed
+            # payloads without rejecting test fixtures here.
             self.details = payload
 
     return _FindingVM(row)
