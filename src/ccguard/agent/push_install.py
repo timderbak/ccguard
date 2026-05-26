@@ -162,7 +162,12 @@ def _merge_mcp_servers(existing_json: dict, required: list[dict]) -> dict:
     - User entries are preserved verbatim. Top-level fields are preserved.
     """
     out = dict(existing_json) if existing_json else {}
-    servers = dict(out.get("mcpServers", {}) or {})
+    # WR-04: defensively coerce a non-dict mcpServers value (e.g. `[]` or a
+    # string from a hand-corrupted file) to an empty dict instead of letting
+    # `dict("x")` raise ValueError into the outer try/except — which would
+    # roll back forever until the user manually repairs the file.
+    servers_raw = out.get("mcpServers")
+    servers = dict(servers_raw) if isinstance(servers_raw, dict) else {}
 
     # Remove old managed entries by field, NOT key prefix (D-7).
     servers = {
