@@ -10,9 +10,15 @@
 <tr class="border-b last:border-0">
     <td class="py-2">{{ finding.discovered_at.isoformat(timespec="seconds") }}</td>
     <td>
+        {% if finding.machine_id == '_server' %}
+        <span class="text-slate-500" title="LLM-сканер (серверная находка)">
+            {{ finding.machine_id[:12] }}
+        </span>
+        {% else %}
         <a href="/machines/{{ finding.machine_id }}" class="hover:underline">
             {{ finding.machine_id[:12] }}
         </a>
+        {% endif %}
     </td>
     <td class="font-mono">{{ finding.rule_id }}</td>
     <td class="{% if finding.severity in ('block', 'critical') %}text-red-600 font-semibold
