@@ -105,8 +105,27 @@ def _mark_delivered(conn, ids: list[int]) -> None:  # type: ignore[no-untyped-de
     )
 
 
-def _bump_retry(conn, ids: list[int]) -> None:  # type: ignore[no-untyped-def]
-    """Increment retry_count for the given ids; DLQ rows at threshold."""
+def _bump_retry(
+    conn,  # type: ignore[no-untyped-def]
+    ids: list[int],
+    status: int | None = None,
+) -> None:
+    """Bump retry_count and DLQ-mark on a permanent rejection.
+
+    WR-02: discriminate 4xx (permanent — server rejected payload, no retry
+    can recover) from 5xx / network failures (transient — bump and retry
+    on the next flush()):
+
+    * ``status`` in [400, 500): the server validated the request and
+      refused it. Retrying the same bytes is futile, so DLQ-mark
+      immediately by setting ``delivered=1`` AND bumping ``retry_count``
+      (the bump preserves the local-buffer accounting so trim/audit can
+      tell the row was rejected, not delivered).
+    * ``status`` is None (network exception) or in [500, 600): bump
+      ``retry_count``; let the row stay in the buffer for the next
+      flush(). The DLQ threshold catches repeated 5xx so a permanently
+      degraded server cannot wedge the queue.
+    """
     if not ids:
         return
     placeholders = ",".join("?" for _ in ids)
@@ -115,9 +134,15 @@ def _bump_retry(conn, ids: list[int]) -> None:  # type: ignore[no-untyped-def]
         f"WHERE id IN ({placeholders})",
         tuple(ids),
     )
-    # DLQ-style: rows whose retry_count is at or past the threshold get
-    # delivered=1 to break loops on payloads the server permanently rejects
-    # (T-05-04-03 mitigation).
+    # 4xx → DLQ immediately (no point retrying a permanent rejection).
+    if status is not None and 400 <= status < 500:
+        conn.execute(
+            f"UPDATE findings_buffer SET delivered = 1 "
+            f"WHERE id IN ({placeholders})",
+            tuple(ids),
+        )
+        return
+    # 5xx / network: bump-and-retry, with DLQ-threshold safety net.
     conn.execute(
         f"UPDATE findings_buffer SET delivered = 1 "
         f"WHERE id IN ({placeholders}) AND retry_count >= ?",
@@ -214,10 +239,10 @@ def flush() -> None:
                 # Next loop iteration will try to read more undelivered rows.
                 continue
 
-            # Failure path: bump retry_count for this batch. If 4xx we
-            # additionally DLQ-mark above; for network/5xx we just bump and
-            # let later flush() invocations retry until the DLQ threshold.
-            _bump_retry(conn, ids)
+            # Failure path: bump retry_count for this batch. WR-02: pass
+            # the HTTP status so _bump_retry can DLQ 4xx immediately while
+            # letting 5xx/network failures retry until the DLQ threshold.
+            _bump_retry(conn, ids, status=status)
             # Stop after first failure — do NOT keep posting other batches on
             # a likely-degraded path. The next flush() call retries.
             return
