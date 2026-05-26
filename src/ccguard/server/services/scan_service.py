@@ -30,6 +30,16 @@ Locked decisions (per 03-CONTEXT.md):
 
 Privacy: no raw content is ever persisted — only ``file_hash`` and metadata
 (category, rationale ≤500 chars, tokens, cost).
+
+Concurrency / deployment constraints (CR-01):
+
+The instance-level :class:`asyncio.Lock` serializes the *entire* critical
+section (budget read + LLM call + LLMCallLog/ScanResult/Finding insert). This
+makes the budget gate atomic-per-call within a single Python process. It is
+**NOT** safe across multiple processes — :class:`asyncio.Lock` is per event
+loop. **For v0.2, run uvicorn with ``--workers 1``.** Multi-process budget
+enforcement would require a DB-level atomic counter (e.g. UPSERT with a
+``CHECK (used < budget)`` constraint), which is deferred to v0.3.
 """
 
 from __future__ import annotations
@@ -179,110 +189,114 @@ class ScanService:
                 if existing is not None and _aware_utc(existing.ttl_expires_at) > now:
                     return existing
 
-        # --- 2. Enable gate ---
+        # --- 2. Enable gate (cheap, lock-free) ---
         with Session(self._engine) as s:
             enabled = (get_setting(s, "llm_scanner_enabled") or "false").lower() == "true"
-            budget_str = get_setting(s, "daily_call_budget") or "0"
         if not enabled:
             raise ScannerDisabledError("llm_scanner_enabled=false")
 
-        try:
-            budget = int(budget_str)
-        except ValueError:
-            budget = 0
-
-        # --- 3. Budget gate ---
-        with Session(self._engine) as s:
-            day_start = _utc_day_start(now)
-            used = s.exec(
-                select(func.count())  # type: ignore[arg-type]
-                .select_from(LLMCallLog)
-                .where(LLMCallLog.ts >= day_start)
-            ).one()
-            # SQLAlchemy returns either a scalar or a 1-tuple depending on the
-            # path; normalize.
-            used = used[0] if isinstance(used, tuple) else used
-        if used >= budget:
-            raise BudgetExhaustedError(
-                f"daily LLM budget {budget} exhausted (used={used})"
-            )
-
-        # --- 4. Serialize LLM call ---
+        # --- 3+4+5. Serialize budget read + LLM call + persist atomically.
+        # CR-01: budget check + insert must happen in the same lock-protected
+        # critical section AND in a single Session transaction. Two concurrent
+        # callers can no longer both observe ``used == budget - 1`` and both
+        # pass the gate. Single-process only — see module docstring.
         async with self._lock:
-            outcome = await self._llm.scan_content(content, file_path, scope)
+            with Session(self._engine) as s:
+                budget_str = get_setting(s, "daily_call_budget") or "0"
+                try:
+                    budget = int(budget_str)
+                except ValueError:
+                    budget = 0
+                day_start = _utc_day_start(now)
+                used = s.exec(
+                    select(func.count())  # type: ignore[arg-type]
+                    .select_from(LLMCallLog)
+                    .where(LLMCallLog.ts >= day_start)
+                ).one()
+                # SQLAlchemy returns either a scalar or a 1-tuple depending on
+                # the path; normalize.
+                used = used[0] if isinstance(used, tuple) else used
+                if used >= budget:
+                    raise BudgetExhaustedError(
+                        f"daily LLM budget {budget} exhausted (used={used})"
+                    )
 
-        # --- 5. Persist atomically: log + ScanResult upsert + optional Finding ---
-        with Session(self._engine) as s:
-            s.add(
-                LLMCallLog(
-                    ts=now,
-                    file_hash=file_hash,
-                    model=outcome.model,
-                    input_tokens=outcome.input_tokens,
-                    output_tokens=outcome.output_tokens,
-                    cost_estimate_cents=outcome.cost_cents,
-                )
-            )
+                # LLM call still inside the lock so a single slow call cannot
+                # let a second caller race past the gate (WR-03 sets a 30s
+                # timeout on the SDK so the lock cannot be held indefinitely).
+                outcome = await self._llm.scan_content(content, file_path, scope)
 
-            existing = s.exec(
-                select(ScanResult).where(ScanResult.file_hash == file_hash)
-            ).one_or_none()
-            ttl = now + CACHE_TTL
-            if existing is None:
-                row = ScanResult(
-                    file_hash=file_hash,
-                    file_path=file_path,
-                    scope=scope,
-                    risk_score=outcome.risk_score,
-                    category=outcome.category,
-                    rationale=outcome.rationale,
-                    scanned_at=now,
-                    model=outcome.model,
-                    ttl_expires_at=ttl,
-                )
-                s.add(row)
-            else:
-                existing.file_path = file_path
-                existing.scope = scope
-                existing.risk_score = outcome.risk_score
-                existing.category = outcome.category
-                existing.rationale = outcome.rationale
-                existing.scanned_at = now
-                existing.model = outcome.model
-                existing.ttl_expires_at = ttl
-                s.add(existing)
-                row = existing
-
-            if outcome.risk_score >= EMIT_THRESHOLD:
-                severity = _severity_from_score(outcome.risk_score)
-                payload = {
-                    "file_hash": file_hash,
-                    "risk_score": outcome.risk_score,
-                    "category": outcome.category,
-                    "rationale": outcome.rationale,
-                    "scope": scope,
-                    "file_path": file_path,
-                    "model": outcome.model,
-                }
-                # Findings for the LLM scanner are server-wide artifact-level
-                # signals, not per-machine; we use a stable synthetic
-                # ``machine_id`` "_server" for this stream so the
-                # FindingRecord NOT-NULL column is satisfied without creating
-                # an arbitrary per-machine attribution.
                 s.add(
-                    FindingRecord(
-                        machine_id="_server",
-                        inventory_id=None,
-                        rule_id=f"{RULE_ID_PREFIX}{outcome.category}",
-                        severity=severity,
-                        discovered_at=now,
-                        payload_json=json.dumps(payload, allow_nan=False),
+                    LLMCallLog(
+                        ts=now,
+                        file_hash=file_hash,
+                        model=outcome.model,
+                        input_tokens=outcome.input_tokens,
+                        output_tokens=outcome.output_tokens,
+                        cost_estimate_cents=outcome.cost_cents,
                     )
                 )
 
-            s.commit()
-            s.refresh(row)
-            return row
+                existing = s.exec(
+                    select(ScanResult).where(ScanResult.file_hash == file_hash)
+                ).one_or_none()
+                ttl = now + CACHE_TTL
+                if existing is None:
+                    row = ScanResult(
+                        file_hash=file_hash,
+                        file_path=file_path,
+                        scope=scope,
+                        risk_score=outcome.risk_score,
+                        category=outcome.category,
+                        rationale=outcome.rationale,
+                        scanned_at=now,
+                        model=outcome.model,
+                        ttl_expires_at=ttl,
+                    )
+                    s.add(row)
+                else:
+                    existing.file_path = file_path
+                    existing.scope = scope
+                    existing.risk_score = outcome.risk_score
+                    existing.category = outcome.category
+                    existing.rationale = outcome.rationale
+                    existing.scanned_at = now
+                    existing.model = outcome.model
+                    existing.ttl_expires_at = ttl
+                    s.add(existing)
+                    row = existing
+
+                if outcome.risk_score >= EMIT_THRESHOLD:
+                    severity = _severity_from_score(outcome.risk_score)
+                    payload = {
+                        "file_hash": file_hash,
+                        "risk_score": outcome.risk_score,
+                        "category": outcome.category,
+                        "rationale": outcome.rationale,
+                        "scope": scope,
+                        "file_path": file_path,
+                        "model": outcome.model,
+                    }
+                    # Findings for the LLM scanner are server-wide
+                    # artifact-level signals, not per-machine; we use a
+                    # stable synthetic ``machine_id`` "_server" for this
+                    # stream so the FindingRecord NOT-NULL column is
+                    # satisfied without creating an arbitrary per-machine
+                    # attribution.
+                    s.add(
+                        FindingRecord(
+                            machine_id="_server",
+                            inventory_id=None,
+                            rule_id=f"{RULE_ID_PREFIX}{outcome.category}",
+                            severity=severity,
+                            discovered_at=now,
+                            payload_json=json.dumps(payload, allow_nan=False),
+                        )
+                    )
+
+                s.commit()
+                s.refresh(row)
+                return row
 
     async def rescan_file(self, file_hash: str) -> _RescanQueuedSentinel | None:
         """Invalidate the cache row for ``file_hash``; return :data:`RescanQueued`.
