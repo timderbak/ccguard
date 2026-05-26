@@ -15,7 +15,7 @@
         </a>
     </td>
     <td class="font-mono">{{ finding.rule_id }}</td>
-    <td class="{% if finding.severity == 'block' %}text-red-600
+    <td class="{% if finding.severity in ('block', 'critical') %}text-red-600 font-semibold
                {% elif finding.severity == 'warn' %}text-amber-600
                {% else %}text-slate-500{% endif %}">{{ finding.severity }}</td>
     <td class="text-center">
