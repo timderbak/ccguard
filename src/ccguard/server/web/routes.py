@@ -755,14 +755,29 @@ async def publish_policy(
         publish_draft,
         save_draft,
     )
-    from ccguard.server.web.policy_form import form_to_yaml
+    from ccguard.server.web.policy_form import (
+        PromptInjectionFormError,
+        form_to_yaml,
+    )
 
     form = await request.form()
+    form_dict = dict(form)
     keys = list(form.keys())
     has_section_data = any(
         k.startswith(prefix + ".")
         for k in keys
-        for prefix in ("mcp_servers", "network", "commands", "skills", "hooks", "agents", "env")
+        for prefix in (
+            "mcp_servers",
+            "network",
+            "commands",
+            "skills",
+            "hooks",
+            "agents",
+            "env",
+            # CR-02: PI-only submissions to /policy/publish previously bypassed
+            # form_to_yaml entirely → silent data loss + skipped _redos_safe.
+            "prompt_injection",
+        )
     )
     if has_section_data:
         current = get_current_published(session)
@@ -770,7 +785,19 @@ async def publish_policy(
         baseline = yaml.safe_load(current.yaml_text) if current else None
         try:
             yaml_text = form_to_yaml(
-                dict(form), current_revision=current_rev, baseline=baseline,
+                form_dict, current_revision=current_rev, baseline=baseline,
+            )
+        except PromptInjectionFormError as exc:
+            # CR-02: mirror /policy/draft UX — re-render the rules page with
+            # the locked Russian notice atop the Prompt-Injection card
+            # instead of raising 500.
+            return _render_rules_page(
+                request,
+                user=user,
+                session=session,
+                errors={exc.section: str(exc)},
+                policy_override=_policy_with_pi_form_overrides(session, form_dict),
+                status_code=200,
             )
         except ValidationError as e:
             raise HTTPException(status_code=422, detail=str(e))
