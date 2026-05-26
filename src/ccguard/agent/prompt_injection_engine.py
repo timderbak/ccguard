@@ -169,11 +169,18 @@ def scan(text: str, cfg: PromptInjectionConfig) -> ScanResult | None:
             )
 
     # 3) Admin custom regex scan.
-    for pattern in _compiled_admin(tuple(cfg.regex_patterns)):
+    # CR-03 privacy: do NOT ship raw regex source upstream — admin patterns
+    # can encode secret shapes (e.g. `password=([A-Za-z0-9]{16,})`),
+    # internal hostnames, employee names, or licensed content. Emit a
+    # generic positional placeholder + a stable hash so admins can
+    # correlate locally without leaking the source. The default catalog
+    # keeps the raw source (it is public).
+    for idx, pattern in enumerate(_compiled_admin(tuple(cfg.regex_patterns)), start=1):
         if pattern.search(norm):
+            pattern_hash = hashlib.sha256(pattern.pattern.encode()).hexdigest()[:12]
             return ScanResult(
                 category="admin_custom",
-                matched_pattern=pattern.pattern[:_MAX_PATTERN_LEN],
+                matched_pattern=f"[admin pattern {idx}] sha256:{pattern_hash}",
                 source="regex",
                 rule_id="prompt_injection.admin_custom",
             )
