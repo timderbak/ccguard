@@ -111,7 +111,15 @@ def enforce() -> None:
 
 @app.command()
 def sync() -> None:
-    """Отправить inventory на сервер, обновить локальную policy."""
+    """Отправить inventory на сервер, обновить локальную policy.
+
+    Plan 03-04: after the inventory POST succeeds we additionally run the
+    LLM content-scan cycle (collect agents/skills, mask, send to
+    ``/api/v1/scan-content``). The scanner is gated server-side via
+    ``/api/v1/scanner-config`` so an old/disabled server is a no-op.
+    Scan failures are logged and swallowed — they must never fail the
+    inventory cycle (the scanner is best-effort tertiary signal).
+    """
     cfg, _ = load_or_create()
     inv = _do_scan()
 
@@ -138,6 +146,22 @@ def sync() -> None:
         audit_cursor_path=audit_cursor_path,
         policy_cache_path=cache,
     )
+    # Plan 03-04: trigger LLM content scan AFTER the inventory cycle. The
+    # scanner is gated server-side; agent v0.1 servers without /scanner-config
+    # will simply 404 and we treat that as "skipped". Never raises — the scan
+    # is purely informational.
+    scan_summary: dict[str, object] = {"skipped": "inventory_failed"}
+    if result.inventory_posted and not result.error:
+        try:
+            from ccguard.agent.inventory_scan import run_scan_cycle
+            scan_summary = run_scan_cycle(
+                claude_home=_claude_home(),
+                server_url=cfg.server.url,
+                token=cfg.server.token,
+            )
+        except Exception as exc:  # noqa: BLE001 — never fail sync because of scan
+            scan_summary = {"error": f"scan_unexpected: {exc.__class__.__name__}"}
+
     typer.echo(
         json.dumps(
             {
@@ -145,6 +169,7 @@ def sync() -> None:
                 "policy_updated": result.policy_updated,
                 "new_policy_revision": result.new_policy_revision,
                 "error": result.error,
+                "scan": scan_summary,
             },
             indent=2,
         )
