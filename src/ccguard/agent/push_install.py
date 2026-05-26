@@ -70,27 +70,78 @@ def _render_block(block_id: str, content: str) -> str:
     )
 
 
+# WR-01: match a triple-backtick fenced code block (opening fence at the
+# start of a line through the matching closing fence at the start of a
+# line). MULTILINE so ``^`` is per-line; DOTALL so the body may span lines.
+# We use a non-greedy ``.*?`` so adjacent fences do not collapse together.
+_FENCE_RE = re.compile(r"(?ms)^```[^\n]*\n.*?^```[ \t]*$\n?")
+
+
+def _split_fenced(text: str) -> tuple[list[str], list[str]]:
+    """Split ``text`` into (unfenced_segments, fenced_segments).
+
+    Reconstruction: ``unfenced[0] + fenced[0] + unfenced[1] + fenced[1] + ...``.
+    ``len(unfenced) == len(fenced) + 1`` always (possibly with empty strings).
+
+    WR-01: marker matching must not enter fenced code blocks because admins
+    routinely document the marker syntax inside ``` fences as examples; the
+    previous regex-on-raw-text would treat those examples as managed blocks
+    and silently overwrite the docs on the next sync.
+    """
+    unfenced: list[str] = []
+    fenced: list[str] = []
+    pos = 0
+    for m in _FENCE_RE.finditer(text):
+        unfenced.append(text[pos:m.start()])
+        fenced.append(m.group(0))
+        pos = m.end()
+    unfenced.append(text[pos:])
+    return unfenced, fenced
+
+
 def _merge_claude_md_blocks(existing: str, blocks: list[dict]) -> str:
     """Update/insert managed blocks in CLAUDE.md.
 
     - Existing block (matched by id-backref regex): body replaced in-place.
     - Missing block: appended to end with one blank-line separator.
     - Blocks NOT in `blocks` are preserved (D-3: no orphan deletion).
+    - WR-01: marker matching skips content inside ``` fenced code blocks
+      so documentation examples of the marker syntax are not overwritten.
     """
-    out = existing
+    unfenced, fenced = _split_fenced(existing)
+
     for block in blocks:
         block_id = block["id"]
         content = block["content"]
         rendered = _render_block(block_id, content)
         pattern = _marker_re(block_id)
-        if pattern.search(out):
-            out = pattern.sub(lambda _m, r=rendered: r, out, count=1)
-        else:
-            # Append with one blank-line separator (and ensure trailing newline)
-            if out and not out.endswith("\n"):
-                out += "\n"
-            sep = "\n" if out else ""
-            out = f"{out}{sep}{rendered}\n"
+        # Search only the unfenced segments. First match wins (count=1).
+        replaced = False
+        for i, seg in enumerate(unfenced):
+            if pattern.search(seg):
+                unfenced[i] = pattern.sub(lambda _m, r=rendered: r, seg, count=1)
+                replaced = True
+                break
+        if not replaced:
+            # Append to the final unfenced segment with one blank-line
+            # separator (and ensure trailing newline).
+            tail = unfenced[-1]
+            full_so_far = "".join(
+                u + (fenced[i] if i < len(fenced) else "")
+                for i, u in enumerate(unfenced)
+            )
+            if full_so_far and not full_so_far.endswith("\n"):
+                tail += "\n"
+            sep = "\n" if full_so_far else ""
+            unfenced[-1] = f"{tail}{sep}{rendered}\n"
+
+    # Reassemble.
+    out_parts: list[str] = []
+    for i, u in enumerate(unfenced):
+        out_parts.append(u)
+        if i < len(fenced):
+            out_parts.append(fenced[i])
+    out = "".join(out_parts)
     if out and not out.endswith("\n"):
         out += "\n"
     return out
