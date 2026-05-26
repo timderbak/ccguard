@@ -39,7 +39,13 @@ class _FindingWire(BaseModel):
 
     ts: datetime
     rule_id: str = Field(min_length=1, max_length=128)
-    severity: Literal["info", "warn", "block", "critical"]
+    # WR-05: agents only ever emit {info, warn, block}; the "critical"
+    # severity is a server-side classification (see severity_critical
+    # tagging) that must not be writable from agent-side input. Tighten
+    # the wire schema so a malformed/hostile buffer row carrying
+    # severity="critical" is rejected with a 422 instead of being
+    # ingested as a real critical-severity finding.
+    severity: Literal["info", "warn", "block"]
     title: str = Field(min_length=1, max_length=256)
     source: str = Field(min_length=1, max_length=64)
     matched_pattern: str = Field(max_length=220)  # 200 + truncation suffix
