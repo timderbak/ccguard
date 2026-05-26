@@ -195,7 +195,10 @@ def _parse_required_mcp_servers(form: Mapping[str, str]) -> list[dict[str, Any]]
                 "required_mcp_servers",
                 MANDATORY_ERROR_COPY["required_mcp_servers"],
             )
-        args = [s.strip() for s in args_raw.split(",") if s.strip()]
+        # WR-07: args is one-per-line so an argument can contain a literal
+        # comma (e.g. ``--filter=a,b``). Previous CSV split silently
+        # mangled such args; the UI label was updated in lockstep.
+        args = _lines_to_list(args_raw)
         # D-7: inject `_managed_by: "ccguard"` server-side. The alias is
         # serialized back as `_managed_by` (see Policy schema) so the agent in
         # plan 03 can identify managed entries during MCP-config merge.

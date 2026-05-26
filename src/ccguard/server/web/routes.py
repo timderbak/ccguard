@@ -422,8 +422,9 @@ def _build_mandatory_sections_view(policy_obj) -> dict[str, list[dict]]:
     """Convert Policy.required_* / .managed_claude_md_blocks into template-friendly dicts.
 
     For ``required_mcp_servers``, pre-serializes ``env`` to a JSON string
-    (``env_text``) and ``args`` to a comma-joined string (``args_text``) so
-    the row partial can render them in a single ``<input>``.
+    (``env_text``) and ``args`` to a newline-joined string (``args_text``)
+    so the row partial can render them in a textarea (WR-07: one-per-line
+    so an argument value can contain a literal comma).
     """
     out: dict[str, list[dict]] = {
         "required_mcp_servers": [],
@@ -433,7 +434,7 @@ def _build_mandatory_sections_view(policy_obj) -> dict[str, list[dict]]:
     }
     for s in getattr(policy_obj, "required_mcp_servers", []) or []:
         d = s.model_dump(mode="json", by_alias=True)
-        d["args_text"] = ", ".join(d.get("args") or [])
+        d["args_text"] = "\n".join(d.get("args") or [])
         d["env_text"] = json.dumps(d.get("env") or {}, ensure_ascii=False)
         out["required_mcp_servers"].append(d)
     for s in getattr(policy_obj, "required_skills", []) or []:

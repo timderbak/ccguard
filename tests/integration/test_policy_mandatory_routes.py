@@ -159,7 +159,8 @@ def test_draft_persists_all_four_sections_and_redirects_to_mandatory(client_sess
         # MCP
         "required_mcp_servers[0].name": "stripe",
         "required_mcp_servers[0].command": "/usr/bin/x",
-        "required_mcp_servers[0].args": "a, b, c",
+        # WR-07: args is one-per-line (was CSV) so commas can appear in values.
+        "required_mcp_servers[0].args": "a\nb\nc",
         "required_mcp_servers[0].env": '{"K":"v"}',
         # Skill
         "required_skills[0].name": "sec",
@@ -285,7 +286,8 @@ def test_publish_round_trip_exposes_sections_via_api(client_session):
         "tab": "mandatory",
         "required_mcp_servers[0].name": "stripe",
         "required_mcp_servers[0].command": "/usr/bin/x",
-        "required_mcp_servers[0].args": "a, b",
+        # WR-07: args is one-per-line (was CSV).
+        "required_mcp_servers[0].args": "a\nb",
         "required_mcp_servers[0].env": '{"K":"v"}',
         "required_skills[0].name": "sec",
         "required_skills[0].frontmatter_type": "skill",
