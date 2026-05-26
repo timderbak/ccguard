@@ -317,7 +317,16 @@ class ScanService:
         Returns ``None`` if no row exists for that hash (nothing to invalidate).
         Server does not store content, so the actual re-scan happens when the
         agent next sends content matching this hash (cache miss path).
+
+        WR-08: validate the sha256 shape here so every caller gets the same
+        guarantees without having to remember to validate first. The route
+        handler at ``/admin/scan/{file_hash}/rescan`` also validates as a
+        defense-in-depth layer.
         """
+        if len(file_hash) != 64 or any(
+            c not in "0123456789abcdef" for c in file_hash
+        ):
+            raise ValueError(f"invalid file_hash: {file_hash!r}")
         with Session(self._engine) as s:
             row = s.exec(
                 select(ScanResult).where(ScanResult.file_hash == file_hash)
