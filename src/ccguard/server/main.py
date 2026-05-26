@@ -11,7 +11,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI
 
-from ccguard.server.api import audit, findings, health, inventory, machines, policy
+from ccguard.server.api import audit, findings, health, inventory, machines, policy, scan
 from ccguard.server.config import ServerConfig
 from ccguard.server.db.session import init_db, make_engine
 from ccguard.server.policy_loader import PolicyLoader
@@ -40,6 +40,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)
+
+    # Plan 03-04: wire ScanService if ANTHROPIC_API_KEY is set at startup.
+    # When the key is missing, /scanner-config returns enabled=false and the
+    # agent skips /scan-content entirely; if a stale agent does call it
+    # anyway it gets 503 scanner_unavailable. Tests override the dependency
+    # so this branch is non-load-bearing for unit/integration coverage.
+    app.state.scan_service = None
+    if cfg.llm_enabled_at_startup and cfg.anthropic_api_key:
+        try:
+            from ccguard.server.services.llm_client import LLMClient
+            from ccguard.server.services.scan_service import ScanService
+            app.state.scan_service = ScanService(
+                engine=engine,
+                llm_client=LLMClient(api_key=cfg.anthropic_api_key),
+            )
+        except Exception:  # noqa: BLE001 — scanner is optional at startup
+            logger.exception("failed to initialize ScanService; scanner endpoints will 503")
+            app.state.scan_service = None
 
     # Trigger policy bootstrap from file if DB has no published policy yet.
     # Otherwise the web UI /policy route returns 503 until first agent sync.
@@ -127,6 +145,7 @@ def create_app() -> FastAPI:
     app.include_router(machines.router)
     app.include_router(findings.router)
     app.include_router(audit.router)
+    app.include_router(scan.router)
     app.include_router(web_router)
     return app
 
