@@ -15,6 +15,8 @@ import re
 import time
 import unicodedata
 
+import pytest
+
 from ccguard.agent.prompt_injection_patterns import get_default_patterns
 
 CATEGORIES = {
@@ -121,3 +123,60 @@ def test_get_default_patterns_is_cached() -> None:
     a = get_default_patterns()
     b = get_default_patterns()
     assert a is b
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 / 05-06 extended FP smoke: every default pattern × every benign
+# dev-shell command must produce zero matches. Catches over-broad patterns
+# before they hit a real fleet (T-05-01-02: false-positive cost).
+# ---------------------------------------------------------------------------
+
+_BENIGN_DEV_COMMANDS = [
+    "git log --all --oneline",
+    "pytest -x -q tests/",
+    "docker run --rm -it nginx",
+    "kubectl get pods -A",
+    "ls -la /var/log",
+    "make build && make test",
+    "npm install react react-dom",
+    "cargo test --release",
+    "go run main.go",
+    "rustc src/main.rs -O",
+]
+
+
+@pytest.mark.parametrize("text", _BENIGN_DEV_COMMANDS)
+def test_no_false_positive_on_benign_dev_commands(text: str) -> None:
+    """Each benign dev command must match ZERO default patterns."""
+    norm = _normalize(text)
+    hits = [
+        f"{cat}:{pat.pattern[:80]}"
+        for cat, pat in get_default_patterns()
+        if pat.search(norm)
+    ]
+    assert hits == [], f"false positives on {text!r}: {hits}"
+
+
+def test_redos_smoke_extended_pathological_inputs() -> None:
+    """Beyond the all-``a`` smoke: feed nested-quantifier-friendly inputs
+    that have historically tripped naive regexes (long ``(?:x )+`` chains
+    of words, mixed punctuation). Each pattern.search must still complete
+    under 10 ms — generous over the 5 ms baseline because these inputs
+    are harder than uniform fill."""
+    import time
+
+    blobs = [
+        ("word " * 800).strip(),
+        "ignore " * 800,
+        ("a" * 64 + " ") * 64,
+        "<system> " * 400 + " </system>",
+    ]
+    for blob in blobs:
+        for cat, pat in get_default_patterns():
+            t0 = time.perf_counter()
+            pat.search(blob)
+            elapsed = time.perf_counter() - t0
+            assert elapsed < 0.010, (
+                f"ReDoS-risk pattern in {cat!r}: {pat.pattern!r} "
+                f"took {elapsed * 1000:.2f}ms on {blob[:40]!r}..."
+            )
