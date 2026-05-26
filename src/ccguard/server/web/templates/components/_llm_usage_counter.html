@@ -1,0 +1,11 @@
+{# LLM scanner usage counter partial. Served by GET /_partials/settings/llm-usage
+   and included inline by settings.html on initial render.
+   Inputs: enabled (bool), used (int), budget (int), cost_dollars (float). #}
+{% if not enabled %}
+  <span class="text-slate-500">Сканер выключен.</span>
+{% else %}
+  <span>Использовано:
+    <span class="font-mono {% if used >= budget %}text-red-600 font-semibold{% else %}text-slate-700{% endif %}">{{ used }}/{{ budget }}</span>
+    calls сегодня • <span class="font-mono">${{ '%.2f'|format(cost_dollars) }}</span>
+  </span>
+{% endif %}

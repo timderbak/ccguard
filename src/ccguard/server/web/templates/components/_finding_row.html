@@ -1,0 +1,46 @@
+{# Single <tr> partial for one finding. Used by findings_feed.html (inline)
+   and POST /admin/scan/{file_hash}/rescan (HTMX outerHTML swap).
+
+   Inputs:
+     finding — view-model with .discovered_at, .machine_id, .rule_id, .severity,
+               .details (dict with optional risk_score, category, file_hash)
+     rescan_notice — optional inline notice string ("бюджет исчерпан" |
+                     "сканер выключен") rendered after risk badge.
+#}
+<tr class="border-b last:border-0">
+    <td class="py-2">{{ finding.discovered_at.isoformat(timespec="seconds") }}</td>
+    <td>
+        <a href="/machines/{{ finding.machine_id }}" class="hover:underline">
+            {{ finding.machine_id[:12] }}
+        </a>
+    </td>
+    <td class="font-mono">{{ finding.rule_id }}</td>
+    <td class="{% if finding.severity == 'block' %}text-red-600
+               {% elif finding.severity == 'warn' %}text-amber-600
+               {% else %}text-slate-500{% endif %}">{{ finding.severity }}</td>
+    <td class="text-center">
+        {% include "components/_risk_badge.html" %}
+        {% if rescan_notice == 'budget_exhausted' %}
+          <span class="text-xs text-amber-600 ml-2">бюджет исчерпан</span>
+        {% elif rescan_notice == 'scanner_disabled' %}
+          <span class="text-xs text-slate-500 ml-2">сканер выключен</span>
+        {% endif %}
+    </td>
+    <td class="text-right">
+        {% if finding.rule_id.startswith('llm.scan.') and finding.details.file_hash %}
+        <form hx-post="/admin/scan/{{ finding.details.file_hash }}/rescan"
+              hx-target="closest tr"
+              hx-swap="outerHTML"
+              hx-confirm="Пересканировать этот файл? Списание из дневного бюджета."
+              class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button type="submit"
+                    class="text-sm text-slate-700 hover:text-slate-900 hover:underline">
+                Пересканировать
+            </button>
+        </form>
+        {% else %}
+        <span class="text-slate-400">—</span>
+        {% endif %}
+    </td>
+</tr>

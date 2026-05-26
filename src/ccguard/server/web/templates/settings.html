@@ -59,11 +59,85 @@
     </form>
 </section>
 
-<section class="bg-white rounded-lg shadow p-4">
+<section class="bg-white rounded-lg shadow p-4 mb-6">
     <h3 class="font-semibold mb-3">О сервере</h3>
     <ul class="text-sm space-y-1 text-slate-600">
         <li>Версия сервера: {{ server_version }}</li>
         <li>Администратор: <code>{{ user }}</code></li>
     </ul>
+</section>
+
+<section class="bg-white rounded-lg shadow p-4 mb-4">
+    <h3 class="text-sm font-semibold text-slate-700 mb-3">LLM-сканер</h3>
+
+    {% if not has_api_key %}
+    <p class="text-sm text-amber-600 mb-3">
+        ANTHROPIC_API_KEY не задан в окружении сервера. Сканер отключён.
+    </p>
+    {% endif %}
+
+    {% if validation_error %}
+    <p class="text-sm text-red-600 mb-3">{{ validation_error }}</p>
+    {% endif %}
+
+    <form method="POST" action="/admin/llm-settings" class="space-y-3 mb-4">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="enabled"
+                   {% if llm_settings.llm_scanner_enabled %}checked{% endif %}
+                   {% if not has_api_key %}disabled{% endif %}
+                   class="rounded border-slate-300 focus:ring-2 focus:ring-slate-500">
+            Включить сканер
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+            <span class="text-slate-700">Дневной бюджет (calls):</span>
+            <input type="number" name="daily_call_budget"
+                   value="{{ llm_settings.daily_call_budget }}"
+                   min="0" max="10000" step="1"
+                   class="w-24 rounded border-slate-300 px-2 py-1 text-sm font-mono
+                          focus:ring-2 focus:ring-slate-400 focus:border-slate-500">
+        </label>
+        <button type="submit"
+                class="bg-slate-900 text-white text-sm rounded px-4 py-2">
+            Сохранить
+        </button>
+    </form>
+
+    <div class="text-sm mb-4"
+         hx-get="/_partials/settings/llm-usage"
+         hx-trigger="every 30s">
+        {% include "components/_llm_usage_counter.html" %}
+    </div>
+
+    <h4 class="text-sm font-semibold text-slate-700 mb-2">Последние 10 сканов</h4>
+    {% if scans %}
+    <ul class="space-y-1 mb-4">
+        {% for scan in scans %}
+        <li class="flex items-center gap-3 text-sm border-b border-slate-200 last:border-0 py-1">
+            <span class="font-mono text-slate-500 text-xs">{{ scan.scanned_at.isoformat(timespec="seconds") }}</span>
+            <span class="font-mono text-slate-700 truncate flex-1">{{ scan.file_path }}</span>
+            {% set s = scan.risk_score %}
+            <span class="inline-block rounded-full px-2 py-0.5 text-xs font-semibold
+                         {% if s < 30 %}bg-emerald-600 text-white
+                         {% elif s <= 70 %}bg-amber-600 text-white
+                         {% else %}bg-red-600 text-white{% endif %}">
+                {{ s }}
+            </span>
+            <span class="font-mono text-slate-500 text-xs">{{ scan.category }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-slate-400 py-4 text-center mb-4">Сканов ещё не было.</p>
+    {% endif %}
+
+    <form method="POST" action="/admin/scan/rescan-all"
+          onsubmit="return confirm('Пересканировать ВСЕ файлы? Может превысить дневной бюджет.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <button type="submit"
+                class="bg-slate-900 text-white text-sm rounded px-4 py-2">
+            Пересканировать всё
+        </button>
+    </form>
 </section>
 {% endblock %}
