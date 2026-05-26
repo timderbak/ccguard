@@ -30,8 +30,9 @@ from datetime import UTC, datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from sqlalchemy import update
 from sqlalchemy.engine import Engine
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from ccguard.server.db.models import ScanResult
 
@@ -105,15 +106,19 @@ def rescan_all_files(engine: Engine) -> None:
 
     Idempotent — running concurrently is safe; rows just get pushed further
     into the past. Phase 2 anomaly tick path is unaffected.
+
+    WR-09: single bulk UPDATE instead of select + per-row mutate so we
+    don't hold a long write transaction (SQLite WAL writer) while
+    iterating in Python, and only one SQL round-trip is issued.
     """
     now_expired = datetime.now(UTC) - timedelta(seconds=1)
     with Session(engine) as s:
-        rows = list(s.exec(select(ScanResult)))
-        for row in rows:
-            row.ttl_expires_at = now_expired
-            s.add(row)
+        result = s.exec(
+            update(ScanResult).values(ttl_expires_at=now_expired)  # type: ignore[arg-type]
+        )
         s.commit()
-    log.info("llm rescan-all: expired %d ScanResult rows", len(rows))
+        affected = getattr(result, "rowcount", 0) or 0
+    log.info("llm rescan-all: expired %d ScanResult rows", affected)
 
 
 def enqueue_rescan_all(scheduler: AsyncIOScheduler, engine: Engine) -> None:
