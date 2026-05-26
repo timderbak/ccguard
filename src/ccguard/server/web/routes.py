@@ -447,11 +447,80 @@ def _build_mandatory_sections_view(policy_obj) -> dict[str, list[dict]]:
     return out
 
 
-@router.get("/policy", response_class=HTMLResponse)
-def policy_editor(
+def _policy_with_pi_form_overrides(session: Session, form: dict[str, str]):
+    """Build a Policy with the submitted prompt_injection.* values overlaid.
+
+    Used by the /policy re-render path when ``_parse_prompt_injection`` raises:
+    we want the textarea to keep showing the admin's offending input (including
+    the bad regex) so they can fix the line in place. Non-PI sections come from
+    the current published/draft policy unchanged.
+
+    The PI section is rebuilt manually here (NOT via ``_parse_prompt_injection``,
+    which would re-raise on the same input). We bypass validation so the
+    template renders the raw values as-is.
+    """
+    from ccguard.server.services.policy_service import (
+        get_current_published,
+        get_draft,
+        validate_yaml,
+    )
+    from ccguard.schemas.policy import LlamaGuardConfig, PromptInjectionConfig
+
+    current = get_current_published(session)
+    draft = get_draft(session)
+    source = draft if draft is not None else current
+    if source is None:
+        raise HTTPException(status_code=503, detail="no policy in DB")
+    policy_obj = validate_yaml(source.yaml_text)
+
+    # Split textareas into lists preserving the offending raw lines (do NOT
+    # strip empties so the admin sees their exact input).
+    def _raw_lines(raw: str) -> list[str]:
+        return [ln for ln in raw.splitlines() if ln.strip()]
+
+    raw_severity = form.get("prompt_injection.severity", policy_obj.prompt_injection.severity)
+    # Only allow valid enum into the model; if invalid (bad-severity test) fall
+    # back to current value so PromptInjectionConfig validates.
+    if raw_severity not in ("info", "warn", "block"):
+        severity_for_model = policy_obj.prompt_injection.severity
+    else:
+        severity_for_model = raw_severity
+
+    raw_endpoint = form.get(
+        "prompt_injection.llama_guard.endpoint",
+        policy_obj.prompt_injection.llama_guard.endpoint,
+    ).strip() or "http://localhost:11434"
+
+    raw_timeout_str = form.get("prompt_injection.llama_guard.timeout_ms", "")
+    try:
+        raw_timeout = int(raw_timeout_str)
+        if not (50 <= raw_timeout <= 10000):
+            raw_timeout = policy_obj.prompt_injection.llama_guard.timeout_ms
+    except (ValueError, TypeError):
+        raw_timeout = policy_obj.prompt_injection.llama_guard.timeout_ms
+
+    policy_obj.prompt_injection = PromptInjectionConfig(
+        enabled=form.get("prompt_injection.enabled", "") == "1",
+        severity=severity_for_model,
+        regex_patterns=_raw_lines(form.get("prompt_injection.regex_patterns", "")),
+        allowlist_patterns=_raw_lines(form.get("prompt_injection.allowlist_patterns", "")),
+        llama_guard=LlamaGuardConfig(
+            enabled=form.get("prompt_injection.llama_guard.enabled", "") == "1",
+            endpoint=raw_endpoint,
+            timeout_ms=raw_timeout,
+        ),
+    )
+    return policy_obj
+
+
+def _render_rules_page(
     request: Request,
-    user: str = Depends(require_session),
-    session: Session = Depends(get_session),
+    *,
+    user: str,
+    session: Session,
+    errors: dict[str, str] | None = None,
+    policy_override=None,
+    status_code: int = 200,
 ) -> HTMLResponse:
     from ccguard.server.services.policy_service import (
         diff_policies,
@@ -464,7 +533,7 @@ def policy_editor(
     source = draft if draft is not None else current
     if source is None:
         raise HTTPException(status_code=503, detail="no policy in DB (run bootstrap first)")
-    policy_obj = validate_yaml(source.yaml_text)
+    policy_obj = policy_override if policy_override is not None else validate_yaml(source.yaml_text)
     diff_lines = (
         diff_policies(current.yaml_text, draft.yaml_text)
         if current is not None and draft is not None
@@ -482,8 +551,19 @@ def policy_editor(
             "diff_lines": diff_lines,
             "csrf_token": _csrf_for(request),
             "active_tab": "rules",
+            "errors": errors or {},
         },
+        status_code=status_code,
     )
+
+
+@router.get("/policy", response_class=HTMLResponse)
+def policy_editor(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    return _render_rules_page(request, user=user, session=session)
 
 
 def _render_mandatory_page(
@@ -613,6 +693,7 @@ async def save_policy_draft(
     )
     from ccguard.server.web.policy_form import (
         MandatorySectionError,
+        PromptInjectionFormError,
         form_to_yaml,
     )
 
@@ -640,6 +721,18 @@ async def save_policy_draft(
             session=session,
             errors={exc.section: str(exc)},
             sections_override=_form_to_sections_view(form_dict),
+            status_code=200,
+        )
+    except PromptInjectionFormError as exc:
+        # Phase 5 / 05-05: re-render /policy with the Russian error notice atop
+        # the Prompt-Injection card and preserve submitted PI form values so the
+        # admin can fix the offending line without retyping everything.
+        return _render_rules_page(
+            request,
+            user=user,
+            session=session,
+            errors={exc.section: str(exc)},
+            policy_override=_policy_with_pi_form_overrides(session, form_dict),
             status_code=200,
         )
     except ValidationError as e:

@@ -25,6 +25,20 @@ class MandatorySectionError(ValueError):
         self.section = section
 
 
+class PromptInjectionFormError(ValueError):
+    """Raised when the `prompt_injection` section fails form-time validation.
+
+    Carries the locked Russian error notice (per 05-UI-SPEC §Validation error
+    notices) so the route handler re-renders /policy with the message atop the
+    Prompt-Injection card. `section` is always ``"prompt_injection"``.
+    """
+
+    section = "prompt_injection"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
 # Locked Russian error notices per 04-UI-SPEC.md Copywriting Contract.
 MANDATORY_ERROR_COPY: dict[str, str] = {
     "required_mcp_servers": (
@@ -64,6 +78,130 @@ def _lines_to_list(raw: str) -> list[str]:
 
 def _checkbox(raw: str) -> bool:
     return raw == "1"
+
+
+def _is_valid_url(s: str) -> bool:
+    """Loose URL gate per 05-UI-SPEC: http:// or https:// scheme required."""
+    return s.startswith("http://") or s.startswith("https://")
+
+
+# Structural detector for the textbook nested-quantifier ReDoS family:
+# ``(X+)+``, ``(X*)+``, ``(X+)*``, ``(X*)*`` — including ``(.*)+`` and
+# ``(.+)+``. Catastrophic backtracking shows when an inner unbounded
+# quantifier is wrapped by an outer unbounded quantifier on the same group.
+# This is intentionally a syntactic over-approximation: it rejects a few
+# safe patterns (e.g. ``(a+)+`` where the literal is unambiguous), which
+# is acceptable for a publish-time validator that prefers safety over
+# permissiveness (T-05-05-01 — DoS on fleet hot-path).
+_REDOS_NESTED_QUANTIFIER_RE = re.compile(r"\([^()]*[+*][^()]*\)[+*]")
+
+
+def _redos_safe(
+    compiled: "re.Pattern[str]",
+    pattern: str = "",
+    budget_ms: int = 50,
+) -> bool:
+    """Reject catastrophic-backtracking regex (T-05-05-01).
+
+    Two layers:
+    1. Structural — refuse patterns matching ``(X+|X*)+`` / ``(X+|X*)*``.
+       Catches ``(.*)+``, ``(.+)+``, ``(a+)+`` etc. before any input is run.
+    2. Adversarial probe — run ``compiled.search(probe)`` on a worker thread
+       with ``probe = 'a' * 30 + '!'`` (forces failure → worst-case
+       backtracking on classics like ``^(a+)+$``) and a 50ms wall-clock
+       budget. Probe is best-effort (T-05-05-02): patterns whose worst case
+       does not align with our probe alphabet may slip through.
+    """
+    if pattern and _REDOS_NESTED_QUANTIFIER_RE.search(pattern):
+        return False
+
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FuturesTimeoutError
+
+    # Adversarial input: trailing literal forces a backtracking failure path
+    # on classics like ``^(a+)+$``.
+    probe = "a" * 30 + "!"
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(compiled.search, probe)
+        try:
+            fut.result(timeout=budget_ms / 1000.0)
+            return True
+        except FuturesTimeoutError:
+            return False
+
+
+def _parse_prompt_injection(form: Mapping[str, str]) -> dict[str, Any]:
+    """Parse the ``prompt_injection.*`` form fields into a Pydantic-ready dict.
+
+    Raises ``PromptInjectionFormError`` with locked Russian copy on:
+    - invalid regex (re.error or ReDoS probe failure) in regex_patterns
+    - invalid regex in allowlist_patterns ``re:`` prefix
+    - severity not in {info, warn, block}
+    - bad LlamaGuard endpoint URL (only when LG enabled)
+    - timeout_ms out of range [50, 10000] or non-integer
+    """
+    # 1) regex_patterns — compile + ReDoS probe.
+    raw_patterns = _lines_to_list(form.get("prompt_injection.regex_patterns", ""))
+    for i, p in enumerate(raw_patterns, start=1):
+        try:
+            compiled = re.compile(p)
+        except re.error:
+            raise PromptInjectionFormError(
+                f"Невалидный regex в строке {i}: «{p}». Исправьте и сохраните снова."
+            )
+        if not _redos_safe(compiled, pattern=p):
+            raise PromptInjectionFormError(
+                f"Невалидный regex в строке {i}: «{p}». Исправьте и сохраните снова."
+            )
+
+    # 2) allowlist_patterns — only validate the regex part of `re:` entries.
+    raw_allow = _lines_to_list(form.get("prompt_injection.allowlist_patterns", ""))
+    for i, p in enumerate(raw_allow, start=1):
+        if p.startswith("re:"):
+            inner = p[3:]
+            try:
+                re.compile(inner)
+            except re.error:
+                raise PromptInjectionFormError(
+                    f"Невалидный regex в allowlist, строка {i}: «{p}»."
+                )
+
+    # 3) severity enum.
+    severity = form.get("prompt_injection.severity", "warn")
+    if severity not in ("info", "warn", "block"):
+        raise PromptInjectionFormError(
+            "severity должен быть одним из: info, warn, block."
+        )
+
+    # 4) LlamaGuard block.
+    lg_enabled = _checkbox(form.get("prompt_injection.llama_guard.enabled", ""))
+    lg_endpoint = form.get("prompt_injection.llama_guard.endpoint", "http://localhost:11434").strip()
+    if lg_enabled and not _is_valid_url(lg_endpoint):
+        raise PromptInjectionFormError(
+            "Endpoint LlamaGuard должен быть валидным URL (http:// или https://)."
+        )
+
+    raw_timeout = form.get("prompt_injection.llama_guard.timeout_ms", "500")
+    try:
+        timeout_ms = int(raw_timeout)
+        if not (50 <= timeout_ms <= 10000):
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise PromptInjectionFormError(
+            "timeout_ms должен быть в диапазоне 50–10000 мс."
+        )
+
+    return {
+        "enabled": _checkbox(form.get("prompt_injection.enabled", "")),
+        "severity": severity,
+        "regex_patterns": raw_patterns,
+        "allowlist_patterns": raw_allow,
+        "llama_guard": {
+            "enabled": lg_enabled,
+            "endpoint": lg_endpoint,
+            "timeout_ms": timeout_ms,
+        },
+    }
 
 
 def _section(form: Mapping[str, str], prefix: str, fields: dict[str, str]) -> dict[str, Any]:
@@ -366,6 +504,11 @@ def form_to_yaml(
                 if sig is not None:
                     section_data["signature"] = sig
             data[section] = section_data
+        # Phase 5 / 05-05: parse the prompt_injection section from the form.
+        # Raises PromptInjectionFormError with locked Russian copy on validation
+        # failure; the route catches it and re-renders /policy with the notice.
+        data.pop("prompt_injection", None)
+        data["prompt_injection"] = _parse_prompt_injection(form)
 
     # Validate by round-tripping through Policy. Use by_alias=False since the
     # form-built dict already uses YAML keys (alias form, e.g. `_managed_by`).
