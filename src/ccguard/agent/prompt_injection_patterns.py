@@ -47,6 +47,38 @@ _DEFAULTS: tuple[tuple[str, str], ...] = (
         "ignore_previous_instructions",
         r"(?:игнорируй|забудь)\s+(?:все\s+)?(?:предыдущ|прошл)",
     ),
+    # WR-09: mixed-script doppelgangers — Cyrillic homoglyphs substituted
+    # into Latin "ignore"/"forget" forms (NFKC does NOT collapse these,
+    # so a literal pattern per shape is the cheapest mitigation short of
+    # pulling a confusables map). Character classes group the Latin
+    # codepoint with its visually-identical Cyrillic counterpart so any
+    # 1–N substitution variant matches the same rule:
+    #   i  ↔ і (U+0456)
+    #   g  ↔ ɡ (U+0261) — also Latin small g
+    #   n  ↔ п  ... no, п is visually distinct; n has no perfect Cyr twin
+    #   o  ↔ о (U+043E)
+    #   r  ↔ г (U+0433 — used colloquially as r-shape)
+    #   e  ↔ е (U+0435)
+    # The "ignore"/"забудь" base words are also globbed to keep coverage
+    # broad without hand-crafting every permutation.
+    (
+        "ignore_previous_instructions",
+        r"[iіI][gɡG][nN][оoO][rгR][eеE]\s+(?:previous|prior|above|earlier)",
+    ),
+    (
+        "ignore_previous_instructions",
+        r"[fF][оoO][rгR][gɡG][eеE][tT]\s+(?:previous|prior|earlier|everything)",
+    ),
+    (
+        "ignore_previous_instructions",
+        # Cyrillic "забудь" with a Latin/Cyrillic mix on a/у/д/ь
+        r"[зz][аaA][бbB][уyуu][дdD][ьb’]\s+(?:все|предыдущ|прошл)",
+    ),
+    (
+        "ignore_previous_instructions",
+        # "игнорируй" with Latin doppelgangers on и/н/о/р/у/й
+        r"[иiI][гgG][нnN][оoO][рrR][иiI][рrR][уyуu][йjy]\s+(?:все|предыдущ|прошл)",
+    ),
     # --- instruction_override (3 patterns) ---
     (
         "instruction_override",
