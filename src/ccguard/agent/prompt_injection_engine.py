@@ -136,7 +136,14 @@ def _compiled_allowlist(
     patterns_tuple: tuple[str, ...],
 ) -> tuple[re.Pattern[str] | str, ...]:
     """Allowlist entries: ``re:<regex>`` compiles; everything else is
-    casefolded as a substring check against normalized input."""
+    NFKC+casefolded as a substring check against normalized input.
+
+    WR-07: the input is NFKC-normalized at scan time (``_normalize``) but
+    allowlist substrings were only casefolded — a literal entry like
+    ``"½off"`` failed to match input arriving as the same characters
+    because NFKC turns ``½`` (U+00BD) into ``1⁄2``. Apply ``_normalize``
+    here so both sides of the comparison share the same canonical form.
+    """
     out: list[re.Pattern[str] | str] = []
     for raw in patterns_tuple:
         if raw.startswith("re:"):
@@ -146,7 +153,7 @@ def _compiled_allowlist(
                 # Same skip-policy as admin patterns.
                 continue
         else:
-            out.append(raw.casefold())
+            out.append(_normalize(raw))
     return tuple(out)
 
 
