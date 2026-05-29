@@ -5,3 +5,7 @@ IDs — never raw content. See ``catalog.py`` for the signal definitions and
 ``extractor.py`` for the entry point.
 """
 from __future__ import annotations
+
+from ccguard.agent.signals.extractor import extract_signals
+
+__all__ = ["extract_signals"]
