@@ -38,6 +38,11 @@ class ToolUseEventIn(SchemaBase):
     fingerprint: str = Field(pattern=r"^[0-9a-f]{16}$")
     decision: Literal["allow", "deny", "error"]
     result_status: Literal["success", "error", "blocked"]
+    # Per-event behavioral signal IDs (see ccguard.agent.signals.catalog).
+    # Defaulted so v0.1 agents (which never send this) validate unchanged.
+    # These are short ASCII IDs — never raw tool_input — preserving the
+    # module's privacy contract.
+    signals: list[str] = Field(default_factory=list, max_length=64)
 
     @field_validator("ts", mode="after")
     @classmethod
