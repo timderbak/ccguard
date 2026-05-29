@@ -2,14 +2,25 @@
 {% block title %}ccguard — политика{% endblock %}
 {% block content %}
 {% include "components/_policy_tab_strip.html" %}
-<h2 class="text-2xl font-semibold mb-2">Редактор политики</h2>
-<p class="text-slate-500 text-sm mb-6">
-    Текущая ревизия <span class="font-mono">{{ current_rev }}</span> ·
-    Ревизия черновика <span class="font-mono">{{ draft_rev }}</span>
-    {% if has_draft %}<span class="text-amber-600">· не сохранено</span>{% endif %}
-</p>
 
-<form method="POST" action="/policy/draft" class="space-y-4">
+<header class="mb-6">
+    <p class="cc-eyebrow mb-2">Управление · Контроль конфигурации</p>
+    <h2 class="text-2xl font-semibold tracking-tight">Редактор политики</h2>
+    <div class="flex items-center gap-3 mt-2 flex-wrap text-sm">
+        <span class="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 ring-1 ring-slate-200">
+            <span class="cc-mono text-[10px] uppercase tracking-wider text-slate-400">Текущая ревизия</span>
+            <span class="font-mono font-semibold text-slate-700">{{ current_rev }}</span>
+        </span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5 text-slate-300"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        <span class="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2.5 py-1 ring-1 ring-slate-200">
+            <span class="cc-mono text-[10px] uppercase tracking-wider text-slate-400">Ревизия черновика</span>
+            <span class="font-mono font-semibold text-slate-700">{{ draft_rev }}</span>
+        </span>
+        {% if has_draft %}<span class="text-amber-600 inline-flex items-center gap-1.5 rounded-md bg-amber-50 px-2.5 py-1 ring-1 ring-amber-600/20 text-xs font-medium"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ccPulse"></span>не сохранено</span>{% endif %}
+    </div>
+</header>
+
+<form method="POST" action="/policy/draft" class="space-y-3.5 pb-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
 
     {% include "components/_policy_section_mcp.html" %}
@@ -21,19 +32,28 @@
     {% include "components/_policy_section_env.html" %}
     {% include "components/_policy_section_prompt_injection.html" %}
 
-    <div class="flex gap-2 sticky bottom-0 bg-slate-50 py-4">
+    <div class="flex gap-2.5 sticky bottom-0 -mx-8 px-8 py-4 bg-gradient-to-t from-[#eef1f5] via-[#eef1f5] to-transparent backdrop-blur-sm border-t border-slate-200/60">
         <button type="submit"
-                class="bg-slate-900 text-white rounded px-4 py-2">Сохранить черновик</button>
+                class="bg-slate-900 hover:bg-ink-700 text-white rounded-lg px-4 py-2 text-sm font-medium shadow-sm transition-colors inline-flex items-center gap-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>
+            Сохранить черновик
+        </button>
         <button type="submit" formaction="/policy/publish"
-                class="bg-emerald-700 text-white rounded px-4 py-2"
-                onclick="return confirm('Опубликовать черновик на все машины?')">Опубликовать</button>
+                class="bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg px-4 py-2 text-sm font-medium shadow-sm transition-colors inline-flex items-center gap-2"
+                onclick="return confirm('Опубликовать черновик на все машины?')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path d="m22 2-7 20-4-9-9-4 20-7Z"/></svg>
+            Опубликовать
+        </button>
     </div>
 </form>
 
 {% if diff_lines %}
-<section class="bg-white rounded-lg shadow p-4 mt-6">
-    <h3 class="font-semibold mb-3">Изменения относительно опубликованной</h3>
-    <pre class="text-xs overflow-x-auto">{% for line in diff_lines %}{{ line }}
+<section class="bg-white rounded-xl shadow p-5 mt-6">
+    <h3 class="font-semibold mb-3 flex items-center gap-2 text-slate-800">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14 21 3"/></svg>
+        Изменения относительно опубликованной
+    </h3>
+    <pre class="text-xs overflow-x-auto cc-mono leading-relaxed rounded-lg bg-slate-50 ring-1 ring-slate-200 p-3">{% for line in diff_lines %}<span class="{% if line.startswith('+') %}text-emerald-600{% elif line.startswith('-') %}text-red-600{% else %}text-slate-500{% endif %}">{{ line }}</span>
 {% endfor %}</pre>
 </section>
 {% endif %}

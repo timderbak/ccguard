@@ -1,36 +1,44 @@
-<table class="w-full text-sm">
+<table class="w-full text-sm border-separate border-spacing-0">
     <thead>
         <tr class="text-left text-slate-500 border-b">
-            <th class="py-2">Хост</th>
-            <th>Агент</th>
-            <th>Последний sync</th>
-            <th>Ревизия политики</th>
-            <th>Warn / Block</th>
-            <th>Статус</th>
+            <th class="py-3 px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Хост</th>
+            <th class="px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Агент</th>
+            <th class="px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Последний sync</th>
+            <th class="px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Ревизия политики</th>
+            <th class="px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Warn / Block</th>
+            <th class="px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Статус</th>
         </tr>
     </thead>
     <tbody>
         {% for m in machines %}
-        <tr class="border-b last:border-0">
-            <td class="py-2">
-                <a href="/machines/{{ m.machine_id }}" class="hover:underline">
+        <tr class="border-b last:border-0 group hover:bg-slate-50/80 transition-colors">
+            <td class="py-3 px-3">
+                <a href="/machines/{{ m.machine_id }}" class="font-medium text-slate-800 group-hover:text-emerald-700 hover:underline decoration-emerald-400 underline-offset-2 transition-colors">
                     {{ m.machine_label or m.machine_id[:12] }}
                 </a>
+                {% if not m.machine_label %}<span class="block cc-mono text-[10px] text-slate-400 mt-0.5">{{ m.machine_id[:18] }}</span>{% endif %}
             </td>
-            <td>{{ m.agent_version or "-" }}</td>
-            <td>{{ m.last_seen.isoformat(timespec="minutes") }}</td>
-            <td>{{ m.agent_policy_revision or "-" }}</td>
-            <td>{{ m.warn_count }} / {{ m.block_count }}</td>
-            <td>
-                {% if m.status == "compliant" %}<span class="text-emerald-600">● соответствует</span>
-                {% elif m.status == "policy-old" %}<span class="text-amber-600">◎ устаревшая политика</span>
-                {% elif m.status == "stale" %}<span class="text-slate-400">○ молчит</span>
-                {% elif m.status == "blocking" %}<span class="text-red-600">■ блокирует</span>
+            <td class="px-3 cc-mono text-xs text-slate-600">{{ m.agent_version or "—" }}</td>
+            <td class="px-3 cc-mono text-xs text-slate-600">{{ m.last_seen.isoformat(timespec="minutes") }}</td>
+            <td class="px-3"><span class="inline-flex items-center cc-mono text-xs rounded-md bg-slate-100 px-2 py-0.5 text-slate-700 ring-1 ring-slate-200">{{ m.agent_policy_revision or "—" }}</span></td>
+            <td class="px-3 cc-mono text-xs">
+                <span class="text-amber-600">{{ m.warn_count }}</span>
+                <span class="text-slate-300">/</span>
+                <span class="text-red-600">{{ m.block_count }}</span>
+            </td>
+            <td class="px-3">
+                {% if m.status == "compliant" %}<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-emerald-50 ring-1 ring-emerald-600/20 text-emerald-600">● соответствует</span>
+                {% elif m.status == "policy-old" %}<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-amber-50 ring-1 ring-amber-600/20 text-amber-600">◎ устаревшая политика</span>
+                {% elif m.status == "stale" %}<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-slate-100 ring-1 ring-slate-300 text-slate-400">○ молчит</span>
+                {% elif m.status == "blocking" %}<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-red-50 ring-1 ring-red-600/20 text-red-600">■ блокирует</span>
                 {% endif %}
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="py-6 text-center text-slate-400">Машин пока нет.</td></tr>
+        <tr><td colspan="6" class="py-12 text-center text-slate-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" class="w-8 h-8 mx-auto mb-2 opacity-50"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            Машин пока нет.
+        </td></tr>
         {% endfor %}
     </tbody>
 </table>

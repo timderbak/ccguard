@@ -1,14 +1,16 @@
-<nav class="flex gap-2 border-b border-slate-200 mb-6 text-sm" aria-label="Разделы политики">
+<nav class="flex gap-1 border-b border-slate-200 mb-6 text-sm" aria-label="Разделы политики">
   <a href="/policy"
-     class="px-3 py-2 -mb-px border-b-2
+     class="px-4 py-2.5 -mb-px border-b-2 inline-flex items-center gap-2 transition-colors
             {% if active_tab == 'rules' %}border-slate-900 text-slate-900 font-semibold
-            {% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
+            {% else %}border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300{% endif %}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/></svg>
     Правила
   </a>
   <a href="/policy/mandatory"
-     class="px-3 py-2 -mb-px border-b-2
+     class="px-4 py-2.5 -mb-px border-b-2 inline-flex items-center gap-2 transition-colors
             {% if active_tab == 'mandatory' %}border-slate-900 text-slate-900 font-semibold
-            {% else %}border-transparent text-slate-500 hover:text-slate-700{% endif %}">
+            {% else %}border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300{% endif %}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
     Обязательные
   </a>
 </nav>

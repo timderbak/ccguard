@@ -63,8 +63,10 @@ def test_audit_empty_db_renders_empty_state(admin_client) -> None:
     assert "<title>ccguard — аудит</title>" in body
     assert '<h2 class="text-2xl font-semibold mb-6">Аудит</h2>' in body
     assert "Аудит-событий нет." in body
-    # Sidebar link present (verifies base.html nav insertion)
-    assert '<a href="/audit" class="block hover:bg-slate-800 px-3 py-2 rounded">Аудит</a>' in body
+    # Sidebar link present (verifies base.html nav insertion); markup/classes are not locked.
+    import re as _re
+
+    assert _re.search(r'<a href="/audit"[^>]*>.*?Аудит', body, _re.S) is not None
     # Russian copy regression
     assert "Активность за 24 часа" in body
     assert "Сбросить" in body

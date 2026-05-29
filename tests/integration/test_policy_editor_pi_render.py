@@ -51,7 +51,10 @@ def test_card_heading_present(client_session):
     client, sid, _csrf, _engine = client_session
     r = client.get("/policy", cookies={"ccg_session": sid})
     assert r.status_code == 200
-    assert '<summary class="cursor-pointer font-semibold">Prompt-Injection</summary>' in r.text
+    # Heading copy must render inside a <summary> (styling/markup is not locked).
+    import re as _re
+
+    assert _re.search(r"<summary[^>]*>.*?Prompt-Injection", r.text, _re.S) is not None
 
 
 def test_all_locked_russian_strings_present(client_session):

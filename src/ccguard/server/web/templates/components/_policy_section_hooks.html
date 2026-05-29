@@ -1,5 +1,12 @@
-<details class="bg-white rounded-lg shadow p-4">
-    <summary class="cursor-pointer font-semibold">Хуки</summary>
+<details class="group bg-white rounded-xl shadow p-5">
+    <summary class="cursor-pointer flex items-center justify-between gap-3">
+        <span class="flex items-center gap-2.5 font-semibold text-slate-800">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="cc-chevron w-3.5 h-3.5 text-slate-400"><path d="m9 18 6-6-6-6"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>
+            Хуки
+        </span>
+        <span class="cc-sev cc-sev-{{ policy.hooks.severity }}">{{ policy.hooks.severity }}</span>
+    </summary>
     <div class="mt-4 space-y-3 text-sm">
         <label class="block">
             критичность:
