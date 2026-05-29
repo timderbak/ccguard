@@ -1,4 +1,10 @@
-"""POST /api/v1/audit persists per-event signals into ToolUseEvent."""
+"""POST /api/v1/audit persists per-event signals into ToolUseEvent.
+
+Per-test DB isolation is guaranteed by the function-scoped `client` fixture in
+tests/integration/conftest.py, which creates a fresh tmp_path (and thus a new
+SQLite database) for each test. Tests can safely assume no leftover rows from
+prior test runs.
+"""
 from __future__ import annotations
 
 import json
@@ -43,7 +49,7 @@ def test_ingest_v01_agent_without_signals_defaults_empty(
             {
                 "ts": "2026-05-30T10:00:00+00:00",
                 "tool_name": "Bash",
-                "fingerprint": "0123456789abcdef",
+                "fingerprint": "fedcba9876543210",
                 "decision": "allow",
                 "result_status": "success",
             }
