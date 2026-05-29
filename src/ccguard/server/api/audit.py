@@ -33,6 +33,7 @@ Security register:
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -131,6 +132,7 @@ def _handle_tool_use(payload: AuditBatchIn, session: Session) -> AuditBatchOut:
                 fingerprint=e.fingerprint,
                 decision=e.decision,
                 result_status=e.result_status,
+                signals_json=json.dumps(e.signals),
             )
         )
     session.commit()
