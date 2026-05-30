@@ -25,6 +25,12 @@ from ccguard.server.services.risk_constants import (
     DEFAULT_THRESHOLD,
     DEFAULT_WINDOW_HOURS,
 )
+from ccguard.server.services.sequence_constants import (
+    DEFAULT_LOOKBACK_HOURS as _SEQUENCE_LOOKBACK_HOURS,
+)
+from ccguard.server.services.sequence_constants import (
+    DEFAULT_WINDOW_MINUTES as _SEQUENCE_WINDOW_MINUTES,
+)
 
 _log = logging.getLogger("ccguard.server.settings")
 _budget_parse_warned: set[str] = set()
@@ -40,6 +46,12 @@ _RISK_SETTINGS_DEFAULTS: dict[str, str] = {
     "risk.threshold": str(DEFAULT_THRESHOLD),
     "risk.window_hours": str(DEFAULT_WINDOW_HOURS),
     "risk.half_life_hours": str(DEFAULT_HALF_LIFE_HOURS),
+}
+
+# Behavioral Detection Stage 3 — sequence-detector tunable defaults.
+_SEQUENCE_SETTINGS_DEFAULTS: dict[str, str] = {
+    "sequence.window_minutes": str(_SEQUENCE_WINDOW_MINUTES),
+    "sequence.lookback_hours": str(_SEQUENCE_LOOKBACK_HOURS),
 }
 
 
@@ -123,6 +135,29 @@ def seed_risk_settings(session: Session) -> None:
     }
     inserted = False
     for key, default_value in _RISK_SETTINGS_DEFAULTS.items():
+        if key in existing_keys:
+            continue
+        session.add(SettingsRecord(key=key, value=default_value))
+        inserted = True
+    if inserted:
+        session.commit()
+
+
+def seed_sequence_settings(session: Session) -> None:
+    """Idempotent first-startup seed of the sequence-detector knobs.
+
+    Preserves admin edits across re-seeds (same pattern as seed_llm_settings).
+    """
+    existing_keys = {
+        r.key
+        for r in session.exec(
+            select(SettingsRecord).where(
+                SettingsRecord.key.in_(list(_SEQUENCE_SETTINGS_DEFAULTS.keys()))
+            )
+        ).all()
+    }
+    inserted = False
+    for key, default_value in _SEQUENCE_SETTINGS_DEFAULTS.items():
         if key in existing_keys:
             continue
         session.add(SettingsRecord(key=key, value=default_value))

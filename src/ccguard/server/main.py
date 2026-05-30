@@ -33,6 +33,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services.settings_service import (
         seed_llm_settings,
         seed_risk_settings,
+        seed_sequence_settings,
     )
     from ccguard.server.services.token_service import bootstrap_env_tokens
     with _Session(engine) as _s:
@@ -42,6 +43,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_llm_settings(_s)
         # Behavioral Detection Stage 2: seed risk-engine tunables.
         seed_risk_settings(_s)
+        # Behavioral Detection Stage 3: seed sequence-detector tunables.
+        seed_sequence_settings(_s)
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)
