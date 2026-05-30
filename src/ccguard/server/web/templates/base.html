@@ -214,6 +214,18 @@
         });
         if (best) best.setAttribute('aria-current', 'page');
       })();
+      // Live counter for policy list-field textareas (one non-blank line = one item).
+      (function () {
+        function refresh(ta) {
+          var label = document.querySelector('[data-list-counter-for="' + ta.id + '"]');
+          if (!label) return;
+          var n = ta.value.split('\n').filter(function (l) { return l.trim().length > 0; }).length;
+          label.textContent = n + ' элементов';
+        }
+        document.querySelectorAll('textarea[data-list-counter]').forEach(function (ta) {
+          ta.addEventListener('input', function () { refresh(ta); });
+        });
+      })();
     </script>
     {% else %}
     {% block content_anonymous %}{{ self.content() }}{% endblock %}

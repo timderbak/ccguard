@@ -1,0 +1,27 @@
+{# Reusable list-field control for policy editor sections.
+   Drop-in replacement for the bare <textarea> pattern: keeps the same
+   `name` attribute (test-locked), adds a live item counter, monospace
+   styling, and a format hint slot.
+
+   Usage:
+     {% with field_name='commands.denylist_patterns',
+             field_label='denylist_patterns',
+             items=policy.commands.denylist_patterns,
+             hint='Один pattern на строку. Пустые строки игнорируются.',
+             placeholder='\\.dangerous-cmd' %}
+       {% include "components/_policy_list_field.html" %}
+     {% endwith %}
+#}
+<div class="cc-list-field">
+    <div class="flex items-center justify-between mb-1">
+        <label for="ll-{{ field_name }}" class="text-sm font-medium text-slate-700">{{ field_label }}</label>
+        <span class="cc-mono text-[10px] text-slate-400" data-list-counter-for="ll-{{ field_name }}">{{ (items or []) | length }} элементов</span>
+    </div>
+    <textarea id="ll-{{ field_name }}" name="{{ field_name }}" rows="{{ rows or 4 }}"
+              data-list-counter
+              class="block w-full rounded-md border-slate-300 font-mono text-xs leading-relaxed focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+              {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}>{{ (items or []) | join('\n') }}</textarea>
+    {% if hint %}
+    <p class="cc-mono text-[10px] text-slate-400 mt-1">{{ hint }}</p>
+    {% endif %}
+</div>
