@@ -128,6 +128,10 @@ class ToolUseEvent(SQLModel, table=True):
     fingerprint: str = Field(index=True)
     decision: str = Field(index=True)
     result_status: str
+    # JSON-encoded list[str] of per-event behavioral signal IDs (Behavioral
+    # Detection Stage 1). Default "[]" so v0.1 agents and create_all-on-existing
+    # DBs degrade gracefully. NO raw tool_input is ever stored here.
+    signals_json: str = Field(default="[]")
 
 
 class MachineBaseline(SQLModel, table=True):

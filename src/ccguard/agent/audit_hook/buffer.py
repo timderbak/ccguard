@@ -22,6 +22,7 @@ ACL. This module does not chmod the DB file itself.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 from types import TracebackType
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS events (
   fingerprint TEXT NOT NULL,
   decision TEXT NOT NULL,
   result_status TEXT NOT NULL,
+  signals TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_events_id ON events(id);
@@ -48,6 +50,7 @@ class BufferRow(TypedDict):
     fingerprint: str
     decision: str
     result_status: str
+    signals: list[str]
 
 
 class ToolBufferDB:
@@ -85,6 +88,17 @@ class ToolBufferDB:
         )
         if cur.fetchone() is None:
             self.conn.executescript(_SCHEMA)
+        else:
+            # Forward-add the signals column on buffer DBs created before
+            # Behavioral Detection Stage 1. ADD COLUMN is fast metadata-only;
+            # guarded so we only pay it once.
+            cols = {
+                r[1] for r in self.conn.execute("PRAGMA table_info(events)").fetchall()
+            }
+            if "signals" not in cols:
+                self.conn.execute(
+                    "ALTER TABLE events ADD COLUMN signals TEXT NOT NULL DEFAULT '[]'"
+                )
         return self
 
     def __exit__(
@@ -105,14 +119,17 @@ class ToolBufferDB:
         fingerprint: str,
         decision: str,
         result_status: str,
+        signals: list[str] | None = None,
     ) -> None:
         """Insert a single event under BEGIN IMMEDIATE + COMMIT."""
+        signals_json = json.dumps(signals or [])
         self.conn.execute("BEGIN IMMEDIATE")
         try:
             self.conn.execute(
-                "INSERT INTO events(ts, tool_name, fingerprint, decision, result_status) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (ts, tool_name, fingerprint, decision, result_status),
+                "INSERT INTO events"
+                "(ts, tool_name, fingerprint, decision, result_status, signals) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (ts, tool_name, fingerprint, decision, result_status, signals_json),
             )
             self.conn.execute("COMMIT")
         except Exception:
@@ -134,12 +151,18 @@ class ToolBufferDB:
         batches whose rows are still in the buffer.
         """
         cur = self.conn.execute(
-            "SELECT id, ts, tool_name, fingerprint, decision, result_status "
+            "SELECT id, ts, tool_name, fingerprint, decision, result_status, signals "
             "FROM events WHERE id > ? ORDER BY id ASC LIMIT ?",
             (after_id, limit),
         )
         out: list[BufferRow] = []
         for row in cur.fetchall():
+            try:
+                signals = json.loads(row[6]) if row[6] else []
+                if not isinstance(signals, list):
+                    signals = []
+            except (ValueError, TypeError):
+                signals = []
             out.append(
                 BufferRow(
                     id=int(row[0]),
@@ -148,6 +171,7 @@ class ToolBufferDB:
                     fingerprint=str(row[3]),
                     decision=str(row[4]),
                     result_status=str(row[5]),
+                    signals=signals,
                 )
             )
         return out

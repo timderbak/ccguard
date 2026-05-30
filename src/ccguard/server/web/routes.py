@@ -120,12 +120,19 @@ def overview_page(
     user: str = Depends(require_session),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
+    from ccguard.server.services.fleet_risk import compute_fleet_risk
     from ccguard.server.services.machine_service import list_machines_with_status
     machines = list_machines_with_status(session)
+    fleet_risk = compute_fleet_risk(session, limit=10)
     return templates.TemplateResponse(
         request,
         "overview.html",
-        {"user": user, "machines": machines, "csrf_token": _csrf_for(request)},
+        {
+            "user": user,
+            "machines": machines,
+            "fleet_risk": fleet_risk,
+            "csrf_token": _csrf_for(request),
+        },
     )
 
 
@@ -156,9 +163,11 @@ def machine_detail(
         get_findings_for_machine,
         get_latest_inventory_json,
     )
+    from ccguard.server.web.finding_view import build_explainable_findings
     machine = session.get(Machine, machine_id)
     if machine is None:
         raise HTTPException(status_code=404)
+    findings = get_findings_for_machine(session, machine_id)
     return templates.TemplateResponse(
         request,
         "machine_detail.html",
@@ -166,7 +175,7 @@ def machine_detail(
             "user": user,
             "machine": machine,
             "inventory": get_latest_inventory_json(session, machine_id),
-            "findings": get_findings_for_machine(session, machine_id),
+            "findings": build_explainable_findings(findings),
             "csrf_token": _csrf_for(request),
         },
     )

@@ -30,13 +30,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = make_engine(cfg.db_url)
     init_db(engine)
     from sqlmodel import Session as _Session
-    from ccguard.server.services.settings_service import seed_llm_settings
+    from ccguard.server.services.settings_service import (
+        seed_enforcement_mode,
+        seed_llm_settings,
+        seed_risk_settings,
+        seed_sequence_settings,
+    )
     from ccguard.server.services.token_service import bootstrap_env_tokens
     with _Session(engine) as _s:
         bootstrap_env_tokens(_s, env_tokens=[t.value for t in cfg.tokens])
         # Plan 03-01 D-04: seed LLM-scanner KV defaults on first startup;
         # subsequent restarts are no-ops, preserving admin edits.
         seed_llm_settings(_s)
+        # Behavioral Detection Stage 2: seed risk-engine tunables.
+        seed_risk_settings(_s)
+        # Behavioral Detection Stage 3: seed sequence-detector tunables.
+        seed_sequence_settings(_s)
+        # Behavioral Detection Stage 5: seed enforcement_mode = observe.
+        seed_enforcement_mode(_s)
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)
@@ -85,6 +96,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         start_scheduler,
     )
     from ccguard.server.services.anomaly_service import tick as anomaly_tick
+    from ccguard.server.services.risk_service import tick as risk_tick
+    from ccguard.server.services.sequence_service import tick as sequence_tick
     from sqlmodel import Session as _SessionTick
 
     if is_disabled():
@@ -96,14 +109,28 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             try:
                 with _SessionTick(engine) as s:
                     summary = anomaly_tick(s)
+                    risk_summary = risk_tick(s)
+                    sequence_summary = sequence_tick(s)
                 logger.info(
                     "anomaly tick: machines=%d findings=%d errors=%d",
                     summary["machines_evaluated"],
                     summary["findings_emitted"],
                     len(summary["errors"]),
                 )
+                logger.info(
+                    "risk tick: machines=%d findings=%d errors=%d",
+                    risk_summary["machines_evaluated"],
+                    risk_summary["findings_emitted"],
+                    len(risk_summary["errors"]),
+                )
+                logger.info(
+                    "sequence tick: machines=%d findings=%d errors=%d",
+                    sequence_summary["machines_evaluated"],
+                    sequence_summary["findings_emitted"],
+                    len(sequence_summary["errors"]),
+                )
             except Exception:  # noqa: BLE001 — scheduler job must not crash the loop
-                logger.exception("anomaly tick raised")
+                logger.exception("scheduled tick raised")
 
         async def _tick_job() -> None:
             # WR-05: AsyncIOScheduler runs sync callables on the loop thread,

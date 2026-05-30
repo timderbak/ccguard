@@ -242,11 +242,12 @@ def _run_flush_loop() -> None:
             try:
                 events = [
                     ToolUseEventIn(
-                        ts=r["ts"],  # type: ignore[arg-type]  # pydantic parses ISO-8601 string
+                        ts=r["ts"],  # type: ignore[arg-type]
                         tool_name=r["tool_name"],
                         fingerprint=r["fingerprint"],
                         decision=r["decision"],  # type: ignore[arg-type]
                         result_status=r["result_status"],  # type: ignore[arg-type]
+                        signals=r["signals"],
                     )
                     for r in rows
                 ]

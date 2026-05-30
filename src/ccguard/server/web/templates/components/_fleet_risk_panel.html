@@ -1,0 +1,22 @@
+<h3 class="font-semibold mb-3 flex items-center gap-2 text-slate-800">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    Риск флота
+</h3>
+{% if fleet_risk %}
+<ul class="text-sm divide-y divide-slate-100">
+    {% for row in fleet_risk %}
+    <li class="py-2 flex items-center gap-3">
+        <span class="cc-mono text-xs w-12 text-right font-semibold
+            {% if row.score >= 10 %}text-red-600
+            {% elif row.score >= 5 %}text-amber-600
+            {% else %}text-slate-500{% endif %}">{{ "%.1f"|format(row.score) }}</span>
+        <a href="/machines/{{ row.machine_id }}" class="cc-mono text-xs text-slate-700 hover:text-emerald-700 hover:underline">{{ row.machine_label or row.machine_id }}</a>
+        {% if row.top_signal %}
+        <span class="cc-mono text-[10px] text-slate-400 ml-auto">{{ row.top_signal }}</span>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p class="text-slate-400 text-sm">Тёплых машин ещё нет.</p>
+{% endif %}

@@ -25,6 +25,7 @@ from ccguard.agent.audit_hook.buffer import ToolBufferDB
 from ccguard.agent.audit_hook.fingerprint import compute_fingerprint
 from ccguard.agent.audit_hook.flusher import maybe_spawn_flusher
 from ccguard.agent.config import default_config_dir
+from ccguard.agent.signals import extract_signals
 
 
 def _result_status_from_response(
@@ -72,9 +73,12 @@ def main_cli(stdin_text: str | None = None) -> int:
         if not isinstance(tool_response, dict):
             tool_response = {}
 
-        # 2. Fingerprint, then immediately drop raw tool_input (privacy invariant).
+        # 2. Fingerprint + extract signals, THEN drop raw tool_input (privacy
+        #    invariant). Both consume the raw input in-process; only the 16-hex
+        #    fingerprint and the signal IDs survive this scope.
         fp = compute_fingerprint(tool_name, tool_input)
-        del tool_input  # explicit — only `fp` (16 hex) survives this scope.
+        signals = extract_signals(tool_name, tool_input)
+        del tool_input  # explicit — only `fp` + `signals` survive.
 
         # 3. Build event fields.
         ts = datetime.now(UTC).isoformat()
@@ -90,6 +94,7 @@ def main_cli(stdin_text: str | None = None) -> int:
                 fingerprint=fp,
                 decision=decision,
                 result_status=result_status,
+                signals=signals,
             )
             row_count = buf.row_count()
 

@@ -134,6 +134,7 @@ def test_drain_returns_typed_dict_shape(audit_buffer_path: Path) -> None:
             "fingerprint",
             "decision",
             "result_status",
+            "signals",
         }
 
 
