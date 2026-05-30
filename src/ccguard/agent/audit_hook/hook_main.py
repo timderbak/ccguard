@@ -26,6 +26,7 @@ from ccguard.agent.audit_hook.fingerprint import compute_fingerprint
 from ccguard.agent.audit_hook.flusher import maybe_spawn_flusher
 from ccguard.agent.config import default_config_dir
 from ccguard.agent.signals import extract_signals
+from ccguard.agent.signals.overrides_loader import load_overrides
 
 
 def _result_status_from_response(
@@ -77,7 +78,10 @@ def main_cli(stdin_text: str | None = None) -> int:
         #    invariant). Both consume the raw input in-process; only the 16-hex
         #    fingerprint and the signal IDs survive this scope.
         fp = compute_fingerprint(tool_name, tool_input)
-        signals = extract_signals(tool_name, tool_input)
+        # E4: load server-pushed catalog overrides from the synced policy
+        # cache. Missing/malformed file degrades to baked CATALOG only.
+        overrides = load_overrides(default_config_dir() / "policy.yaml")
+        signals = extract_signals(tool_name, tool_input, overrides=overrides)
         del tool_input  # explicit — only `fp` + `signals` survive.
 
         # 3. Build event fields.
