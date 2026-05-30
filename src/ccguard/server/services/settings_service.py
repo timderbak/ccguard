@@ -20,6 +20,11 @@ import logging
 from sqlmodel import Session, select
 
 from ccguard.server.db.models import SettingsRecord
+from ccguard.server.services.risk_constants import (
+    DEFAULT_HALF_LIFE_HOURS,
+    DEFAULT_THRESHOLD,
+    DEFAULT_WINDOW_HOURS,
+)
 
 _log = logging.getLogger("ccguard.server.settings")
 _budget_parse_warned: set[str] = set()
@@ -28,6 +33,13 @@ _budget_parse_warned: set[str] = set()
 _LLM_SETTINGS_DEFAULTS: dict[str, str] = {
     "llm_scanner_enabled": "false",
     "daily_call_budget": "100",
+}
+
+# Behavioral Detection Stage 2 — risk-engine tunable defaults.
+_RISK_SETTINGS_DEFAULTS: dict[str, str] = {
+    "risk.threshold": str(DEFAULT_THRESHOLD),
+    "risk.window_hours": str(DEFAULT_WINDOW_HOURS),
+    "risk.half_life_hours": str(DEFAULT_HALF_LIFE_HOURS),
 }
 
 
@@ -88,6 +100,29 @@ def seed_llm_settings(session: Session) -> None:
     }
     inserted = False
     for key, default_value in _LLM_SETTINGS_DEFAULTS.items():
+        if key in existing_keys:
+            continue
+        session.add(SettingsRecord(key=key, value=default_value))
+        inserted = True
+    if inserted:
+        session.commit()
+
+
+def seed_risk_settings(session: Session) -> None:
+    """Idempotent first-startup seed of the risk-engine knobs.
+
+    Preserves admin edits across re-seeds (same pattern as seed_llm_settings).
+    """
+    existing_keys = {
+        r.key
+        for r in session.exec(
+            select(SettingsRecord).where(
+                SettingsRecord.key.in_(list(_RISK_SETTINGS_DEFAULTS.keys()))
+            )
+        ).all()
+    }
+    inserted = False
+    for key, default_value in _RISK_SETTINGS_DEFAULTS.items():
         if key in existing_keys:
             continue
         session.add(SettingsRecord(key=key, value=default_value))
