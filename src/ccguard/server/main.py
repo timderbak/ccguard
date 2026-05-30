@@ -90,6 +90,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         start_scheduler,
     )
     from ccguard.server.services.anomaly_service import tick as anomaly_tick
+    from ccguard.server.services.risk_service import tick as risk_tick
     from sqlmodel import Session as _SessionTick
 
     if is_disabled():
@@ -101,14 +102,21 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             try:
                 with _SessionTick(engine) as s:
                     summary = anomaly_tick(s)
+                    risk_summary = risk_tick(s)
                 logger.info(
                     "anomaly tick: machines=%d findings=%d errors=%d",
                     summary["machines_evaluated"],
                     summary["findings_emitted"],
                     len(summary["errors"]),
                 )
+                logger.info(
+                    "risk tick: machines=%d findings=%d errors=%d",
+                    risk_summary["machines_evaluated"],
+                    risk_summary["findings_emitted"],
+                    len(risk_summary["errors"]),
+                )
             except Exception:  # noqa: BLE001 — scheduler job must not crash the loop
-                logger.exception("anomaly tick raised")
+                logger.exception("scheduled tick raised")
 
         async def _tick_job() -> None:
             # WR-05: AsyncIOScheduler runs sync callables on the loop thread,
