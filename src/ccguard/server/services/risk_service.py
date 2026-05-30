@@ -167,13 +167,24 @@ def _load_events(
     Filters empty-signal events at the SQL layer to keep the working set small.
     Tolerates malformed ``signals_json`` (treats it as no signals).
     """
+    return [evt for evt, _ in _load_events_with_actor(session, machine_id, since)]
+
+
+def _load_events_with_actor(
+    session: Session, machine_id: str, since: datetime
+) -> list[tuple[RiskInputEvent, str | None]]:
+    """Same as :func:`_load_events` but carries the actor_user alongside.
+
+    Per-User Attribution: lets the orchestrator group events by actor and
+    compute per-(machine, user) scores in addition to whole-machine.
+    """
     stmt = (
         select(ToolUseEvent)
         .where(ToolUseEvent.machine_id == machine_id)
         .where(ToolUseEvent.ts >= since)
         .where(ToolUseEvent.signals_json != "[]")
     )
-    out: list[RiskInputEvent] = []
+    out: list[tuple[RiskInputEvent, str | None]] = []
     for row in session.exec(stmt):
         try:
             sigs = json.loads(row.signals_json)
@@ -181,9 +192,8 @@ def _load_events(
             continue
         if not isinstance(sigs, list) or not sigs:
             continue
-        # SQLite stores datetimes tz-naive; normalize to UTC so arithmetic
-        # against the tz-aware ``now`` does not raise.
-        out.append(RiskInputEvent(ts=aware_utc(row.ts), signals=tuple(str(s) for s in sigs)))
+        evt = RiskInputEvent(ts=aware_utc(row.ts), signals=tuple(str(s) for s in sigs))
+        out.append((evt, row.actor_user))
     return out
 
 
@@ -193,7 +203,10 @@ def evaluate_one(session: Session, machine_id: str) -> FindingRecord | None:
     Also UPSERTs today's row in ``MachineRiskHistory`` (sparkline data) so
     quiet days still show up as score=0 instead of gaps.
     """
-    from ccguard.server.services.risk_history import upsert_today
+    from ccguard.server.services.risk_history import (
+        upsert_today,
+        upsert_today_for_user,
+    )
 
     if not _machine_is_warm(session, machine_id):
         return None
@@ -203,7 +216,8 @@ def evaluate_one(session: Session, machine_id: str) -> FindingRecord | None:
     threshold, window_h, half_life_h = _load_tunables(session)
     now = datetime.now(UTC)
     since = now - timedelta(hours=window_h)
-    events = _load_events(session, machine_id, since)
+    events_with_actor = _load_events_with_actor(session, machine_id, since)
+    events = [evt for evt, _ in events_with_actor]
     suppressed = list_active(session, machine_id=machine_id, now=now)
     breakdown = compute_risk_score(
         events, now, DEFAULT_WEIGHTS, window_h, half_life_h,
@@ -214,6 +228,27 @@ def evaluate_one(session: Session, machine_id: str) -> FindingRecord | None:
     if breakdown.contributions:
         top_signal = max(breakdown.contributions.items(), key=lambda kv: kv[1])[0]
     upsert_today(session, machine_id=machine_id, score=breakdown.score, top_signal=top_signal)
+
+    # Per-user breakdown — re-score per actor group so SOC can answer
+    # "whose activity drove this machine's risk".
+    by_actor: dict[str | None, list[RiskInputEvent]] = {}
+    for evt, actor in events_with_actor:
+        by_actor.setdefault(actor, []).append(evt)
+    for actor, actor_events in by_actor.items():
+        actor_bd = compute_risk_score(
+            actor_events, now, DEFAULT_WEIGHTS, window_h, half_life_h,
+            excluded_signals=suppressed,
+        )
+        actor_top: str | None = None
+        if actor_bd.contributions:
+            actor_top = max(actor_bd.contributions.items(), key=lambda kv: kv[1])[0]
+        upsert_today_for_user(
+            session,
+            machine_id=machine_id,
+            actor_user=actor,
+            score=actor_bd.score,
+            top_signal=actor_top,
+        )
 
     if breakdown.score <= threshold:
         return None

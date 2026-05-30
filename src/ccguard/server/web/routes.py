@@ -164,7 +164,10 @@ def machine_detail(
         get_latest_inventory_json,
     )
     from ccguard.server.services import suppression_service
-    from ccguard.server.services.risk_history import get_risk_history_14d
+    from ccguard.server.services.risk_history import (
+        get_risk_history_14d,
+        get_user_scores_today,
+    )
     from ccguard.server.web.finding_view import build_explainable_findings
     machine = session.get(Machine, machine_id)
     if machine is None:
@@ -186,7 +189,20 @@ def machine_detail(
         .order_by(_func.count().desc())
         .limit(10)
     ))
-    top_actors = [{"actor": r[0], "count": int(r[1])} for r in actor_rows]
+    user_score_map = {
+        r["actor"]: {"score": r["score"], "top_signal": r["top_signal"]}
+        for r in get_user_scores_today(session, machine_id=machine_id)
+    }
+    top_actors = []
+    for r in actor_rows:
+        actor = r[0]
+        score_info = user_score_map.get(actor, {})
+        top_actors.append({
+            "actor": actor,
+            "count": int(r[1]),
+            "score": score_info.get("score", 0.0),
+            "top_signal": score_info.get("top_signal"),
+        })
     return templates.TemplateResponse(
         request,
         "machine_detail.html",
