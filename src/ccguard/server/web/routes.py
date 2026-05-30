@@ -156,9 +156,11 @@ def machine_detail(
         get_findings_for_machine,
         get_latest_inventory_json,
     )
+    from ccguard.server.web.finding_view import build_explainable_findings
     machine = session.get(Machine, machine_id)
     if machine is None:
         raise HTTPException(status_code=404)
+    findings = get_findings_for_machine(session, machine_id)
     return templates.TemplateResponse(
         request,
         "machine_detail.html",
@@ -166,7 +168,7 @@ def machine_detail(
             "user": user,
             "machine": machine,
             "inventory": get_latest_inventory_json(session, machine_id),
-            "findings": get_findings_for_machine(session, machine_id),
+            "findings": build_explainable_findings(findings),
             "csrf_token": _csrf_for(request),
         },
     )

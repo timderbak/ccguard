@@ -52,14 +52,82 @@
         </h3>
         <ul class="text-sm space-y-2.5">
             {% for f in findings %}
-            <li class="border-b last:border-0 pb-2.5 flex items-center gap-2.5">
-                <span class="font-mono text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 ring-1
-                    {% if f.severity == 'block' %}text-red-600 bg-red-50 ring-red-600/20
-                    {% elif f.severity == 'warn' %}text-amber-600 bg-amber-50 ring-amber-600/20
-                    {% else %}text-slate-500 bg-slate-100 ring-slate-300{% endif %}">
-                    {{ f.severity }}
-                </span>
-                <span class="cc-mono text-xs text-slate-700">{{ f.rule_id }}</span>
+            <li class="border-b last:border-0 pb-2.5">
+                {% if f.explainer %}
+                <details class="group">
+                    <summary class="cursor-pointer list-none flex items-center gap-2.5 hover:text-emerald-700 transition-colors">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-3 h-3 text-slate-400 transition-transform group-open:rotate-90"><path d="m9 18 6-6-6-6"/></svg>
+                        <span class="font-mono text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 ring-1
+                            {% if f.severity == 'high' or f.severity == 'block' %}text-red-600 bg-red-50 ring-red-600/20
+                            {% elif f.severity == 'warn' %}text-amber-600 bg-amber-50 ring-amber-600/20
+                            {% else %}text-slate-500 bg-slate-100 ring-slate-300{% endif %}">
+                            {{ f.severity }}
+                        </span>
+                        <span class="cc-mono text-xs text-slate-700">{{ f.rule_id }}</span>
+                    </summary>
+                    <div class="ml-5 mt-2.5 text-xs text-slate-600 space-y-2">
+                        {% if f.explainer.kind == 'risk' %}
+                        <p class="cc-mono">
+                            score <span class="font-semibold text-slate-900">{{ "%.1f"|format(f.explainer.score) }}</span>
+                            / threshold {{ "%.1f"|format(f.explainer.threshold) }}
+                            · window {{ "%.0f"|format(f.explainer.window_hours) }}h
+                            · half-life {{ "%.0f"|format(f.explainer.half_life_hours) }}h
+                            · events {{ f.explainer.event_count }}
+                        </p>
+                        <ul class="space-y-1">
+                            {% for c in f.explainer.contributions %}
+                            <li class="flex items-center gap-2">
+                                {% if c.attack_url %}
+                                <a href="{{ c.attack_url }}" target="_blank" rel="noopener noreferrer"
+                                   class="cc-mono text-emerald-700 hover:underline">{{ c.signal_id }}</a>
+                                {% else %}
+                                <span class="cc-mono text-slate-700">{{ c.signal_id }}</span>
+                                {% endif %}
+                                <span class="cc-mono text-slate-400">+{{ "%.1f"|format(c.weight) }}</span>
+                                {% if c.technique %}<span class="cc-mono text-slate-400">{{ c.technique }}</span>{% endif %}
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        {% elif f.explainer.kind == 'sequence' %}
+                        <p class="cc-mono">
+                            cred → egress in
+                            <span class="font-semibold text-slate-900">{{ "%.0f"|format(f.explainer.elapsed_seconds) }}s</span>
+                            (window {{ "%.0f"|format(f.explainer.window_minutes) }}m)
+                        </p>
+                        <ul class="space-y-1">
+                            <li class="flex items-center gap-2">
+                                {% if f.explainer.cred.attack_url %}
+                                <a href="{{ f.explainer.cred.attack_url }}" target="_blank" rel="noopener noreferrer"
+                                   class="cc-mono text-emerald-700 hover:underline">{{ f.explainer.cred.signal_id }}</a>
+                                {% else %}
+                                <span class="cc-mono">{{ f.explainer.cred.signal_id }}</span>
+                                {% endif %}
+                                <span class="cc-mono text-slate-400">{{ f.explainer.cred.technique or "" }}</span>
+                            </li>
+                            <li class="flex items-center gap-2">
+                                {% if f.explainer.egress.attack_url %}
+                                <a href="{{ f.explainer.egress.attack_url }}" target="_blank" rel="noopener noreferrer"
+                                   class="cc-mono text-emerald-700 hover:underline">{{ f.explainer.egress.signal_id }}</a>
+                                {% else %}
+                                <span class="cc-mono">{{ f.explainer.egress.signal_id }}</span>
+                                {% endif %}
+                                <span class="cc-mono text-slate-400">{{ f.explainer.egress.technique or "" }}</span>
+                            </li>
+                        </ul>
+                        {% endif %}
+                    </div>
+                </details>
+                {% else %}
+                <div class="flex items-center gap-2.5">
+                    <span class="font-mono text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 ring-1
+                        {% if f.severity == 'high' or f.severity == 'block' %}text-red-600 bg-red-50 ring-red-600/20
+                        {% elif f.severity == 'warn' %}text-amber-600 bg-amber-50 ring-amber-600/20
+                        {% else %}text-slate-500 bg-slate-100 ring-slate-300{% endif %}">
+                        {{ f.severity }}
+                    </span>
+                    <span class="cc-mono text-xs text-slate-700">{{ f.rule_id }}</span>
+                </div>
+                {% endif %}
             </li>
             {% else %}
             <li class="text-slate-400">Находок нет.</li>
