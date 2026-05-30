@@ -133,6 +133,7 @@ def _handle_tool_use(payload: AuditBatchIn, session: Session) -> AuditBatchOut:
                 decision=e.decision,
                 result_status=e.result_status,
                 signals_json=json.dumps(e.signals),
+                actor_user=e.actor_user,
             )
         )
     session.commit()

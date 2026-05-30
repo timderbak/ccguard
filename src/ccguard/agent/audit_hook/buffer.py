@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS events (
   decision TEXT NOT NULL,
   result_status TEXT NOT NULL,
   signals TEXT NOT NULL DEFAULT '[]',
+  actor_user TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_events_id ON events(id);
@@ -51,6 +52,7 @@ class BufferRow(TypedDict):
     decision: str
     result_status: str
     signals: list[str]
+    actor_user: str | None
 
 
 class ToolBufferDB:
@@ -99,6 +101,10 @@ class ToolBufferDB:
                 self.conn.execute(
                     "ALTER TABLE events ADD COLUMN signals TEXT NOT NULL DEFAULT '[]'"
                 )
+            if "actor_user" not in cols:
+                self.conn.execute(
+                    "ALTER TABLE events ADD COLUMN actor_user TEXT"
+                )
         return self
 
     def __exit__(
@@ -120,6 +126,7 @@ class ToolBufferDB:
         decision: str,
         result_status: str,
         signals: list[str] | None = None,
+        actor_user: str | None = None,
     ) -> None:
         """Insert a single event under BEGIN IMMEDIATE + COMMIT."""
         signals_json = json.dumps(signals or [])
@@ -127,9 +134,9 @@ class ToolBufferDB:
         try:
             self.conn.execute(
                 "INSERT INTO events"
-                "(ts, tool_name, fingerprint, decision, result_status, signals) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (ts, tool_name, fingerprint, decision, result_status, signals_json),
+                "(ts, tool_name, fingerprint, decision, result_status, signals, actor_user) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (ts, tool_name, fingerprint, decision, result_status, signals_json, actor_user),
             )
             self.conn.execute("COMMIT")
         except Exception:
@@ -151,7 +158,7 @@ class ToolBufferDB:
         batches whose rows are still in the buffer.
         """
         cur = self.conn.execute(
-            "SELECT id, ts, tool_name, fingerprint, decision, result_status, signals "
+            "SELECT id, ts, tool_name, fingerprint, decision, result_status, signals, actor_user "
             "FROM events WHERE id > ? ORDER BY id ASC LIMIT ?",
             (after_id, limit),
         )
@@ -172,6 +179,7 @@ class ToolBufferDB:
                     decision=str(row[4]),
                     result_status=str(row[5]),
                     signals=signals,
+                    actor_user=str(row[7]) if row[7] is not None else None,
                 )
             )
         return out

@@ -21,6 +21,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from ccguard.agent.audit_hook.actor import detect_actor_user
 from ccguard.agent.audit_hook.buffer import ToolBufferDB
 from ccguard.agent.audit_hook.fingerprint import compute_fingerprint
 from ccguard.agent.audit_hook.flusher import maybe_spawn_flusher
@@ -88,6 +89,7 @@ def main_cli(stdin_text: str | None = None) -> int:
         ts = datetime.now(UTC).isoformat()
         decision = "allow"  # PostToolUse fires only after PreToolUse permitted.
         result_status = _result_status_from_response(tool_response)
+        actor_user = detect_actor_user()  # Per-User Attribution
 
         # 4. INSERT into buffer; capture row_count for flush-threshold check.
         buffer_path = default_config_dir() / "audit_buffer.db"
@@ -99,6 +101,7 @@ def main_cli(stdin_text: str | None = None) -> int:
                 decision=decision,
                 result_status=result_status,
                 signals=signals,
+                actor_user=actor_user,
             )
             row_count = buf.row_count()
 

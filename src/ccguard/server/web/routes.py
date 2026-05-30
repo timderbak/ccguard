@@ -173,6 +173,20 @@ def machine_detail(
     risk_series = get_risk_history_14d(session, machine_id)
     risk_max = max((p["score"] for p in risk_series), default=0.0)
     suppressions = suppression_service.list_for_machine(session, machine_id=machine_id)
+    # Per-user attribution: top actors on this machine in the last 7 days.
+    from ccguard.server.db.models import ToolUseEvent as _TUE
+    from sqlalchemy import func as _func
+    from datetime import timedelta as _td
+    actor_rows = list(session.exec(
+        select(_TUE.actor_user, _func.count().label("n"))  # type: ignore[arg-type]
+        .where(_TUE.machine_id == machine_id)
+        .where(_TUE.ts >= datetime.now(UTC) - _td(days=7))
+        .where(_TUE.actor_user.is_not(None))  # type: ignore[attr-defined]
+        .group_by(_TUE.actor_user)
+        .order_by(_func.count().desc())
+        .limit(10)
+    ))
+    top_actors = [{"actor": r[0], "count": int(r[1])} for r in actor_rows]
     return templates.TemplateResponse(
         request,
         "machine_detail.html",
@@ -184,6 +198,7 @@ def machine_detail(
             "risk_series": risk_series,
             "risk_max": risk_max,
             "suppressions": suppressions,
+            "top_actors": top_actors,
             "csrf_token": _csrf_for(request),
         },
     )
@@ -479,6 +494,7 @@ def audit_page(
     machine_id: str = "",
     tool_name: str = "",
     decision: str = "",
+    actor_user: str = "",
     timeframe: str = "24h",
     event_source: str = "",
     user: str = Depends(require_session),
@@ -510,6 +526,7 @@ def audit_page(
             machine_id_like=machine_id or None,
             tool_name=tool_name or None,
             decision=decision or None,
+            actor_user=actor_user or None,
             timeframe=timeframe,  # type: ignore[arg-type]
             limit=200,
         )
@@ -532,6 +549,7 @@ def audit_page(
                 "machine_id": machine_id,
                 "tool_name": tool_name,
                 "decision": decision,
+                "actor_user": actor_user,
                 "timeframe": timeframe,
             },
             "event_source": event_source,

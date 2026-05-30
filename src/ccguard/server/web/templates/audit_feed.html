@@ -14,6 +14,11 @@
            value="{{ filters.tool_name or '' }}"
            class="rounded border border-slate-300 text-sm px-2 py-1 focus:ring-2 focus:ring-slate-400 focus:border-slate-500" />
 
+    <label class="sr-only" for="f-user">Пользователь</label>
+    <input type="text" id="f-user" name="actor_user" placeholder="пользователь"
+           value="{{ filters.actor_user or '' }}"
+           class="rounded border border-slate-300 text-sm px-2 py-1 focus:ring-2 focus:ring-slate-400 focus:border-slate-500" />
+
     <label class="sr-only" for="f-decision">Решение</label>
     <select id="f-decision" name="decision"
             class="rounded border border-slate-300 text-sm px-2 py-1 focus:ring-2 focus:ring-slate-400 focus:border-slate-500">
