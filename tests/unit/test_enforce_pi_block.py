@@ -33,7 +33,10 @@ def _make_policy(
     block_fail_mode: str = "open",
     **extra,
 ) -> Policy:
-    p = Policy(meta=PolicyMeta(revision=1, updated_at=datetime.now(UTC)))
+    p = Policy(
+        meta=PolicyMeta(revision=1, updated_at=datetime.now(UTC)),
+        enforcement_mode="enforce",  # Stage 5b: tests assert deny semantics
+    )
     p.prompt_injection = PromptInjectionConfig(
         enabled=pi_enabled, severity=pi_severity
     )

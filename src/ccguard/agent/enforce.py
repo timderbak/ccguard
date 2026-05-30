@@ -186,8 +186,39 @@ def _decide_web(tool_input: dict, policy: Policy) -> EnforceDecision:
     return EnforceDecision(permission="allow", reason="ok")
 
 
+def _apply_enforcement_mode(decision: EnforceDecision, policy: Policy) -> EnforceDecision:
+    """Honor ``policy.enforcement_mode`` (Stage 5b).
+
+    ``observe`` flips deny → allow while preserving ``rule_id`` and prefixing
+    the reason with an ``observe-mode`` tag so downstream audit can detect
+    that this was a would-have-blocked call. ``allow`` decisions and any mode
+    we don't explicitly recognize are passed through unchanged — unknown
+    modes default to the safe ``enforce`` behavior.
+    """
+    if decision.permission != "deny":
+        return decision
+    mode = getattr(policy, "enforcement_mode", "enforce")
+    if mode != "observe":
+        return decision
+    return EnforceDecision(
+        permission="allow",
+        reason=f"observe-mode override (would deny: {decision.reason})",
+        rule_id=decision.rule_id,
+        fail_open=decision.fail_open,
+    )
+
+
 def decide(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
-    """Маршрутизация по tool_name на конкретный матчер. Только PreToolUse релевантно."""
+    """Маршрутизация по tool_name на конкретный матчер. Только PreToolUse релевантно.
+
+    Stage 5b: после расчёта решения вызывается :func:`_apply_enforcement_mode`,
+    который флипает deny → allow при ``policy.enforcement_mode == "observe"``.
+    """
+    return _apply_enforcement_mode(_decide_inner(payload, policy), policy)
+
+
+def _decide_inner(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
+    """Inner dispatch — pre-Stage-5b ``decide`` body, no mode override."""
     if payload.hook_event_name != "PreToolUse":
         return EnforceDecision(permission="allow", reason="not PreToolUse")
 
