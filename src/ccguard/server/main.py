@@ -105,6 +105,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services import discovery_service
     from ccguard.server.services.anomaly_service import tick as anomaly_tick
     from ccguard.server.services.risk_service import tick as risk_tick
+    from ccguard.server.services.drift_service import tick as drift_tick
     from ccguard.server.services.sequence_service import tick as sequence_tick
     from ccguard.server.services.source_monitors.atomic_red_team import (
         AtomicRedTeamMonitor,
@@ -134,6 +135,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     summary = anomaly_tick(s)
                     risk_summary = risk_tick(s)
                     sequence_summary = sequence_tick(s)
+                    drift_summary = drift_tick(s)
                 logger.info(
                     "anomaly tick: machines=%d findings=%d errors=%d",
                     summary["machines_evaluated"],
@@ -151,6 +153,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     sequence_summary["machines_evaluated"],
                     sequence_summary["findings_emitted"],
                     len(sequence_summary["errors"]),
+                )
+                logger.info(
+                    "drift tick: machines=%d findings=%d errors=%d",
+                    drift_summary["machines_evaluated"],
+                    drift_summary["findings_emitted"],
+                    len(drift_summary["errors"]),
                 )
                 # Rule Discovery sweep — once-per-day, gated by
                 # discovery.last_run_at. Requires app.state.signal_drafter
