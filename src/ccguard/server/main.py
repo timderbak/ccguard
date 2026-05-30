@@ -102,10 +102,26 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         shutdown_scheduler,
         start_scheduler,
     )
+    from ccguard.server.services import discovery_service
     from ccguard.server.services.anomaly_service import tick as anomaly_tick
     from ccguard.server.services.risk_service import tick as risk_tick
     from ccguard.server.services.sequence_service import tick as sequence_tick
+    from ccguard.server.services.source_monitors.atomic_red_team import (
+        AtomicRedTeamMonitor,
+    )
+    from ccguard.server.services.source_monitors.cve_ai_filter import (
+        CVEAIFilterMonitor,
+    )
+    from ccguard.server.services.source_monitors.mitre_attack import (
+        MitreAttackMonitor,
+    )
     from sqlmodel import Session as _SessionTick
+
+    _DISCOVERY_MONITORS = (
+        AtomicRedTeamMonitor(),
+        MitreAttackMonitor(),
+        CVEAIFilterMonitor(),
+    )
 
     if is_disabled():
         logger.info("anomaly scheduler disabled via CCGUARD_DISABLE_SCHEDULER")
@@ -136,6 +152,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     sequence_summary["findings_emitted"],
                     len(sequence_summary["errors"]),
                 )
+                # Rule Discovery sweep — once-per-day, gated by
+                # discovery.last_run_at. Requires app.state.signal_drafter
+                # (ANTHROPIC_API_KEY at startup); silently skip otherwise.
+                drafter = getattr(app.state, "signal_drafter", None)
+                if drafter is not None:
+                    from datetime import UTC as _UTC, datetime as _dt
+                    with _SessionTick(engine) as s2:
+                        if discovery_service.should_run(s2, now=_dt.now(_UTC)):
+                            disc_summary = discovery_service.tick(
+                                s2, drafter=drafter, monitors=list(_DISCOVERY_MONITORS)
+                            )
+                            logger.info(
+                                "discovery tick: seen=%d proposed=%d deduped=%d errors=%d",
+                                disc_summary["items_seen"],
+                                disc_summary["proposed"],
+                                disc_summary["deduped"],
+                                disc_summary["drafter_errors"],
+                            )
             except Exception:  # noqa: BLE001 — scheduler job must not crash the loop
                 logger.exception("scheduled tick raised")
 
