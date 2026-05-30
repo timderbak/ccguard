@@ -1,26 +1,48 @@
 {# Reusable list-field control for policy editor sections.
-   Drop-in replacement for the bare <textarea> pattern: keeps the same
-   `name` attribute (test-locked), adds a live item counter, monospace
-   styling, and a format hint slot.
+   Renders a chip-pill UI on top of a hidden <textarea>: the textarea is the
+   source of truth (form posts its newline-joined value, name attribute is
+   test-locked), the chip UI is purely a visual layer that JS keeps in sync.
+
+   Progressive enhancement: if JS fails, the textarea becomes visible and the
+   user still sees + edits the raw list — nothing breaks.
 
    Usage:
      {% with field_name='commands.denylist_patterns',
              field_label='denylist_patterns',
              items=policy.commands.denylist_patterns,
-             hint='Один pattern на строку. Пустые строки игнорируются.',
+             hint='Один pattern на строку.',
              placeholder='\\.dangerous-cmd' %}
        {% include "components/_policy_list_field.html" %}
      {% endwith %}
 #}
-<div class="cc-list-field">
+<div class="cc-list-field cc-chip-list" data-chip-list>
     <div class="flex items-center justify-between mb-1">
         <label for="ll-{{ field_name }}" class="text-sm font-medium text-slate-700">{{ field_label }}</label>
         <span class="cc-mono text-[10px] text-slate-400" data-list-counter-for="ll-{{ field_name }}">{{ (items or []) | length }} элементов</span>
     </div>
+
+    {# Chip container — visible when JS runs (cc-chip-list adds .js-active class) #}
+    <div class="cc-chip-container hidden flex-wrap gap-1.5 p-2 bg-slate-50 rounded-md ring-1 ring-slate-200 mb-1.5 min-h-9"
+         data-chip-container></div>
+
+    {# Add-input — visible when JS runs #}
+    <div class="cc-chip-input-row hidden gap-2 mb-1">
+        <input type="text"
+               data-chip-input
+               class="flex-1 rounded-md border-slate-300 font-mono text-xs px-2 py-1 focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+               {% if placeholder %}placeholder="{{ placeholder }}"{% endif %} />
+        <button type="button" data-chip-add
+                class="cc-mono text-xs px-3 py-1 bg-slate-900 text-white rounded-md hover:bg-slate-800">
+            + добавить
+        </button>
+    </div>
+
+    {# Source-of-truth textarea — visible only as a fallback when JS fails #}
     <textarea id="ll-{{ field_name }}" name="{{ field_name }}" rows="{{ rows or 4 }}"
-              data-list-counter
-              class="block w-full rounded-md border-slate-300 font-mono text-xs leading-relaxed focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
+              data-list-counter data-chip-textarea
+              class="cc-chip-textarea block w-full rounded-md border-slate-300 font-mono text-xs leading-relaxed focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"
               {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}>{{ (items or []) | join('\n') }}</textarea>
+
     {% if hint %}
     <p class="cc-mono text-[10px] text-slate-400 mt-1">{{ hint }}</p>
     {% endif %}
