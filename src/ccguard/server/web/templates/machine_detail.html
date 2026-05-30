@@ -85,6 +85,14 @@
                                 {% endif %}
                                 <span class="cc-mono text-slate-400">+{{ "%.1f"|format(c.weight) }}</span>
                                 {% if c.technique %}<span class="cc-mono text-slate-400">{{ c.technique }}</span>{% endif %}
+                                <form method="POST" action="/machines/{{ machine.machine_id }}/suppress" class="inline ml-auto"
+                                      onsubmit="return confirm('Заглушить {{ c.signal_id }} на 30 дней?')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                                    <input type="hidden" name="signal_id" value="{{ c.signal_id }}" />
+                                    <input type="hidden" name="days" value="30" />
+                                    <input type="hidden" name="reason" value="suppressed from finding" />
+                                    <button class="text-[10px] cc-mono text-slate-400 hover:text-amber-600 hover:underline">suppress 30d</button>
+                                </form>
                             </li>
                             {% endfor %}
                         </ul>
@@ -138,6 +146,32 @@
 
 {% if risk_series %}
 {% include "components/_risk_sparkline.html" %}
+{% endif %}
+
+{% if suppressions %}
+<section class="bg-white rounded-xl shadow p-5 mt-6">
+    <h3 class="font-semibold mb-3 flex items-center gap-2 text-slate-800">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10Z"/><path d="m4.93 4.93 14.14 14.14"/></svg>
+        Заглушённые сигналы ({{ suppressions|length }})
+    </h3>
+    <ul class="text-sm divide-y divide-slate-100">
+        {% for sup in suppressions %}
+        <li class="py-2 flex items-center gap-3">
+            <span class="cc-mono text-xs text-slate-700">{{ sup.signal_id }}</span>
+            <span class="cc-mono text-[10px] text-slate-400">до {{ sup.until[:10] if sup.until else "?" }}</span>
+            {% if sup.expired %}
+            <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 bg-slate-100 text-slate-400 ring-1 ring-slate-200">expired</span>
+            {% endif %}
+            <span class="cc-mono text-[11px] text-slate-400">{{ sup.by }} · {{ sup.reason }}</span>
+            <form method="POST" action="/machines/{{ machine.machine_id }}/unsuppress" class="inline ml-auto">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <input type="hidden" name="signal_id" value="{{ sup.signal_id }}" />
+                <button class="text-[11px] text-red-600 hover:underline">снять</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
 {% endif %}
 
 <form method="POST" action="/machines/{{ machine.machine_id }}/revoke" class="mt-6">

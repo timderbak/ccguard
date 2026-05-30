@@ -58,13 +58,17 @@ def compute_risk_score(
     weights: dict[str, float],
     window_hours: float,
     half_life_hours: float,
+    *,
+    excluded_signals: set[str] | None = None,
 ) -> RiskBreakdown:
     """Return the decay-weighted cumulative score across ``events``.
 
     Events older than ``window_hours`` are dropped. Decay uses base-2 (so one
-    half-life halves the contribution exactly).
+    half-life halves the contribution exactly). Signal IDs in
+    ``excluded_signals`` (one-click suppression) contribute nothing.
     """
     cutoff = now - timedelta(hours=window_hours)
+    excluded = excluded_signals or set()
     contributions: dict[str, float] = {}
     total = 0.0
     counted = 0
@@ -75,6 +79,8 @@ def compute_risk_score(
         decay = 2.0 ** (-age_hours / half_life_hours) if half_life_hours > 0 else 1.0
         any_signal_counted = False
         for sid in evt.signals:
+            if sid in excluded:
+                continue
             w = weights.get(sid, _DEFAULT_UNKNOWN_WEIGHT)
             contribution = w * decay
             contributions[sid] = contributions.get(sid, 0.0) + contribution
@@ -192,11 +198,17 @@ def evaluate_one(session: Session, machine_id: str) -> FindingRecord | None:
     if not _machine_is_warm(session, machine_id):
         return None
 
+    from ccguard.server.services.suppression_service import list_active
+
     threshold, window_h, half_life_h = _load_tunables(session)
     now = datetime.now(UTC)
     since = now - timedelta(hours=window_h)
     events = _load_events(session, machine_id, since)
-    breakdown = compute_risk_score(events, now, DEFAULT_WEIGHTS, window_h, half_life_h)
+    suppressed = list_active(session, machine_id=machine_id, now=now)
+    breakdown = compute_risk_score(
+        events, now, DEFAULT_WEIGHTS, window_h, half_life_h,
+        excluded_signals=suppressed,
+    )
 
     top_signal: str | None = None
     if breakdown.contributions:

@@ -163,6 +163,7 @@ def machine_detail(
         get_findings_for_machine,
         get_latest_inventory_json,
     )
+    from ccguard.server.services import suppression_service
     from ccguard.server.services.risk_history import get_risk_history_14d
     from ccguard.server.web.finding_view import build_explainable_findings
     machine = session.get(Machine, machine_id)
@@ -171,6 +172,7 @@ def machine_detail(
     findings = get_findings_for_machine(session, machine_id)
     risk_series = get_risk_history_14d(session, machine_id)
     risk_max = max((p["score"] for p in risk_series), default=0.0)
+    suppressions = suppression_service.list_for_machine(session, machine_id=machine_id)
     return templates.TemplateResponse(
         request,
         "machine_detail.html",
@@ -181,6 +183,7 @@ def machine_detail(
             "findings": build_explainable_findings(findings),
             "risk_series": risk_series,
             "risk_max": risk_max,
+            "suppressions": suppressions,
             "csrf_token": _csrf_for(request),
         },
     )
@@ -303,6 +306,44 @@ def proposed_signals_reject(
     except svc.NotPending as e:
         raise HTTPException(status_code=409, detail=str(e)) from e
     return RedirectResponse(url="/admin/proposed-signals", status_code=303)
+
+
+@router.post("/machines/{machine_id}/suppress")
+def machine_suppress_signal(
+    machine_id: str,
+    request: Request,
+    signal_id: str = Form(...),
+    days: int = Form(30),
+    reason: str = Form(""),
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """One-click suppression — closes the alert-fatigue loop."""
+    from ccguard.server.services import suppression_service
+
+    if days <= 0 or days > 365:
+        raise HTTPException(status_code=400, detail="days must be 1..365")
+    suppression_service.add(
+        session, machine_id=machine_id, signal_id=signal_id,
+        days=days, reason=reason or "(no reason)", by=user,
+    )
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/unsuppress")
+def machine_unsuppress_signal(
+    machine_id: str,
+    request: Request,
+    signal_id: str = Form(...),
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import suppression_service
+
+    suppression_service.remove(session, machine_id=machine_id, signal_id=signal_id)
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
 
 
 @router.post("/machines/{machine_id}/revoke")
