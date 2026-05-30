@@ -7,10 +7,11 @@ from ccguard.agent.signals.catalog import CATALOG, Signal
 
 
 def test_catalog_nonempty_and_typed():
-    # Floor bumped to 18 after Stage 6 catalog expansion (cloud creds, browser
-    # creds, cloud-storage exfil, container escape, supply-chain publish,
-    # cloud-metadata recon, systemd persistence).
-    assert len(CATALOG) >= 18
+    # Floor bumped to 38 after Catalog Expansion C (kube/vault/env creds,
+    # launchd/Windows/autostart/global-pkg persistence, inline-exec +
+    # base64/hex decode, DNS/bot/paste egress, system perm/sudo/hosts edits,
+    # network scan + secret grep recon, AI-agent config tamper).
+    assert len(CATALOG) >= 38
     assert all(isinstance(s, Signal) for s in CATALOG)
 
 
