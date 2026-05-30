@@ -94,6 +94,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     from ccguard.server.services.anomaly_service import tick as anomaly_tick
     from ccguard.server.services.risk_service import tick as risk_tick
+    from ccguard.server.services.sequence_service import tick as sequence_tick
     from sqlmodel import Session as _SessionTick
 
     if is_disabled():
@@ -106,6 +107,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 with _SessionTick(engine) as s:
                     summary = anomaly_tick(s)
                     risk_summary = risk_tick(s)
+                    sequence_summary = sequence_tick(s)
                 logger.info(
                     "anomaly tick: machines=%d findings=%d errors=%d",
                     summary["machines_evaluated"],
@@ -117,6 +119,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     risk_summary["machines_evaluated"],
                     risk_summary["findings_emitted"],
                     len(risk_summary["errors"]),
+                )
+                logger.info(
+                    "sequence tick: machines=%d findings=%d errors=%d",
+                    sequence_summary["machines_evaluated"],
+                    sequence_summary["findings_emitted"],
+                    len(sequence_summary["errors"]),
                 )
             except Exception:  # noqa: BLE001 — scheduler job must not crash the loop
                 logger.exception("scheduled tick raised")
