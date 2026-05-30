@@ -1018,7 +1018,10 @@ def policy_rollback(
 def _settings_context(request: Request, session: Session, user: str) -> dict:
     """Build the shared template context for /settings GET + validation re-renders."""
     from ccguard.server.services.token_service import list_tokens
-    from ccguard.server.services.settings_service import get_setting
+    from ccguard.server.services.settings_service import (
+        get_enforcement_mode,
+        get_setting,
+    )
     from ccguard.server.db.models import ScanResult
 
     from ccguard.server.services.settings_service import parse_budget
@@ -1026,6 +1029,7 @@ def _settings_context(request: Request, session: Session, user: str) -> dict:
     cfg = _config(request)
     enabled = (get_setting(session, "llm_scanner_enabled") or "false").lower() == "true"
     budget = parse_budget(get_setting(session, "daily_call_budget"))
+    enforcement_mode = get_enforcement_mode(session)
     scans = list(
         session.exec(
             select(ScanResult).order_by(ScanResult.scanned_at.desc()).limit(10)  # type: ignore[attr-defined]
@@ -1045,6 +1049,7 @@ def _settings_context(request: Request, session: Session, user: str) -> dict:
             "llm_scanner_enabled": enabled,
             "daily_call_budget": budget,
         },
+        "enforcement_mode": enforcement_mode,
         "scans": scans,
         # variables consumed by the inline-included _llm_usage_counter.html
         "enabled": usage["enabled"],
@@ -1242,6 +1247,28 @@ def llm_usage_partial(
             "cost_dollars": usage["cost_cents"] / 100.0,
         },
     )
+
+
+@router.post("/settings/enforcement-mode")
+def settings_enforcement_mode(
+    request: Request,
+    mode: str = Form(...),
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Admin UI toggle for enforcement_mode (observe ↔ enforce).
+
+    Writes SettingsRecord["enforcement_mode"]; the /api/v1/policy endpoint
+    reads it and injects into the served policy, so agents pick up the
+    change on their next sync (≤5min) — no code-change, no redeploy.
+    """
+    from ccguard.server.services.settings_service import set_setting
+
+    if mode not in ("observe", "enforce"):
+        raise HTTPException(status_code=400, detail="mode must be observe|enforce")
+    set_setting(session, "enforcement_mode", mode)
+    return RedirectResponse(url="/settings", status_code=303)
 
 
 @router.post("/settings/tokens")
