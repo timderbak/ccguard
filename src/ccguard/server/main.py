@@ -58,6 +58,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # anyway it gets 503 scanner_unavailable. Tests override the dependency
     # so this branch is non-load-bearing for unit/integration coverage.
     app.state.scan_service = None
+    app.state.signal_drafter = None
     if cfg.llm_enabled_at_startup and cfg.anthropic_api_key:
         try:
             from ccguard.server.services.llm_client import LLMClient
@@ -69,6 +70,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception:  # noqa: BLE001 — scanner is optional at startup
             logger.exception("failed to initialize ScanService; scanner endpoints will 503")
             app.state.scan_service = None
+        try:
+            from ccguard.server.services.signal_drafter import AnthropicSignalDrafter
+            app.state.signal_drafter = AnthropicSignalDrafter(api_key=cfg.anthropic_api_key)
+        except Exception:  # noqa: BLE001 — drafter is optional at startup
+            logger.exception("failed to initialize SignalDrafter; LLM draft endpoint will 503")
+            app.state.signal_drafter = None
 
     # Trigger policy bootstrap from file if DB has no published policy yet.
     # Otherwise the web UI /policy route returns 503 until first agent sync.

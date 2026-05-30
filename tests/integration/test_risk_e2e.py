@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
@@ -33,7 +34,7 @@ def test_ingested_signals_drive_a_risk_finding(
         "machine_id": "m-e2e",
         "events": [
             {
-                "ts": "2026-05-30T11:59:00+00:00",
+                "ts": datetime.now(UTC).isoformat(),
                 "tool_name": "Bash",
                 "fingerprint": "0123456789abcdef",
                 "decision": "allow",
