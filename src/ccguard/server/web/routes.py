@@ -181,6 +181,92 @@ def machine_detail(
     )
 
 
+@router.get("/admin/proposed-signals", response_class=HTMLResponse)
+def proposed_signals_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Admin list of LLM/manual-drafted catalog signals awaiting approval."""
+    from ccguard.server.services import proposed_signal_service as svc
+
+    def _wrap(row) -> dict:
+        try:
+            draft = json.loads(row.draft_json)
+        except (ValueError, TypeError):
+            draft = {"id": "(corrupt)", "attack_technique": "?", "pattern": "?", "description": ""}
+        return {"row": row, "draft": draft}
+
+    return templates.TemplateResponse(
+        request,
+        "proposed_signals.html",
+        {
+            "user": user,
+            "pending": [_wrap(r) for r in svc.list_pending(session)],
+            "reviewed": [_wrap(r) for r in svc.list_reviewed(session, limit=20)],
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+@router.post("/admin/proposed-signals/draft-from-text")
+def proposed_signals_draft(
+    request: Request,
+    draft_json: str = Form(...),
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Manual paste path (E1). E2 swaps this for an LLM-drafted variant."""
+    from ccguard.server.services import proposed_signal_service as svc
+
+    try:
+        draft = json.loads(draft_json)
+        if not isinstance(draft, dict):
+            raise ValueError("draft_json must be a JSON object")
+        svc.propose(session, draft=draft, source_kind="manual", source_title="manual paste")
+    except (ValueError, svc.InvalidDraft) as e:
+        raise HTTPException(status_code=400, detail=f"invalid draft: {e}") from e
+    return RedirectResponse(url="/admin/proposed-signals", status_code=303)
+
+
+@router.post("/admin/proposed-signals/{row_id}/approve")
+def proposed_signals_approve(
+    row_id: int,
+    request: Request,
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import proposed_signal_service as svc
+
+    try:
+        svc.approve(session, row_id, reviewed_by=user)
+    except svc.InvalidDraft as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except svc.NotPending as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return RedirectResponse(url="/admin/proposed-signals", status_code=303)
+
+
+@router.post("/admin/proposed-signals/{row_id}/reject")
+def proposed_signals_reject(
+    row_id: int,
+    request: Request,
+    reason: str = Form(""),
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import proposed_signal_service as svc
+
+    try:
+        svc.reject(session, row_id, reviewed_by=user, reason=reason or "(no reason)")
+    except svc.NotPending as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return RedirectResponse(url="/admin/proposed-signals", status_code=303)
+
+
 @router.post("/machines/{machine_id}/revoke")
 def revoke_machine(
     request: Request,

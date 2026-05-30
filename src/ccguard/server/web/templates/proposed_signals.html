@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}ccguard — предложенные сигналы{% endblock %}
+{% block content %}
+<header class="mb-6">
+    <p class="cc-mono text-[11px] uppercase tracking-wider text-slate-400 mb-2">Управление · Rule Discovery</p>
+    <h2 class="text-2xl font-semibold">Предложенные сигналы</h2>
+    <p class="text-slate-500 text-sm mt-1">Черновики catalog-сигналов от LLM-агента или ручного paste. Approve → запись в SettingsRecord override, агенты подхватывают на следующем policy sync.</p>
+</header>
+
+<section class="bg-white rounded-xl shadow p-5 mb-6">
+    <h3 class="font-semibold mb-3 text-slate-800">Добавить вручную</h3>
+    <form method="POST" action="/admin/proposed-signals/draft-from-text">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <textarea name="draft_json" rows="8" required
+                  placeholder='{"id": "cred.read.foo", "attack_technique": "T1552.001", "pattern": "\\.foo/creds", "description": "..."}'
+                  class="w-full cc-mono text-xs p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500"></textarea>
+        <button class="mt-3 inline-flex items-center gap-1.5 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg hover:bg-slate-800 transition-colors">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path d="M12 5v14M5 12h14"/></svg>
+            Добавить черновик
+        </button>
+    </form>
+</section>
+
+<section class="bg-white rounded-xl shadow p-5 mb-6">
+    <h3 class="font-semibold mb-4 flex items-center gap-2 text-slate-800">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-amber-500"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        На review ({{ pending|length }})
+    </h3>
+    {% if pending %}
+    <ul class="space-y-3">
+        {% for item in pending %}
+        {% set row = item.row %}
+        {% set draft = item.draft %}
+        <li class="border border-slate-200 rounded-lg p-4">
+            <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="cc-mono text-sm font-semibold text-slate-900">{{ draft.id }}</span>
+                        <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 bg-slate-100 text-slate-500 ring-1 ring-slate-200">{{ draft.attack_technique }}</span>
+                        <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 bg-slate-50 text-slate-400 ring-1 ring-slate-200">{{ row.source_kind }}</span>
+                    </div>
+                    <p class="text-sm text-slate-600">{{ draft.description }}</p>
+                    <p class="cc-mono text-xs text-slate-500 mt-1">pattern: <code class="bg-slate-50 px-1.5 py-0.5 rounded">{{ draft.pattern }}</code></p>
+                    {% if row.source_title %}<p class="cc-mono text-[11px] text-slate-400 mt-1">источник: {{ row.source_title }}{% if row.source_url %} (<a href="{{ row.source_url }}" target="_blank" rel="noopener noreferrer" class="text-emerald-700 hover:underline">link</a>){% endif %}</p>{% endif %}
+                    {% if row.llm_rationale %}<details class="mt-2"><summary class="cursor-pointer text-xs text-slate-500 hover:text-emerald-700">LLM rationale</summary><p class="text-xs text-slate-500 mt-1 ml-2">{{ row.llm_rationale }}</p></details>{% endif %}
+                </div>
+                <div class="flex flex-col gap-2 shrink-0">
+                    <form method="POST" action="/admin/proposed-signals/{{ row.id }}/approve">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                        <button class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5"><path d="m5 12 5 5L20 7"/></svg>
+                            Approve
+                        </button>
+                    </form>
+                    <form method="POST" action="/admin/proposed-signals/{{ row.id }}/reject" onsubmit="return confirm('Отклонить?')">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                        <input type="text" name="reason" placeholder="reason" class="w-32 text-[11px] px-2 py-1 border border-slate-200 rounded-md mb-1" />
+                        <button class="block w-full text-xs px-3 py-1.5 bg-white text-red-600 border border-red-200 rounded-md hover:bg-red-50">Reject</button>
+                    </form>
+                </div>
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-slate-400 text-sm">Очередь пустая.</p>
+    {% endif %}
+</section>
+
+<section class="bg-white rounded-xl shadow p-5">
+    <h3 class="font-semibold mb-4 text-slate-800">История ({{ reviewed|length }})</h3>
+    {% if reviewed %}
+    <ul class="text-sm divide-y divide-slate-100">
+        {% for item in reviewed %}
+        {% set row = item.row %}
+        {% set draft = item.draft %}
+        <li class="py-2.5 flex items-center gap-3">
+            <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 ring-1
+                {% if row.status == 'approved' %}bg-emerald-50 text-emerald-700 ring-emerald-200
+                {% else %}bg-red-50 text-red-600 ring-red-200{% endif %}">{{ row.status }}</span>
+            <span class="cc-mono text-xs text-slate-700">{{ draft.id }}</span>
+            <span class="cc-mono text-[11px] text-slate-400">{{ draft.attack_technique }}</span>
+            {% if row.reviewed_by %}<span class="cc-mono text-[11px] text-slate-400 ml-auto">{{ row.reviewed_by }} · {{ row.reviewed_at.isoformat(timespec="minutes") if row.reviewed_at else "" }}</span>{% endif %}
+            {% if row.rejection_reason %}<span class="cc-mono text-[11px] text-red-500">{{ row.rejection_reason }}</span>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-slate-400 text-sm">История пустая.</p>
+    {% endif %}
+</section>
+{% endblock %}
