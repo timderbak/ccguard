@@ -19,6 +19,7 @@ from sqlmodel import Session, select
 
 from ccguard.server.db.models import SourceFetchLog
 from ccguard.server.services import proposed_signal_service, signal_drafter
+from ccguard.server.services._utc import aware_utc
 from ccguard.server.services.settings_service import get_setting, set_setting
 from ccguard.server.services.source_monitors.base import SourceItem, SourceMonitor
 
@@ -40,9 +41,7 @@ def should_run(session: Session, *, now: datetime, min_interval_hours: float = 2
         last = datetime.fromisoformat(raw)
     except ValueError:
         return True
-    if last.tzinfo is None:
-        last = last.replace(tzinfo=UTC)
-    return (now - last) >= timedelta(hours=min_interval_hours)
+    return (now - aware_utc(last)) >= timedelta(hours=min_interval_hours)
 
 
 def _already_fetched(session: Session, url: str) -> bool:
@@ -77,7 +76,7 @@ def _since_for_monitor(session: Session, monitor_name: str) -> datetime:
     )
     last = session.exec(stmt).first()
     if last is not None:
-        return last if last.tzinfo else last.replace(tzinfo=UTC)
+        return aware_utc(last)
     return datetime.now(UTC) - timedelta(days=30)
 
 

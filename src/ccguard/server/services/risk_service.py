@@ -96,6 +96,7 @@ from ccguard.server.db.models import (  # noqa: E402
     ToolUseEvent,
 )
 from ccguard.server.services import settings_service  # noqa: E402
+from ccguard.server.services._utc import aware_utc  # noqa: E402
 from ccguard.server.services.risk_constants import (  # noqa: E402
     DEFAULT_HALF_LIFE_HOURS,
     DEFAULT_THRESHOLD,
@@ -176,10 +177,7 @@ def _load_events(
             continue
         # SQLite stores datetimes tz-naive; normalize to UTC so arithmetic
         # against the tz-aware ``now`` does not raise.
-        ts = row.ts
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=UTC)
-        out.append(RiskInputEvent(ts=ts, signals=tuple(str(s) for s in sigs)))
+        out.append(RiskInputEvent(ts=aware_utc(row.ts), signals=tuple(str(s) for s in sigs)))
     return out
 
 

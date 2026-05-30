@@ -107,6 +107,7 @@ from ccguard.server.db.models import (  # noqa: E402
     ToolUseEvent,
 )
 from ccguard.server.services import settings_service  # noqa: E402
+from ccguard.server.services._utc import aware_utc  # noqa: E402
 from ccguard.server.services.sequence_constants import (  # noqa: E402
     CRED_PREFIX,
     DEFAULT_LOOKBACK_HOURS,
@@ -181,10 +182,7 @@ def _load_events(
             continue
         if not isinstance(sigs, list) or not sigs:
             continue
-        ts = row.ts
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=UTC)
-        out.append(SequenceInputEvent(ts=ts, signals=tuple(str(s) for s in sigs)))
+        out.append(SequenceInputEvent(ts=aware_utc(row.ts), signals=tuple(str(s) for s in sigs)))
     return out
 
 
