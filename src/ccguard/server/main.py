@@ -31,6 +31,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_db(engine)
     from sqlmodel import Session as _Session
     from ccguard.server.services.settings_service import (
+        seed_enforcement_mode,
         seed_llm_settings,
         seed_risk_settings,
         seed_sequence_settings,
@@ -45,6 +46,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_risk_settings(_s)
         # Behavioral Detection Stage 3: seed sequence-detector tunables.
         seed_sequence_settings(_s)
+        # Behavioral Detection Stage 5: seed enforcement_mode = observe.
+        seed_enforcement_mode(_s)
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)

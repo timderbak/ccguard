@@ -54,6 +54,14 @@ _SEQUENCE_SETTINGS_DEFAULTS: dict[str, str] = {
     "sequence.lookback_hours": str(_SEQUENCE_LOOKBACK_HOURS),
 }
 
+# Behavioral Detection Stage 5 — global enforcement mode.
+# Default ``observe`` closes the explicit "remove all blocking" ask: the engine
+# emits findings but does not return deny. Switch to ``enforce`` to restore
+# blocking. Agent-side honoring lands in a follow-up.
+_ENFORCEMENT_MODE_KEY: str = "enforcement_mode"
+_ENFORCEMENT_MODE_DEFAULT: str = "observe"
+_ENFORCEMENT_MODE_VALID: frozenset[str] = frozenset({"observe", "enforce"})
+
 
 def get_setting(session: Session, key: str) -> str | None:
     """Return the stored value for ``key`` or ``None`` if the key is absent."""
@@ -141,6 +149,32 @@ def seed_risk_settings(session: Session) -> None:
         inserted = True
     if inserted:
         session.commit()
+
+
+def seed_enforcement_mode(session: Session) -> None:
+    """Idempotent first-startup seed of the global enforcement mode.
+
+    Default is ``observe`` (engine emits findings without returning deny);
+    admin edits are preserved across re-seeds.
+    """
+    if session.get(SettingsRecord, _ENFORCEMENT_MODE_KEY) is None:
+        session.add(
+            SettingsRecord(key=_ENFORCEMENT_MODE_KEY, value=_ENFORCEMENT_MODE_DEFAULT)
+        )
+        session.commit()
+
+
+def get_enforcement_mode(session: Session) -> str:
+    """Return ``"observe"`` or ``"enforce"``; unknown values fall back to the
+    safe default ``"observe"`` and a single warn-log entry."""
+    raw = get_setting(session, _ENFORCEMENT_MODE_KEY)
+    if raw in _ENFORCEMENT_MODE_VALID:
+        return raw
+    if raw is not None:
+        _log.warning(
+            "enforcement_mode value %r is not valid; treating as observe", raw
+        )
+    return _ENFORCEMENT_MODE_DEFAULT
 
 
 def seed_sequence_settings(session: Session) -> None:
