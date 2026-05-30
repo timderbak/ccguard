@@ -300,6 +300,23 @@ class ProposedSignal(SQLModel, table=True):
         return _json.loads(self.draft_json)["id"]
 
 
+class SourceFetchLog(SQLModel, table=True):
+    """Per-URL fetch dedup for source monitors (Rule Discovery Agent · E3).
+
+    A row exists for every URL ever pulled into the proposed-signals queue
+    (one row per (monitor_name, item_url)). The unique constraint on
+    ``item_url`` keeps a single source item from being re-drafted on every
+    cron tick. ``proposed_signal_id`` is nullable so we can also record fetch
+    attempts that failed before producing a draft (LLM error, budget gone).
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    monitor_name: str = Field(index=True)
+    item_url: str = Field(unique=True, index=True)
+    fetched_at: datetime = Field(default_factory=_utcnow)
+    proposed_signal_id: int | None = Field(default=None, index=True)
+
+
 class SettingsRecord(SQLModel, table=True):
     """Key/value store for admin-tunable server settings (Plan 03-01 D-04).
 
