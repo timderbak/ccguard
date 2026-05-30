@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<title>ccguard · Behavioral Detection v2</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #111821; --ink: #e6edf3; --muted: #8b98a5;
+    --accent: #34d399; --warn: #f59e0b; --bad: #ef4444; --line: #1f2a37;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 16px/1.55 -apple-system, "SF Pro Text", "Inter", system-ui, sans-serif;
+    color: var(--ink); background: var(--bg);
+  }
+  .deck { max-width: 1080px; margin: 0 auto; padding: 32px 28px 80px; }
+  .slide {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 38px 44px; margin-bottom: 28px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.02) inset;
+  }
+  .eyebrow {
+    text-transform: uppercase; letter-spacing: 0.14em; font-size: 11px;
+    color: var(--accent); font-family: var(--mono); margin-bottom: 10px;
+  }
+  h1 { font-size: 32px; margin: 0 0 14px; letter-spacing: -0.01em; }
+  h2 { font-size: 24px; margin: 0 0 12px; letter-spacing: -0.01em; }
+  h3 { font-size: 16px; margin: 22px 0 8px; color: var(--accent); }
+  p, li { color: var(--ink); }
+  .muted { color: var(--muted); }
+  ul { margin: 8px 0 0; padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  code, .mono { font-family: var(--mono); font-size: 13px; }
+  .grid { display: grid; gap: 18px; }
+  .grid.two { grid-template-columns: 1fr 1fr; }
+  .grid.three { grid-template-columns: repeat(3, 1fr); }
+  .card {
+    background: #0d141d; border: 1px solid var(--line); border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-family: var(--mono); font-size: 11px;
+    border: 1px solid var(--line); color: var(--muted);
+  }
+  .pill.acc { color: var(--accent); border-color: rgba(52,211,153,0.4); }
+  .pill.warn { color: var(--warn); border-color: rgba(245,158,11,0.4); }
+  .pill.bad { color: var(--bad); border-color: rgba(239,68,68,0.4); }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .flow {
+    font-family: var(--mono); font-size: 13px; background: #0d141d;
+    border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px;
+    white-space: pre; overflow-x: auto; color: var(--muted);
+  }
+  .flow b { color: var(--accent); font-weight: 600; }
+  .footer { color: var(--muted); font-family: var(--mono); font-size: 11px; margin-top: 20px; }
+  .stat { font-size: 28px; font-weight: 600; color: var(--accent); }
+  .stat .unit { color: var(--muted); font-size: 13px; font-family: var(--mono); margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="deck">
+
+<section class="slide">
+  <div class="eyebrow">ccguard · v0.2 milestone</div>
+  <h1>Behavioral Detection v2 — что мы сделали</h1>
+  <p class="muted">EDR-слой для AI-агентов на developer-эндпоинтах. Заменяем наивный 3σ-per-metric anomaly engine на полноценный SOC-grade pipeline: сигналы → risk score → IOA-sequence → explainability UI → enforcement mode.</p>
+  <div class="grid three" style="margin-top: 24px;">
+    <div class="card"><div class="stat">5<span class="unit">stages shipped</span></div><div class="muted" style="font-size:12px;margin-top:4px">из 5 по спеке §6</div></div>
+    <div class="card"><div class="stat">840<span class="unit">tests passing</span></div><div class="muted" style="font-size:12px;margin-top:4px">+85 за серию, 0 regressions</div></div>
+    <div class="card"><div class="stat">11<span class="unit">atomic commits</span></div><div class="muted" style="font-size:12px;margin-top:4px">каждый — отдельный shippable срез</div></div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="eyebrow">slide 2 · pipeline</div>
+  <h2>Как это работает</h2>
+  <p class="muted">Один проход APScheduler-тика: anomaly → risk → sequence. Один writer, общая сессия, per-machine try/except — одна плохая машина не валит весь sweep.</p>
+  <div class="flow" style="margin-top: 14px;">
+APScheduler tick
+  ↓
+agent: <b>signal extractor</b> (catalog regex per PostToolUse event)
+  ↓ tags only (privacy: no raw tool_input ever leaves endpoint)
+server: ToolUseEvent.signals_json
+  ↓
+  ├─ <b>anomaly_tick</b>     — 3σ baseline (legacy, kept running)
+  ├─ <b>risk_tick</b>        — Σ weight·2^(-age/half_life) > threshold → "risk.elevated" [warn]
+  └─ <b>sequence_tick</b>    — cred.read.* → egress.* in &lt;15min → "ioa.exfil_sequence" [high]
+  ↓
+FindingRecord
+  ↓
+UI: machine_detail expandable explainability + fleet risk panel
+</div>
+</section>
+
+<section class="slide">
+  <div class="eyebrow">slide 3 · the 5 stages</div>
+  <h2>Что в каждой стадии</h2>
+  <table>
+    <thead><tr><th>Stage</th><th>Что добавили</th><th>Ключевой артефакт</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><span class="pill acc">1</span> Telemetry</td>
+        <td>8-сигнальный ATT&amp;CK-mapped каталог, агент-side extractor, <code>signals_json</code> field</td>
+        <td><code>agent/signals/catalog.py</code></td>
+      </tr>
+      <tr>
+        <td><span class="pill acc">2</span> Risk engine</td>
+        <td>decay-weighted кумулятивный score, warm-up guard, dedup, threshold → finding</td>
+        <td><code>server/services/risk_service.py</code></td>
+      </tr>
+      <tr>
+        <td><span class="pill acc">3</span> IOA sequence</td>
+        <td>cred → egress в окне T мин → <code>ioa.exfil_sequence</code> (high). Самая low-FP детекция</td>
+        <td><code>server/services/sequence_service.py</code></td>
+      </tr>
+      <tr>
+        <td><span class="pill acc">4a</span> Machine explainability</td>
+        <td>Expandable details: score/threshold/contributions + cred→egress timing, signal → ATT&amp;CK URL</td>
+        <td><code>server/web/finding_view.py</code></td>
+      </tr>
+      <tr>
+        <td><span class="pill acc">4b</span> Fleet overview</td>
+        <td>Top-10 warm machines by current risk + top contributor, color-graded</td>
+        <td><code>server/services/fleet_risk.py</code></td>
+      </tr>
+      <tr>
+        <td><span class="pill warn">5</span> Enforcement mode</td>
+        <td>Server seed <code>enforcement_mode = observe</code> по умолчанию. Agent-side honoring — Stage 5b TODO</td>
+        <td><code>settings_service.get_enforcement_mode</code></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="slide">
+  <div class="eyebrow">slide 4 · design invariants</div>
+  <h2>Архитектурные принципы</h2>
+  <div class="grid two">
+    <div class="card">
+      <h3 style="margin-top:0">Privacy by construction</h3>
+      <p>Сервер никогда не видит сырой <code>tool_input</code>. Агент извлекает <b>tags</b> по regex-каталогу и шлёт только ID + fingerprint. Все finding payload'ы — IDs + числа.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Forward-compatible</h3>
+      <p>Старый агент (v0.1) шлёт <code>signals_json = "[]"</code> — kernel выдаёт score 0, finding не выпускается. Неизвестный signal ID получает weight 1.0, а не exception.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Tunable без redeploy</h3>
+      <p>Все пороги в <code>SettingsRecord</code>: <code>risk.threshold</code>, <code>risk.window_hours</code>, <code>risk.half_life_hours</code>, <code>sequence.window_minutes</code>, <code>enforcement_mode</code>. Idempotent seeders, admin-edits preserved.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Explainability built-in</h3>
+      <p>FindingRecord.payload_json несёт breakdown: score / threshold / contributions / event_count. UI рендерит без дополнительных запросов. Каждый signal → ATT&amp;CK URL.</p>
+    </div>
+  </div>
+</section>
+
+<section class="slide">
+  <div class="eyebrow">slide 5 · competitive landscape</div>
+  <h2>Где мы отстаём, где обгоняем</h2>
+  <table>
+    <thead><tr><th>Категория</th><th>Лидер</th><th>Чего у них больше</th><th>Чего у нас больше</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Classic EDR</td>
+        <td>CrowdStrike, SentinelOne</td>
+        <td>ML-baselining, kernel-level telemetry, response actions, GA SOC интеграции</td>
+        <td><b>AI-tool layer visibility</b> — мы видим <code>Read</code>/<code>Bash</code>/<code>WebFetch</code> агента, они нет</td>
+      </tr>
+      <tr>
+        <td>AI Guardrails</td>
+        <td>Lakera, Cisco AI Defense</td>
+        <td>Prompt-injection scanning at scale, fine-tuned classifiers</td>
+        <td><b>Action-level</b> детекция (вызов tool), не prompt-level — нельзя обойти переформулировкой</td>
+      </tr>
+      <tr>
+        <td>Behavioral analytics</td>
+        <td>Exabeam, Splunk UBA</td>
+        <td>Peer-group baselining, UEBA risk-score аналитика 10+ лет</td>
+        <td>Узкий vertical: <b>только AI agent endpoint</b>. Меньше FP, проще objяснить</td>
+      </tr>
+      <tr>
+        <td>Supply-chain</td>
+        <td>Snyk, Socket</td>
+        <td>Package-level CVE scan, registry inventory</td>
+        <td>Hash-based <b>config-drift</b> для MCP/skills/hooks (Stage 6 TODO)</td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="muted" style="margin-top:16px;font-size:14px"><b>Уникальный moat:</b> мы — единственный слой, который видит <i>что именно tool агента делает на машине разработчика</i>. Classic EDR не понимает, что <code>curl secret.com</code> запустил AI-агент; AI-guardrails не видят, что после prompt-injection обхода прошёл реальный <code>cat ~/.aws/credentials</code>.</p>
+</section>
+
+<section class="slide">
+  <div class="eyebrow">slide 6 · roadmap</div>
+  <h2>Что ещё улучшить</h2>
+  <div class="grid two">
+    <div class="card">
+      <h3 style="margin-top:0">Ближайшее (1-2 спринта)</h3>
+      <ul>
+        <li><b>Stage 5b:</b> agent-side honoring <code>enforcement_mode</code> — flip deny → allow в observe, audit-trail сохраняется</li>
+        <li><b>One-click suppression</b> на каждой alert: пишет tuning rule в SettingsRecord, decay weight сигнала</li>
+        <li><b>Config-drift detector</b> (<code>persist.agent_config</code>): diff inventory snapshot, ловить rug-pull плагинов</li>
+        <li><b>Attack simulator</b> для pilot demo (AIShellJack-style: cred-access → collection → exfil)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Среднесрок</h3>
+      <ul>
+        <li><b>Peer-group normalization</b> — нормировать score по похожим машинам, не по абсолюту (snowflake-resistant)</li>
+        <li><b>Signal coverage:</b> ещё ~20 IDs (data-staging, exfil-over-cloud-storage, container-escape attempts)</li>
+        <li><b>Webhook/Slack alert delivery</b> вместо HTMX dashboard polling</li>
+        <li><b>Multi-tenant</b> (v0.3 milestone, упомянуто в CLAUDE.md)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Долгосрок</h3>
+      <ul>
+        <li><b>ML-baselining</b> light: clustering machines по signal-distribution, не VAE (избегаем "heavy ML" по спеке §7)</li>
+        <li><b>Native SIEM bridge</b> (Splunk HEC, Elastic, Datadog) — push FindingRecord как ECS-compliant event</li>
+        <li><b>Postgres migration</b> &gt; 100 машин (планировалось в v0.3)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0">Технический долг</h3>
+      <ul>
+        <li>UI policy-editor: всё ещё YAML-as-text, нужен structured form (старый ask user'а)</li>
+        <li>Brittle exact-markup тесты в render layer — нужна стратегия снапшот-тестирования</li>
+        <li>SQLite tz-naive datetimes: gotcha повторяется в каждом новом сервисе (risk_service, sequence_service) — вынести helper</li>
+        <li>11 атомарных коммитов на ветке — пора в PR + merge в master</li>
+      </ul>
+    </div>
+  </div>
+  <div class="footer">ccguard · feat/behavioral-detection-stage1 · 11 commits · 840/840 tests · 2026-05-30</div>
+</section>
+
+</div>
+</body>
+</html>
