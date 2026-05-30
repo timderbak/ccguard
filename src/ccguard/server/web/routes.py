@@ -253,6 +253,39 @@ def proposed_signals_draft(
     return RedirectResponse(url="/admin/proposed-signals", status_code=303)
 
 
+@router.post("/admin/proposed-signals/draft-pi-from-text")
+def proposed_pi_draft(
+    request: Request,
+    draft_json: str = Form(...),
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Manual paste of a prompt-injection pattern draft.
+
+    Expects ``{category, pattern, description}`` JSON. Approve writes to
+    SettingsRecord["pi.override.<category>"] — agent-side hot-reload of PI
+    patterns is a follow-up; for now approved entries are admin-visible and
+    ready for the next pattern catalog release.
+    """
+    from ccguard.server.services import proposed_signal_service as svc
+
+    try:
+        draft = json.loads(draft_json)
+        if not isinstance(draft, dict):
+            raise ValueError("draft_json must be a JSON object")
+        svc.propose(
+            session,
+            draft=draft,
+            source_kind="manual-pi",
+            source_title="PI pattern (manual)",
+            kind="pi_pattern",
+        )
+    except (ValueError, svc.InvalidDraft) as e:
+        raise HTTPException(status_code=400, detail=f"invalid PI draft: {e}") from e
+    return RedirectResponse(url="/admin/proposed-signals", status_code=303)
+
+
 @router.post("/admin/proposed-signals/draft-from-llm")
 def proposed_signals_draft_llm(
     request: Request,
