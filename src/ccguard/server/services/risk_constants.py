@@ -40,4 +40,25 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "pkg.publish": 3.0,
     "recon.cloud_metadata": 3.0,
     "persist.systemd": 3.0,
+    # Catalog Expansion C — same severity axis as the core set.
+    "cred.read.kube_secret": 5.0,
+    "cred.read.vault": 5.0,
+    "cred.env.api_key": 4.0,
+    "cred.read.git_credential_helper": 3.0,
+    "persist.launchd": 3.0,
+    "persist.windows_run_key": 3.0,
+    "persist.autostart": 3.0,
+    "persist.global_pkg_install": 2.0,  # noisy on dev boxes, lower weight
+    "exec.code_eval_inline": 2.0,
+    "exec.base64_decode": 3.0,  # rarely benign in tool context
+    "exec.hex_decode": 3.0,
+    "egress.dns_long_subdomain": 3.0,
+    "egress.bot_api": 4.0,
+    "egress.paste_site": 4.0,
+    "system.permissive_chmod": 3.0,
+    "system.sudo_nopasswd": 4.0,  # privilege escalation primitive
+    "system.hosts_edit": 4.0,
+    "discovery.network_scan": 2.0,
+    "discovery.secret_grep": 4.0,
+    "config.agent_settings_edit": 4.0,  # AI-specific high-value
 }
