@@ -59,6 +59,7 @@
   .footer { color: var(--muted); font-family: var(--mono); font-size: 11px; margin-top: 20px; }
   .stat { font-size: 28px; font-weight: 600; color: var(--accent); }
   .stat .unit { color: var(--muted); font-size: 13px; font-family: var(--mono); margin-left: 6px; }
+  .badge-new { background: rgba(52,211,153,0.12); color: var(--accent); font-family: var(--mono); font-size: 10px; padding: 1px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
 </style>
 </head>
 <body>
@@ -132,8 +133,63 @@ UI: machine_detail expandable explainability + fleet risk panel
         <td>Server seed <code>enforcement_mode = observe</code> по умолчанию. Agent-side honoring — Stage 5b TODO</td>
         <td><code>settings_service.get_enforcement_mode</code></td>
       </tr>
+      <tr>
+        <td><span class="pill acc">A</span> Attack Simulator <span class="badge-new">NEW</span></td>
+        <td>5 scenarios (recon · exfil · elevated_risk · kill_chain · reverse_order) POST'ятся в /api/v1/audit</td>
+        <td><code>scripts/attack_simulator.py</code></td>
+      </tr>
+      <tr>
+        <td><span class="pill acc">B</span> Catalog +10 signals <span class="badge-new">NEW</span></td>
+        <td>cloud creds (GCP/Azure/Kube), browser, container escape, supply-chain publish, cloud metadata, systemd</td>
+        <td><code>agent/signals/catalog.py</code></td>
+      </tr>
+      <tr>
+        <td><span class="pill acc">E1-E4</span> Rule Discovery Agent <span class="badge-new">NEW</span></td>
+        <td>LLM-driven каталог: source monitors → drafter → admin approve → hot-reload в агенты через policy sync</td>
+        <td><code>server/services/discovery_service.py</code></td>
+      </tr>
     </tbody>
   </table>
+</section>
+
+<section class="slide">
+  <div class="eyebrow">slide 4 (bonus) · rule discovery loop</div>
+  <h2>Самообучающийся каталог сигналов <span class="badge-new">NEW</span></h2>
+  <p class="muted">Цикл, который позволяет добавлять новые behavioral signals без code-change и redeploy. Новая ATT&CK техника выходит в понедельник — у нас в среду она уже ловится regex'ом на всех агентах.</p>
+  <div class="flow" style="margin-top: 14px;">
+02:00 UTC — APScheduler tick (once per day)
+  ↓
+<b>source_monitors</b> (3 источника, stdlib urllib, fail-isolation)
+  • AtomicRedTeamMonitor    — GitHub releases redcanaryco/atomic-red-team
+  • MitreAttackMonitor      — mitre/cti releases
+  • CVEAIFilterMonitor      — NVD CVE feed, фильтр по AI/agent keywords
+  ↓ new SourceItem (URL ещё не в SourceFetchLog)
+<b>signal_drafter</b> → Anthropic API (Claude Sonnet 4.6)
+  • Few-shot: 4 примера из реального CATALOG
+  • Budget gate: общий с LLM scanner (daily_call_budget)
+  • Markdown-fence recovery для упрямых LLM
+  ↓ draft JSON
+<b>ProposedSignal</b> (status=pending) → SourceFetchLog (dedup на след. дни)
+  ↓
+09:00 UTC — админ на /admin/proposed-signals
+  • Видит draft + source link + LLM rationale + pattern
+  • [Approve] валидирует regex.compile() → SettingsRecord["catalog.override.&lt;id&gt;"]
+  ↓
+<b>/api/v1/policy</b> (E4) injects signal_overrides + ETag bump
+  ↓
+<b>agent sync</b> подхватывает policy.yaml (ETag invalidation)
+  ↓
+<b>hook hot path</b> (&lt;20ms) → extract_signals(..., overrides=load_overrides(...))
+  • Override id == baked id → override REPLACES (admin hotfix FP regex)
+  • Новые id → дополняют CATALOG
+  ↓
+🎯 Новый сигнал ловится на всех агентах без redeploy
+</div>
+  <div class="grid three" style="margin-top: 18px;">
+    <div class="card"><h3 style="margin-top:0">Privacy</h3><p style="font-size:13px">LLM видит только public threat-intel. Customer telemetry никогда не пересекает границу.</p></div>
+    <div class="card"><h3 style="margin-top:0">Human-in-the-loop</h3><p style="font-size:13px">Без approve клика — никакой сигнал не активируется. LLM hallucination остаётся в очереди.</p></div>
+    <div class="card"><h3 style="margin-top:0">Cost gate</h3><p style="font-size:13px">Тот же <code>daily_call_budget</code>, что у scanner. Один knob контролирует всю LLM стоимость.</p></div>
+  </div>
 </section>
 
 <section class="slide">
@@ -204,7 +260,8 @@ UI: machine_detail expandable explainability + fleet risk panel
         <li><b>Stage 5b:</b> agent-side honoring <code>enforcement_mode</code> — flip deny → allow в observe, audit-trail сохраняется</li>
         <li><b>One-click suppression</b> на каждой alert: пишет tuning rule в SettingsRecord, decay weight сигнала</li>
         <li><b>Config-drift detector</b> (<code>persist.agent_config</code>): diff inventory snapshot, ловить rug-pull плагинов</li>
-        <li><b>Attack simulator</b> для pilot demo (AIShellJack-style: cred-access → collection → exfil)</li>
+        <li><strike>Attack simulator</strike> ✅ DONE (см. <code>scripts/attack_simulator.py</code>)</li>
+        <li><b>Source monitor E3b:</b> ATLAS + Lakera RSS — ещё 2 источника в Rule Discovery</li>
       </ul>
     </div>
     <div class="card">
