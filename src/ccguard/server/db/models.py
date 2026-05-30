@@ -132,6 +132,9 @@ class ToolUseEvent(SQLModel, table=True):
     # Detection Stage 1). Default "[]" so v0.1 agents and create_all-on-existing
     # DBs degrade gracefully. NO raw tool_input is ever stored here.
     signals_json: str = Field(default="[]")
+    # Per-User Attribution: shell user the tool call ran under. Nullable so
+    # old agents (which don't send this) ingest cleanly.
+    actor_user: str | None = Field(default=None, index=True)
 
 
 class MachineBaseline(SQLModel, table=True):

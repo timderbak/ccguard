@@ -46,6 +46,10 @@ class ToolUseEventIn(SchemaBase):
     signals: list[Annotated[str, Field(max_length=64)]] = Field(
         default_factory=list, max_length=64
     )
+    # Per-User Attribution: shell user the tool call ran under (USER env or
+    # os.getlogin). Optional — v0.1/v0.2 agents don't send this, in which
+    # case events are attributed to the machine only.
+    actor_user: str | None = Field(default=None, max_length=64)
 
     @field_validator("ts", mode="after")
     @classmethod

@@ -40,6 +40,7 @@ def _apply_common_filters(
     machine_id_like: str | None,
     tool_name: str | None,
     decision: str | None,
+    actor_user: str | None = None,
 ):
     if machine_id_like:
         stmt = stmt.where(ToolUseEvent.machine_id.like(f"%{machine_id_like}%"))  # type: ignore[union-attr]
@@ -47,6 +48,8 @@ def _apply_common_filters(
         stmt = stmt.where(ToolUseEvent.tool_name == tool_name)
     if decision:
         stmt = stmt.where(ToolUseEvent.decision == decision)
+    if actor_user:
+        stmt = stmt.where(ToolUseEvent.actor_user == actor_user)
     return stmt
 
 
@@ -56,6 +59,7 @@ def list_events(
     machine_id_like: str | None = None,
     tool_name: str | None = None,
     decision: str | None = None,
+    actor_user: str | None = None,
     timeframe: Timeframe = "24h",
     limit: int = 200,
 ) -> tuple[list[ToolUseEvent], int]:
@@ -74,6 +78,7 @@ def list_events(
         machine_id_like=machine_id_like,
         tool_name=tool_name,
         decision=decision,
+        actor_user=actor_user,
     )
 
     count_stmt = select(func.count()).select_from(base.subquery())

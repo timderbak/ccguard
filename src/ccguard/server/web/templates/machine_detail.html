@@ -148,6 +148,24 @@
 {% include "components/_risk_sparkline.html" %}
 {% endif %}
 
+{% if top_actors %}
+<section class="bg-white rounded-xl shadow p-5 mt-6">
+    <h3 class="font-semibold mb-3 flex items-center gap-2 text-slate-800">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg>
+        Пользователи за 7 дней
+    </h3>
+    <ul class="text-sm divide-y divide-slate-100">
+        {% for a in top_actors %}
+        <li class="py-2 flex items-center gap-3">
+            <a href="/audit?actor_user={{ a.actor }}&machine_id={{ machine.machine_id }}"
+               class="cc-mono text-xs text-slate-700 hover:text-emerald-700 hover:underline">{{ a.actor }}</a>
+            <span class="cc-mono text-[11px] text-slate-400 ml-auto">{{ a.count }} событий</span>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+
 {% if suppressions %}
 <section class="bg-white rounded-xl shadow p-5 mt-6">
     <h3 class="font-semibold mb-3 flex items-center gap-2 text-slate-800">
