@@ -133,6 +133,83 @@ _DEFAULTS: tuple[tuple[str, str], ...] = (
         # Instruction to decode something as base64 — the keyword pins it.
         r"decode\s+(?:the\s+following\s+|this\s+)?(?:as\s+)?base64",
     ),
+    # --- Catalog Expansion (Stage 8) ----------------------------------
+    # tool_hijack: tries to force the agent to call a specific tool with
+    # adversarial args from inside untrusted text.
+    (
+        "tool_hijack",
+        r"(?:please\s+|now\s+|then\s+)?(?:use|call|invoke|run)\s+"
+        r"(?:the\s+)?(?:tool|function|mcp[_\s-]?\w*)\s+\w+\s+"
+        r"(?:with|to|on)\b",
+    ),
+    (
+        "tool_hijack",
+        r"\bbash\s*\(\s*['\"]?(?:curl|wget|nc|chmod|rm|cat)\b",
+    ),
+    # output_exfil: tells the model to leak secret into its visible response.
+    (
+        "output_exfil",
+        r"(?:include|append|prepend|return|print|output|emit|write)\s+"
+        r"(?:the\s+|your\s+|all\s+)?(?:api[_\s-]?key|token|secret|password|"
+        r"credentials?|env(?:ironment)?\s+variables?)\b",
+    ),
+    # markdown_image_exfil: classic indirect-injection — render image with
+    # secret in query string so the URL fetch leaks it.
+    (
+        "markdown_image_exfil",
+        r"!\[[^\]]{0,200}\]\(\s*https?://[^)\s]+\?[^)\s]*\{[^}]{1,80}\}",
+    ),
+    (
+        "markdown_image_exfil",
+        # bare img tag variant.
+        r"<img\s+[^>]*src\s*=\s*['\"]https?://[^'\"]+\?[^'\"]*\{[^}]{1,80}\}",
+    ),
+    # system_prompt_extraction: "what are your initial instructions" etc.
+    (
+        "system_prompt_extraction",
+        r"(?:what|repeat|show|reveal|display|print)\s+(?:are\s+|me\s+|us\s+)?"
+        r"(?:your|the)\s+(?:initial|original|system|hidden|secret)\s+"
+        r"(?:instructions?|prompts?|messages?|rules?|directives?)",
+    ),
+    (
+        "system_prompt_extraction",
+        r"verbatim\s+(?:repeat|copy|print)\s+(?:everything|all)\s+(?:above|before)",
+    ),
+    # fictional_bypass: "in a fictional world / story / hypothetical".
+    (
+        "fictional_bypass",
+        r"(?:in\s+a\s+|imagine\s+a\s+|hypothetically\s+|let'?s\s+say\s+)"
+        r"(?:fictional|hypothetical|story|world|scenario|game|simulation)"
+        r"[^\n]{0,120}?\b(?:where|in\s+which)\b",
+    ),
+    # context_confusion: fake "human:" / "user said:" / "[INST]" markers
+    # used to convince the model the next chunk is a new user turn.
+    (
+        "context_confusion",
+        r"(?:^|\n)\s*(?:human|user|assistant|system)\s*:\s*",
+    ),
+    (
+        "context_confusion",
+        r"\[\s*(?:INST|/INST|SYSTEM|/SYSTEM|USER|/USER)\s*\]",
+    ),
+    # indirect_injection_marker: HTML/comment vectors typical for
+    # README/PR-comment injections.
+    (
+        "indirect_injection_marker",
+        r"<!--\s*(?:system|admin|instructions?|prompt|override)\b",
+    ),
+    (
+        "indirect_injection_marker",
+        # zero-width chars used to hide steering tokens.
+        r"[​‌‍⁠﻿]{3,}",
+    ),
+    # api_key_extraction: explicit asks for credentials.
+    (
+        "api_key_extraction",
+        r"(?:what'?s|tell\s+me|show\s+me|reveal)\s+(?:your\s+|the\s+)?"
+        r"(?:anthropic[_\s-]?|openai[_\s-]?|aws[_\s-]?)?"
+        r"(?:api[_\s-]?key|access[_\s-]?token|secret[_\s-]?key)",
+    ),
 )
 
 
