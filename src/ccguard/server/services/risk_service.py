@@ -182,7 +182,13 @@ def _load_events(
 
 
 def evaluate_one(session: Session, machine_id: str) -> FindingRecord | None:
-    """Score one machine and emit a finding if it crosses the threshold."""
+    """Score one machine and emit a finding if it crosses the threshold.
+
+    Also UPSERTs today's row in ``MachineRiskHistory`` (sparkline data) so
+    quiet days still show up as score=0 instead of gaps.
+    """
+    from ccguard.server.services.risk_history import upsert_today
+
     if not _machine_is_warm(session, machine_id):
         return None
 
@@ -190,13 +196,15 @@ def evaluate_one(session: Session, machine_id: str) -> FindingRecord | None:
     now = datetime.now(UTC)
     since = now - timedelta(hours=window_h)
     events = _load_events(session, machine_id, since)
-    if not events:
-        return None
-
     breakdown = compute_risk_score(events, now, DEFAULT_WEIGHTS, window_h, half_life_h)
+
+    top_signal: str | None = None
+    if breakdown.contributions:
+        top_signal = max(breakdown.contributions.items(), key=lambda kv: kv[1])[0]
+    upsert_today(session, machine_id=machine_id, score=breakdown.score, top_signal=top_signal)
+
     if breakdown.score <= threshold:
         return None
-
     if _same_day_risk_finding_exists(session, machine_id, now):
         return None
 

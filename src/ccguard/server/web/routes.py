@@ -163,11 +163,14 @@ def machine_detail(
         get_findings_for_machine,
         get_latest_inventory_json,
     )
+    from ccguard.server.services.risk_history import get_risk_history_14d
     from ccguard.server.web.finding_view import build_explainable_findings
     machine = session.get(Machine, machine_id)
     if machine is None:
         raise HTTPException(status_code=404)
     findings = get_findings_for_machine(session, machine_id)
+    risk_series = get_risk_history_14d(session, machine_id)
+    risk_max = max((p["score"] for p in risk_series), default=0.0)
     return templates.TemplateResponse(
         request,
         "machine_detail.html",
@@ -176,6 +179,8 @@ def machine_detail(
             "machine": machine,
             "inventory": get_latest_inventory_json(session, machine_id),
             "findings": build_explainable_findings(findings),
+            "risk_series": risk_series,
+            "risk_max": risk_max,
             "csrf_token": _csrf_for(request),
         },
     )

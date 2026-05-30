@@ -1,0 +1,40 @@
+{# Inline SVG sparkline — 14 days of risk score, no JS.
+   Inputs:
+     risk_series: list of {date, score, top_signal} (oldest → newest)
+     risk_max:    float, max score in window (≥1 to avoid divide-by-zero)
+#}
+{% set _w = 280 %}
+{% set _h = 48 %}
+{% set _n = risk_series | length %}
+{% set _step = (_w - 8) / (_n - 1) if _n > 1 else 0 %}
+{% set _scale_max = risk_max if risk_max > 1 else 1.0 %}
+<section class="bg-white rounded-xl shadow p-5 mt-6">
+    <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold flex items-center gap-2 text-slate-800">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+            Риск за 14 дней
+        </h3>
+        <span class="cc-mono text-[10px] text-slate-400">max {{ "%.1f"|format(risk_max) }}</span>
+    </div>
+    <svg viewBox="0 0 {{ _w }} {{ _h }}" class="w-full h-12" preserveAspectRatio="none">
+        {# Bars #}
+        {% for p in risk_series %}
+            {% set _x = 4 + loop.index0 * _step %}
+            {% set _bar_h = (p.score / _scale_max) * (_h - 6) %}
+            {% set _y = _h - _bar_h - 1 %}
+            <rect x="{{ "%.2f"|format(_x - 3) }}" y="{{ "%.2f"|format(_y) }}"
+                  width="6" height="{{ "%.2f"|format(_bar_h) }}"
+                  rx="1"
+                  class="{% if p.score >= 10 %}fill-red-500
+                         {% elif p.score >= 5 %}fill-amber-500
+                         {% elif p.score > 0 %}fill-emerald-500
+                         {% else %}fill-slate-200{% endif %}">
+                <title>{{ p.date }}: {{ "%.1f"|format(p.score) }}{% if p.top_signal %} · {{ p.top_signal }}{% endif %}</title>
+            </rect>
+        {% endfor %}
+    </svg>
+    <div class="flex justify-between cc-mono text-[10px] text-slate-400 mt-1">
+        <span>{{ risk_series[0].date }}</span>
+        <span>сегодня</span>
+    </div>
+</section>
