@@ -524,6 +524,76 @@
           ta.addEventListener('input', function () { refresh(ta); });
         });
       })();
+      // Chip-pill UI on top of policy list-field textareas — progressive
+      // enhancement, the textarea remains the source of truth for form POST.
+      (function () {
+        function escapeHtml(s) {
+          return s.replace(/[&<>"']/g, function (c) {
+            return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
+          });
+        }
+        function getItems(ta) {
+          return ta.value.split('\n').map(function (l) { return l.trim(); })
+            .filter(function (l) { return l.length > 0; });
+        }
+        function setItems(ta, items) {
+          ta.value = items.join('\n');
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        function render(root) {
+          var ta = root.querySelector('[data-chip-textarea]');
+          var container = root.querySelector('[data-chip-container]');
+          if (!ta || !container) return;
+          var items = getItems(ta);
+          container.innerHTML = items.length === 0
+            ? '<span class="cc-mono text-[10px] text-slate-400 px-1">пусто</span>'
+            : items.map(function (item, idx) {
+                return '<span class="inline-flex items-center gap-1 bg-white ring-1 ring-slate-200 rounded-md px-2 py-0.5 cc-mono text-xs text-slate-700">'
+                  + escapeHtml(item)
+                  + '<button type="button" data-chip-remove="' + idx
+                  + '" class="text-slate-400 hover:text-red-600 ml-1" aria-label="удалить">×</button>'
+                  + '</span>';
+              }).join('');
+          container.querySelectorAll('[data-chip-remove]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+              var idx = parseInt(btn.getAttribute('data-chip-remove'), 10);
+              var arr = getItems(ta);
+              arr.splice(idx, 1);
+              setItems(ta, arr);
+              render(root);
+            });
+          });
+        }
+        function activate(root) {
+          var ta = root.querySelector('[data-chip-textarea]');
+          var container = root.querySelector('[data-chip-container]');
+          var inputRow = root.querySelector('.cc-chip-input-row');
+          var input = root.querySelector('[data-chip-input]');
+          var addBtn = root.querySelector('[data-chip-add]');
+          if (!ta || !container || !input || !addBtn || !inputRow) return;
+          // Hide textarea, show chip UI.
+          ta.classList.add('hidden');
+          container.classList.remove('hidden');
+          container.classList.add('flex');
+          inputRow.classList.remove('hidden');
+          inputRow.classList.add('flex');
+          function addCurrent() {
+            var v = input.value.trim();
+            if (!v) return;
+            var arr = getItems(ta);
+            if (arr.indexOf(v) === -1) arr.push(v);
+            setItems(ta, arr);
+            input.value = '';
+            render(root);
+          }
+          addBtn.addEventListener('click', addCurrent);
+          input.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); addCurrent(); }
+          });
+          render(root);
+        }
+        document.querySelectorAll('[data-chip-list]').forEach(activate);
+      })();
     </script>
     
 </body>
