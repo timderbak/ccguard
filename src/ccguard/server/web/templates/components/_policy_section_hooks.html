@@ -16,12 +16,13 @@
                 <option value="block" {% if policy.hooks.severity == 'block' %}selected{% endif %}>block</option>
             </select>
         </label>
-        <label class="block">
-            allowlist_commands (по одной на строку):
-            <textarea name="hooks.allowlist_commands" rows="4"
-                      class="mt-1 block w-full rounded border-slate-300 font-mono text-xs"
-                      >{{ policy.hooks.allowlist_commands | join('\n') }}</textarea>
-        </label>
+        {% with field_name='hooks.allowlist_commands',
+                field_label='allowlist_commands',
+                items=policy.hooks.allowlist_commands,
+                hint='Полная команда хука по одной на строку.',
+                placeholder='/usr/local/bin/ccguard-enforce' %}
+            {% include "components/_policy_list_field.html" %}
+        {% endwith %}
         <label class="inline-flex items-center">
             <input type="checkbox" name="hooks.deny_unknown" value="1"
                    {% if policy.hooks.deny_unknown %}checked{% endif %} />

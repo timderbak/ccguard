@@ -15,14 +15,20 @@
                 <option value="block" {% if policy.commands.severity == 'block' %}selected{% endif %}>block</option>
             </select>
         </label>
-        <label class="block">denylist_patterns (одна regex на строку):
-            <textarea name="commands.denylist_patterns" rows="4"
-                      class="mt-1 block w-full rounded border-slate-300 font-mono text-xs"
-                      >{{ policy.commands.denylist_patterns | join('\n') }}</textarea></label>
-        <label class="block">allowlist_patterns (одна regex на строку):
-            <textarea name="commands.allowlist_patterns" rows="4"
-                      class="mt-1 block w-full rounded border-slate-300 font-mono text-xs"
-                      >{{ policy.commands.allowlist_patterns | join('\n') }}</textarea></label>
+        {% with field_name='commands.denylist_patterns',
+                field_label='denylist_patterns',
+                items=policy.commands.denylist_patterns,
+                hint='Одна regex на строку. Регистр-независимая, применяется через re.search.',
+                placeholder='\\b(rm\\s+-rf|curl\\s+\\|\\s*sh)\\b' %}
+            {% include "components/_policy_list_field.html" %}
+        {% endwith %}
+        {% with field_name='commands.allowlist_patterns',
+                field_label='allowlist_patterns',
+                items=policy.commands.allowlist_patterns,
+                hint='Одна regex на строку. Override для denylist.',
+                placeholder='^git\\s+(status|diff|log)\\b' %}
+            {% include "components/_policy_list_field.html" %}
+        {% endwith %}
         <p class="text-xs text-slate-400">always_deny зашит в схеме и не редактируется.</p>
     </div>
 </details>
