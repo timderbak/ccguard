@@ -248,6 +248,11 @@ class Policy(SchemaBase):
 
     meta: PolicyMeta
     block_fail_mode: Literal["open", "closed"] = "open"
+    # Behavioral Detection Stage 5b: global enforcement mode.
+    # ``observe`` (default) makes the agent log would-have-denied decisions
+    # but allow the tool call through — closes the "remove all blocking" ask.
+    # ``enforce`` restores the historical blocking behavior.
+    enforcement_mode: Literal["observe", "enforce"] = "observe"
     mcp_servers: McpServersPolicy = McpServersPolicy()
     network: NetworkPolicy = NetworkPolicy()
     commands: CommandsPolicy = CommandsPolicy()

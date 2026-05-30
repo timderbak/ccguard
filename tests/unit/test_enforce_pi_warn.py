@@ -18,7 +18,10 @@ from ccguard.schemas.policy import PromptInjectionConfig
 
 
 def _make_policy(*, pi_severity: str = "warn") -> Policy:
-    p = Policy(meta=PolicyMeta(revision=1, updated_at=datetime.now(UTC)))
+    p = Policy(
+        meta=PolicyMeta(revision=1, updated_at=datetime.now(UTC)),
+        enforcement_mode="enforce",  # Stage 5b: warn tests assert deny fall-through
+    )
     p.prompt_injection = PromptInjectionConfig(enabled=True, severity=pi_severity)
     return p
 

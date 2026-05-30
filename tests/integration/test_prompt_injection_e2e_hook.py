@@ -49,6 +49,7 @@ def _write_policy(
             "updated_at": "2026-05-26T00:00:00+00:00",
         },
         "block_fail_mode": "open",
+        "enforcement_mode": "enforce",  # Stage 5b: e2e tests assert deny
         "prompt_injection": {
             "enabled": pi_enabled,
             "severity": pi_severity,

@@ -23,7 +23,13 @@ from ccguard.schemas import (
 
 
 def _make_policy(**kwargs) -> Policy:  # type: ignore[no-untyped-def]
-    p = Policy(meta=PolicyMeta(revision=1, updated_at=datetime.now(UTC)))
+    # Tests in this module assert the historical deny semantics; override
+    # the schema default (observe) so we exercise the deny path. Tests for
+    # Stage 5b mode behavior live in tests/unit/test_enforcement_mode_decide.py.
+    p = Policy(
+        meta=PolicyMeta(revision=1, updated_at=datetime.now(UTC)),
+        enforcement_mode="enforce",
+    )
     for k, v in kwargs.items():
         setattr(p, k, v)
     return p
