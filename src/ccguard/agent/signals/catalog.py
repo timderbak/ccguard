@@ -83,4 +83,69 @@ CATALOG: tuple[Signal, ...] = (
         _p(r"\b(whoami|uname|ifconfig|ip\s+addr|aws\s+sts\s+get-caller-identity)\b"),
         "Host/identity reconnaissance",
     ),
+    # --- Behavioral Detection v2 Stage 6 (catalog expansion) ----------------
+    Signal(
+        "cred.read.gcp",
+        "T1552.001",
+        _p(r"(\.config/gcloud/|application_default_credentials\.json|\.boto\b)"),
+        "Access to Google Cloud credential stores",
+    ),
+    Signal(
+        "cred.read.azure",
+        "T1552.001",
+        _p(r"(\.azure/|azureprofile\.json|accesstokens\.json)"),
+        "Access to Azure CLI credential stores",
+    ),
+    Signal(
+        "cred.read.kube",
+        "T1552.001",
+        _p(r"(\.kube/config|\bkubeconfig\b)"),
+        "Access to Kubernetes kubeconfig",
+    ),
+    Signal(
+        "cred.read.browser",
+        "T1555.003",
+        _p(r"(login\s+data|cookies\.sqlite|cookies\.binarycookies|formhistory\.sqlite)"),
+        "Access to browser credential / cookie stores",
+    ),
+    Signal(
+        "cred.read.git",
+        "T1552.001",
+        _p(r"(\.git-credentials\b|gh\s+auth\s+token)"),
+        "Access to git / GitHub CLI auth material",
+    ),
+    Signal(
+        "cloud.exfil.storage",
+        "T1567.002",
+        _p(
+            r"\b(aws\s+s3\s+(cp|sync)\s+\S+\s+s3://"
+            r"|gsutil\s+cp\s+\S+\s+gs://"
+            r"|az\s+storage\s+blob\s+upload)"
+        ),
+        "Cloud-storage write — exfiltration over web service",
+    ),
+    Signal(
+        "container.escape_hint",
+        "T1610",
+        _p(r"(--privileged\b|/var/run/docker\.sock\b|\bnsenter\b|/proc/1/root)"),
+        "Container-escape primitives",
+    ),
+    Signal(
+        "pkg.publish",
+        "T1195.002",
+        _p(r"\b(npm\s+publish|twine\s+upload|cargo\s+publish|gem\s+push)\b"),
+        "Package publish — supply-chain typosquatting / dependency injection",
+    ),
+    Signal(
+        "recon.cloud_metadata",
+        "T1552.005",
+        _p(r"\b169\.254\.169\.254\b"),
+        "Cloud instance-metadata endpoint access",
+    ),
+    Signal(
+        "persist.systemd",
+        "T1543.002",
+        _p(r"(\.config/systemd/user/|systemctl\s+--user\s+(enable|start))"),
+        "User-level systemd unit persistence",
+    ),
 )

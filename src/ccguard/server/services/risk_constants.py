@@ -26,4 +26,18 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "persist.shell_rc": 3.0,
     "persist.cron": 3.0,
     "discovery.recon": 1.0,
+    # Stage 6 catalog expansion — calibrated against the same ATT&CK-tactic
+    # severity axis: cloud-cred reads weigh on par with AWS/SSH; container
+    # escape and cloud-storage exfil are direct attack primitives; package
+    # publish and systemd persistence rank with shell-rc.
+    "cred.read.gcp": 5.0,
+    "cred.read.azure": 5.0,
+    "cred.read.kube": 5.0,
+    "cred.read.browser": 5.0,
+    "cred.read.git": 4.0,
+    "cloud.exfil.storage": 5.0,
+    "container.escape_hint": 4.0,
+    "pkg.publish": 3.0,
+    "recon.cloud_metadata": 3.0,
+    "persist.systemd": 3.0,
 }

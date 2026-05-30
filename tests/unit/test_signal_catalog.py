@@ -7,7 +7,10 @@ from ccguard.agent.signals.catalog import CATALOG, Signal
 
 
 def test_catalog_nonempty_and_typed():
-    assert len(CATALOG) >= 8
+    # Floor bumped to 18 after Stage 6 catalog expansion (cloud creds, browser
+    # creds, cloud-storage exfil, container escape, supply-chain publish,
+    # cloud-metadata recon, systemd persistence).
+    assert len(CATALOG) >= 18
     assert all(isinstance(s, Signal) for s in CATALOG)
 
 
