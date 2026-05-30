@@ -271,6 +271,35 @@ class PolicyApplyEvent(SQLModel, table=True):
         return v
 
 
+class ProposedSignal(SQLModel, table=True):
+    """LLM-drafted (or admin-drafted) catalog signal awaiting human approval.
+
+    Stage E1 of the Rule Discovery Agent. Approval validates the draft's regex,
+    writes a SettingsRecord override at ``catalog.override.<id>`` (consumed by
+    later stages' policy sync), and stamps reviewer + timestamp here.
+
+    Status lifecycle: ``pending`` → ``approved`` | ``rejected``. A given draft
+    is reviewed exactly once — re-approval / re-rejection raise NotPending.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    draft_json: str  # {id, attack_technique, pattern, description}
+    source_kind: str = Field(index=True)  # manual | mitre | atlas | atomic-red-team | lakera | cve
+    source_url: str | None = None
+    source_title: str | None = None
+    llm_rationale: str | None = None
+    status: str = Field(default="pending", index=True)
+    created_at: datetime = Field(default_factory=_utcnow, index=True)
+    reviewed_at: datetime | None = None
+    reviewed_by: str | None = None
+    rejection_reason: str | None = None
+
+    def id_in_draft(self) -> str:
+        """Convenience: return the signal id from the draft JSON."""
+        import json as _json
+        return _json.loads(self.draft_json)["id"]
+
+
 class SettingsRecord(SQLModel, table=True):
     """Key/value store for admin-tunable server settings (Plan 03-01 D-04).
 
