@@ -300,6 +300,22 @@ class ProposedSignal(SQLModel, table=True):
         return _json.loads(self.draft_json)["id"]
 
 
+class MachineRiskHistory(SQLModel, table=True):
+    """Daily snapshot of a machine's current decay-weighted risk score.
+
+    Populated by ``risk_service.tick`` — UPSERT of (machine_id, date_utc).
+    Drives the 14-day sparkline on machine_detail without re-running the
+    scoring kernel on every page render.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    date_utc: str = Field(index=True)  # ISO date 'YYYY-MM-DD'
+    score: float
+    top_signal: str | None = None
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
 class SourceFetchLog(SQLModel, table=True):
     """Per-URL fetch dedup for source monitors (Rule Discovery Agent · E3).
 
