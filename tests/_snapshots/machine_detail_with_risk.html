@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ccguard — snapbox</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Chivo:wght@600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+              mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+              display: ['"Chivo"', '"IBM Plex Sans"', 'sans-serif'],
+            },
+            colors: {
+              ink: {
+                900: '#0a0e12',
+                850: '#0d1318',
+                800: '#11181f',
+                700: '#1a242d',
+                600: '#26333d',
+              },
+              signal: '#10b981',
+            },
+            keyframes: {
+              ccRise: {
+                '0%':   { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              ccPulse: {
+                '0%,100%': { opacity: '1' },
+                '50%':     { opacity: '.35' },
+              },
+            },
+            animation: {
+              ccRise: 'ccRise .5s cubic-bezier(.22,1,.36,1) both',
+              ccPulse: 'ccPulse 2.4s ease-in-out infinite',
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      :root { color-scheme: light; }
+      body { font-family: "IBM Plex Sans", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+      .font-mono, code, pre, .cc-mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+      h1, h2, h3, .cc-display { font-family: "Chivo", "IBM Plex Sans", sans-serif; letter-spacing: -0.015em; }
+
+      /* Blueprint atmosphere for the work surface */
+      .cc-surface {
+        background-color: #eef1f5;
+        background-image:
+          radial-gradient(900px 500px at 82% -8%, rgba(16,185,129,.10), transparent 60%),
+          radial-gradient(760px 480px at -6% 108%, rgba(56,89,120,.12), transparent 55%),
+          linear-gradient(to right, rgba(15,23,42,.035) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(15,23,42,.035) 1px, transparent 1px);
+        background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+        background-attachment: fixed, fixed, fixed, fixed;
+      }
+
+      /* Card refinement applied broadly without touching markup */
+      .cc-surface .bg-white {
+        border: 1px solid rgba(15,23,42,.07);
+        box-shadow: 0 1px 2px rgba(13,19,24,.04), 0 12px 28px -18px rgba(13,19,24,.28);
+        transition: box-shadow .25s ease, border-color .25s ease, transform .25s ease;
+      }
+      .cc-surface .bg-white:hover {
+        box-shadow: 0 1px 2px rgba(13,19,24,.05), 0 20px 40px -22px rgba(13,19,24,.36);
+        border-color: rgba(16,185,129,.28);
+      }
+
+      /* Inputs feel engineered */
+      .cc-surface input:not([type=checkbox]):not([type=radio]),
+      .cc-surface select,
+      .cc-surface textarea {
+        background: #fbfcfd;
+        transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+      }
+      .cc-surface input:focus, .cc-surface select:focus, .cc-surface textarea:focus {
+        outline: none;
+        border-color: #10b981 !important;
+        box-shadow: 0 0 0 3px rgba(16,185,129,.18);
+        background: #fff;
+      }
+      .cc-surface textarea { line-height: 1.55; }
+
+      /* Sidebar nav */
+      .cc-nav-link {
+        position: relative; display: flex; align-items: center; gap: .625rem;
+        padding: .5rem .75rem; border-radius: .55rem; color: #9fb0bd;
+        font-size: .875rem; font-weight: 500; transition: all .16s ease; border: 1px solid transparent;
+      }
+      .cc-nav-link svg { width: 16px; height: 16px; flex: none; opacity: .8; }
+      .cc-nav-link:hover { color: #eaf2f6; background: rgba(255,255,255,.05); }
+      .cc-nav-link[aria-current="page"] {
+        color: #d7ffe9; background: rgba(16,185,129,.12);
+        border-color: rgba(16,185,129,.30);
+      }
+      .cc-nav-link[aria-current="page"] svg { opacity: 1; color: #34d399; }
+      .cc-nav-link[aria-current="page"]::before {
+        content: ""; position: absolute; left: -4px; top: 18%; bottom: 18%;
+        width: 3px; border-radius: 3px; background: #10b981; box-shadow: 0 0 12px rgba(16,185,129,.8);
+      }
+      .cc-nav-group { font-family: "IBM Plex Mono", monospace; font-size: .625rem; letter-spacing: .18em;
+        text-transform: uppercase; color: #5b6b78; padding: .25rem .75rem; margin-top: .5rem; }
+
+      main > * { animation: ccRise .5s cubic-bezier(.22,1,.36,1) both; }
+
+      /* Tidy scrollbars on the console */
+      .cc-surface ::-webkit-scrollbar { height: 10px; width: 10px; }
+      .cc-surface ::-webkit-scrollbar-thumb { background: rgba(15,23,42,.2); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+      .cc-surface ::-webkit-scrollbar-thumb:hover { background: rgba(15,23,42,.35); background-clip: padding-box; }
+
+      .cc-eyebrow { font-family: "IBM Plex Mono", monospace; font-size: .6875rem; font-weight: 500;
+        letter-spacing: .2em; text-transform: uppercase; color: #10b981; }
+
+      /* Accordion sections */
+      .cc-surface summary { list-style: none; }
+      .cc-surface summary::-webkit-details-marker { display: none; }
+      .cc-chevron { transition: transform .2s ease; }
+      details[open] > summary .cc-chevron { transform: rotate(90deg); }
+
+      /* Severity tags */
+      .cc-sev { display:inline-flex; align-items:center; gap:.35rem; font-family:"IBM Plex Mono",monospace;
+        font-size:.625rem; font-weight:600; letter-spacing:.08em; text-transform:uppercase;
+        border-radius:999px; padding:.2rem .55rem; border:1px solid; }
+      .cc-sev-info  { color:#475569; background:#f1f5f9; border-color:#e2e8f0; }
+      .cc-sev-warn  { color:#d97706; background:#fffbeb; border-color:rgba(217,119,6,.25); }
+      .cc-sev-block { color:#dc2626; background:#fef2f2; border-color:rgba(220,38,38,.25); }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+    
+    <div class="flex min-h-screen">
+        <aside class="w-60 shrink-0 bg-ink-900 text-slate-100 flex flex-col border-r border-white/5">
+            <div class="px-5 pt-6 pb-5 border-b border-white/5">
+                <div class="flex items-center gap-2.5">
+                    <span class="grid place-items-center w-9 h-9 rounded-lg bg-signal/15 ring-1 ring-signal/30">
+                        <svg viewBox="0 0 24 24" fill="none" class="w-5 h-5 text-signal" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/>
+                            <path d="m9 12 2 2 4-4"/>
+                        </svg>
+                    </span>
+                    <div>
+                        <h1 class="cc-display text-lg font-extrabold leading-none text-white">ccguard</h1>
+                        <p class="cc-mono text-[9px] tracking-[0.22em] text-slate-500 mt-1">EDR · AI AGENTS</p>
+                    </div>
+                </div>
+            </div>
+            <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto" aria-label="Навигация">
+                <p class="cc-nav-group">Мониторинг</p>
+                <a href="/" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+                    Обзор
+                </a>
+                <a href="/machines" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                    Машины
+                </a>
+                <a href="/findings" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/></svg>
+                    Находки
+                </a>
+                <a href="/audit" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 3h9l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M9 13h6M9 17h4"/></svg>
+                    Аудит
+                </a>
+                <a href="/anomalies" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg>
+                    Аномалии
+                </a>
+                <p class="cc-nav-group">Управление</p>
+                <a href="/policy" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/></svg>
+                    Политика
+                </a>
+                <a href="/policy/history" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v6h6"/><path d="M3.5 9a9 9 0 1 0 2.1-3.4L3 9"/><path d="M12 7v5l3 2"/></svg>
+                    История
+                </a>
+                <a href="/settings" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+                    Настройки
+                </a>
+            </nav>
+            <div class="px-4 py-3 border-t border-white/5 flex items-center justify-between">
+                <span class="inline-flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <span class="w-1.5 h-1.5 rounded-full bg-signal animate-ccPulse"></span>
+                    <span class="cc-mono">сервер · online</span>
+                </span>
+                <form method="POST" action="/logout">
+                    <input type="hidden" name="csrf_token" value="<CSRF>" />
+                    <button class="text-xs text-slate-400 hover:text-white transition-colors">Выйти</button>
+                </form>
+            </div>
+        </aside>
+        <main class="cc-surface flex-1 p-8 min-w-0">
+<header class="mb-7">
+    <a href="/machines" class="inline-flex items-center gap-1.5 cc-mono text-[11px] uppercase tracking-wider text-slate-400 hover:text-emerald-600 transition-colors mb-3">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5"><path d="m15 18-6-6 6-6"/></svg>
+        Машины
+    </a>
+    <h2 class="text-2xl font-semibold mb-2 flex items-center gap-3">
+        <span class="grid place-items-center w-9 h-9 rounded-lg bg-ink-900 text-emerald-400 shrink-0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-5 h-5"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        </span>
+        snapbox
+    </h2>
+    <p class="text-slate-500 text-sm mb-0 cc-mono">m-snap · 0.2.0 · последний sync <ISO_TS></p>
+</header>
+
+<div class="grid grid-cols-2 gap-6">
+    <section class="bg-white rounded-xl shadow p-5">
+        <h3 class="font-semibold mb-4 flex items-center gap-2 text-slate-800">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M3 7l9-4 9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/><path d="m12 11v10"/></svg>
+            Инвентарь
+        </h3>
+        
+            
+                
+                <details class="border-b last:border-0 py-2.5 group">
+                    <summary class="cursor-pointer flex items-center justify-between text-sm font-medium text-slate-700 hover:text-emerald-700 transition-colors list-none">
+                        <span class="flex items-center gap-2">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-3 h-3 text-slate-400 transition-transform group-open:rotate-90"><path d="m9 18 6-6-6-6"/></svg>
+                            mcp_servers
+                        </span>
+                        <span class="cc-mono text-xs rounded-md bg-slate-100 px-1.5 py-0.5 text-slate-500 ring-1 ring-slate-200">1</span>
+                    </summary>
+                    <ul class="ml-6 mt-2 text-sm space-y-1 text-slate-600">
+                        
+                        <li class="cc-mono text-xs">fs</li>
+                        
+                    </ul>
+                </details>
+                
+            
+        
+    </section>
+
+    <section class="bg-white rounded-xl shadow p-5">
+        <h3 class="font-semibold mb-4 flex items-center gap-2 text-slate-800">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/></svg>
+            Находки (1)
+        </h3>
+        <ul class="text-sm space-y-2.5">
+            
+            <li class="border-b last:border-0 pb-2.5">
+                
+                <details class="group">
+                    <summary class="cursor-pointer list-none flex items-center gap-2.5 hover:text-emerald-700 transition-colors">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-3 h-3 text-slate-400 transition-transform group-open:rotate-90"><path d="m9 18 6-6-6-6"/></svg>
+                        <span class="font-mono text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 ring-1
+                            text-amber-600 bg-amber-50 ring-amber-600/20
+                            ">
+                            warn
+                        </span>
+                        <span class="cc-mono text-xs text-slate-700">risk.elevated</span>
+                    </summary>
+                    <div class="ml-5 mt-2.5 text-xs text-slate-600 space-y-2">
+                        
+                        <p class="cc-mono">
+                            score <span class="font-semibold text-slate-900">12.0</span>
+                            / threshold 10.0
+                            · window 24h
+                            · half-life 6h
+                            · events 1
+                        </p>
+                        <ul class="space-y-1">
+                            
+                            <li class="flex items-center gap-2">
+                                
+                                <a href="https://attack.mitre.org/techniques/T1552/001/" target="_blank" rel="noopener noreferrer"
+                                   class="cc-mono text-emerald-700 hover:underline">cred.read.aws</a>
+                                
+                                <span class="cc-mono text-slate-400">+5.0</span>
+                                <span class="cc-mono text-slate-400">T1552.001</span>
+                                <form method="POST" action="/machines/m-snap/suppress" class="inline ml-auto"
+                                      onsubmit="return confirm('Заглушить cred.read.aws на 30 дней?')">
+                                    <input type="hidden" name="csrf_token" value="<CSRF>" />
+                                    <input type="hidden" name="signal_id" value="cred.read.aws" />
+                                    <input type="hidden" name="days" value="30" />
+                                    <input type="hidden" name="reason" value="suppressed from finding" />
+                                    <button class="text-[10px] cc-mono text-slate-400 hover:text-amber-600 hover:underline">suppress 30d</button>
+                                </form>
+                            </li>
+                            
+                            <li class="flex items-center gap-2">
+                                
+                                <a href="https://attack.mitre.org/techniques/T1041/" target="_blank" rel="noopener noreferrer"
+                                   class="cc-mono text-emerald-700 hover:underline">egress.network_tool</a>
+                                
+                                <span class="cc-mono text-slate-400">+4.0</span>
+                                <span class="cc-mono text-slate-400">T1041</span>
+                                <form method="POST" action="/machines/m-snap/suppress" class="inline ml-auto"
+                                      onsubmit="return confirm('Заглушить egress.network_tool на 30 дней?')">
+                                    <input type="hidden" name="csrf_token" value="<CSRF>" />
+                                    <input type="hidden" name="signal_id" value="egress.network_tool" />
+                                    <input type="hidden" name="days" value="30" />
+                                    <input type="hidden" name="reason" value="suppressed from finding" />
+                                    <button class="text-[10px] cc-mono text-slate-400 hover:text-amber-600 hover:underline">suppress 30d</button>
+                                </form>
+                            </li>
+                            
+                        </ul>
+                        
+                    </div>
+                </details>
+                
+            </li>
+            
+        </ul>
+    </section>
+</div>
+
+
+
+
+
+
+
+
+<section class="bg-white rounded-xl shadow p-5 mt-6">
+    <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold flex items-center gap-2 text-slate-800">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg>
+            Риск за 14 дней
+        </h3>
+        <span class="cc-mono text-[10px] text-slate-400">max 12.0</span>
+    </div>
+    <svg viewBox="0 0 280 48" class="w-full h-12" preserveAspectRatio="none">
+        
+        
+            
+            
+            
+            <rect x="1.00" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="21.92" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="42.85" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="63.77" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="84.69" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="105.62" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="126.54" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="147.46" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="168.38" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="189.31" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="210.23" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="231.15" y="47.00"
+                  width="6" height="0.00"
+                  rx="1"
+                  class="fill-slate-200">
+                <title><DATE>: 0.0</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="252.08" y="29.50"
+                  width="6" height="17.50"
+                  rx="1"
+                  class="fill-amber-500
+                         ">
+                <title><DATE>: 5.0 · cred.read.aws</title>
+            </rect>
+        
+            
+            
+            
+            <rect x="273.00" y="5.00"
+                  width="6" height="42.00"
+                  rx="1"
+                  class="fill-red-500
+                         ">
+                <title><DATE>: 12.0 · cred.read.aws</title>
+            </rect>
+        
+    </svg>
+    <div class="flex justify-between cc-mono text-[10px] text-slate-400 mt-1">
+        <span><DATE></span>
+        <span>сегодня</span>
+    </div>
+</section>
+
+
+
+
+<form method="POST" action="/machines/m-snap/revoke" class="mt-6">
+    <input type="hidden" name="csrf_token" value="<CSRF>" />
+    <button class="inline-flex items-center gap-1.5 text-sm text-red-600 hover:text-red-700 hover:underline"
+            onclick="return confirm('Отозвать эту машину?')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+        Отозвать машину
+    </button>
+</form>
+</main>
+    </div>
+    <script>
+      (function () {
+        var path = window.location.pathname;
+        var links = document.querySelectorAll('.cc-nav-link');
+        var best = null, bestLen = -1;
+        links.forEach(function (a) {
+          var href = a.getAttribute('href');
+          var match = href === '/' ? path === '/' : path.indexOf(href) === 0;
+          if (match && href.length > bestLen) { best = a; bestLen = href.length; }
+        });
+        if (best) best.setAttribute('aria-current', 'page');
+      })();
+      // Live counter for policy list-field textareas (one non-blank line = one item).
+      (function () {
+        function refresh(ta) {
+          var label = document.querySelector('[data-list-counter-for="' + ta.id + '"]');
+          if (!label) return;
+          var n = ta.value.split('\n').filter(function (l) { return l.trim().length > 0; }).length;
+          label.textContent = n + ' элементов';
+        }
+        document.querySelectorAll('textarea[data-list-counter]').forEach(function (ta) {
+          ta.addEventListener('input', function () { refresh(ta); });
+        });
+      })();
+    </script>
+    
+</body>
+</html>
