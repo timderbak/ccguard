@@ -18,6 +18,7 @@ from sqlmodel import Session, select
 from ccguard.server.api.deps import get_policy_loader, get_session, require_token
 from ccguard.server.db.models import SettingsRecord
 from ccguard.server.policy_loader import PolicyLoader
+from ccguard.server.services.settings_service import get_enforcement_mode
 
 router = APIRouter(prefix="/api/v1")
 
@@ -63,12 +64,18 @@ def get_policy(
 ) -> dict[str, object] | Response:
     policy, base_etag = loader.load_with_etag(session)
     overrides = _load_signal_overrides(session)
+    # Stage 5b: admin can flip enforcement_mode via /settings without editing
+    # policy YAML. SettingsRecord override wins over the schema default.
+    mode_override = get_enforcement_mode(session)
 
-    tag = _overrides_etag_tag(overrides)
-    # base_etag is like '"rev-7"'; weave the overrides tag inside the quotes
-    # so it stays a valid HTTP ETag token.
-    if tag:
-        etag = base_etag[:-1] + f'+ov-{tag}"' if base_etag.endswith('"') else f'"{base_etag}+ov-{tag}"'
+    tag_parts = []
+    if overrides:
+        tag_parts.append(f"ov-{_overrides_etag_tag(overrides)}")
+    if mode_override != policy.enforcement_mode:
+        tag_parts.append(f"em-{mode_override[:3]}")
+    if tag_parts:
+        suffix = "+" + "+".join(tag_parts)
+        etag = base_etag[:-1] + f'{suffix}"' if base_etag.endswith('"') else f'"{base_etag}{suffix}"'
     else:
         etag = base_etag
 
@@ -79,6 +86,7 @@ def get_policy(
         return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
 
     body = policy.model_dump(mode="json")
+    body["enforcement_mode"] = mode_override
     if overrides:
         body["signal_overrides"] = overrides
     return body

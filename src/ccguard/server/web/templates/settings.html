@@ -3,6 +3,35 @@
 {% block content %}
 <h2 class="text-2xl font-semibold mb-6">Настройки</h2>
 
+<section class="bg-white rounded-xl shadow p-5 mb-6">
+    <h3 class="font-semibold mb-3 flex items-center gap-2 text-slate-800">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M12 2 4 5v6c0 5 3.5 9 8 11 4.5-2 8-6 8-11V5l-8-3Z"/></svg>
+        Режим работы
+    </h3>
+    <p class="text-sm text-slate-500 mb-4">Глобальный переключатель: <code class="cc-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">observe</code> — только findings, никаких блокировок;
+        <code class="cc-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">enforce</code> — блокирует команды по policy.
+        Применяется на агентах при следующем policy-sync (≤5 мин).</p>
+    <form method="POST" action="/settings/enforcement-mode" class="flex items-center gap-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <div class="inline-flex rounded-lg ring-1 ring-slate-200 bg-slate-50 p-0.5">
+            <label class="cursor-pointer">
+                <input type="radio" name="mode" value="observe" class="peer sr-only" {% if enforcement_mode == "observe" %}checked{% endif %} />
+                <span class="block px-4 py-1.5 cc-mono text-xs uppercase rounded-md peer-checked:bg-emerald-600 peer-checked:text-white text-slate-500 transition-colors">
+                    observe
+                </span>
+            </label>
+            <label class="cursor-pointer">
+                <input type="radio" name="mode" value="enforce" class="peer sr-only" {% if enforcement_mode == "enforce" %}checked{% endif %} />
+                <span class="block px-4 py-1.5 cc-mono text-xs uppercase rounded-md peer-checked:bg-red-600 peer-checked:text-white text-slate-500 transition-colors">
+                    enforce
+                </span>
+            </label>
+        </div>
+        <button type="submit" class="bg-slate-900 text-white text-sm rounded-lg px-4 py-2 hover:bg-slate-800">Сохранить</button>
+        <span class="cc-mono text-[11px] text-slate-400">текущий: <b class="{% if enforcement_mode == 'enforce' %}text-red-600{% else %}text-emerald-700{% endif %}">{{ enforcement_mode }}</b></span>
+    </form>
+</section>
+
 <section class="bg-white rounded-lg shadow p-4 mb-6">
     <h3 class="font-semibold mb-3">Токены агентов</h3>
     {% if new_token %}
