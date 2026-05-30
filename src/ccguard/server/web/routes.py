@@ -230,6 +230,39 @@ def proposed_signals_draft(
     return RedirectResponse(url="/admin/proposed-signals", status_code=303)
 
 
+@router.post("/admin/proposed-signals/draft-from-llm")
+def proposed_signals_draft_llm(
+    request: Request,
+    threat_text: str = Form(...),
+    source_url: str = Form(""),
+    source_title: str = Form(""),
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """LLM-drafted variant (E2). Requires app.state.signal_drafter to be set
+    (created at startup when ANTHROPIC_API_KEY is present)."""
+    from ccguard.server.services import signal_drafter as drafter_mod
+
+    drafter = getattr(request.app.state, "signal_drafter", None)
+    if drafter is None:
+        raise HTTPException(status_code=503, detail="llm drafter not configured")
+    try:
+        drafter_mod.draft_signal_from_text(
+            session,
+            drafter=drafter,
+            threat_text=threat_text,
+            source_kind="llm",
+            source_url=source_url or None,
+            source_title=source_title or None,
+        )
+    except drafter_mod.BudgetExhausted as e:
+        raise HTTPException(status_code=429, detail=str(e)) from e
+    except drafter_mod.DrafterError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return RedirectResponse(url="/admin/proposed-signals", status_code=303)
+
+
 @router.post("/admin/proposed-signals/{row_id}/approve")
 def proposed_signals_approve(
     row_id: int,
