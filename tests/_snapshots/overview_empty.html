@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ccguard — обзор</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Chivo:wght@600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+              mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+              display: ['"Chivo"', '"IBM Plex Sans"', 'sans-serif'],
+            },
+            colors: {
+              ink: {
+                900: '#0a0e12',
+                850: '#0d1318',
+                800: '#11181f',
+                700: '#1a242d',
+                600: '#26333d',
+              },
+              signal: '#10b981',
+            },
+            keyframes: {
+              ccRise: {
+                '0%':   { opacity: '0', transform: 'translateY(10px)' },
+                '100%': { opacity: '1', transform: 'translateY(0)' },
+              },
+              ccPulse: {
+                '0%,100%': { opacity: '1' },
+                '50%':     { opacity: '.35' },
+              },
+            },
+            animation: {
+              ccRise: 'ccRise .5s cubic-bezier(.22,1,.36,1) both',
+              ccPulse: 'ccPulse 2.4s ease-in-out infinite',
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      :root { color-scheme: light; }
+      body { font-family: "IBM Plex Sans", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+      .font-mono, code, pre, .cc-mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+      h1, h2, h3, .cc-display { font-family: "Chivo", "IBM Plex Sans", sans-serif; letter-spacing: -0.015em; }
+
+      /* Blueprint atmosphere for the work surface */
+      .cc-surface {
+        background-color: #eef1f5;
+        background-image:
+          radial-gradient(900px 500px at 82% -8%, rgba(16,185,129,.10), transparent 60%),
+          radial-gradient(760px 480px at -6% 108%, rgba(56,89,120,.12), transparent 55%),
+          linear-gradient(to right, rgba(15,23,42,.035) 1px, transparent 1px),
+          linear-gradient(to bottom, rgba(15,23,42,.035) 1px, transparent 1px);
+        background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
+        background-attachment: fixed, fixed, fixed, fixed;
+      }
+
+      /* Card refinement applied broadly without touching markup */
+      .cc-surface .bg-white {
+        border: 1px solid rgba(15,23,42,.07);
+        box-shadow: 0 1px 2px rgba(13,19,24,.04), 0 12px 28px -18px rgba(13,19,24,.28);
+        transition: box-shadow .25s ease, border-color .25s ease, transform .25s ease;
+      }
+      .cc-surface .bg-white:hover {
+        box-shadow: 0 1px 2px rgba(13,19,24,.05), 0 20px 40px -22px rgba(13,19,24,.36);
+        border-color: rgba(16,185,129,.28);
+      }
+
+      /* Inputs feel engineered */
+      .cc-surface input:not([type=checkbox]):not([type=radio]),
+      .cc-surface select,
+      .cc-surface textarea {
+        background: #fbfcfd;
+        transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+      }
+      .cc-surface input:focus, .cc-surface select:focus, .cc-surface textarea:focus {
+        outline: none;
+        border-color: #10b981 !important;
+        box-shadow: 0 0 0 3px rgba(16,185,129,.18);
+        background: #fff;
+      }
+      .cc-surface textarea { line-height: 1.55; }
+
+      /* Sidebar nav */
+      .cc-nav-link {
+        position: relative; display: flex; align-items: center; gap: .625rem;
+        padding: .5rem .75rem; border-radius: .55rem; color: #9fb0bd;
+        font-size: .875rem; font-weight: 500; transition: all .16s ease; border: 1px solid transparent;
+      }
+      .cc-nav-link svg { width: 16px; height: 16px; flex: none; opacity: .8; }
+      .cc-nav-link:hover { color: #eaf2f6; background: rgba(255,255,255,.05); }
+      .cc-nav-link[aria-current="page"] {
+        color: #d7ffe9; background: rgba(16,185,129,.12);
+        border-color: rgba(16,185,129,.30);
+      }
+      .cc-nav-link[aria-current="page"] svg { opacity: 1; color: #34d399; }
+      .cc-nav-link[aria-current="page"]::before {
+        content: ""; position: absolute; left: -4px; top: 18%; bottom: 18%;
+        width: 3px; border-radius: 3px; background: #10b981; box-shadow: 0 0 12px rgba(16,185,129,.8);
+      }
+      .cc-nav-group { font-family: "IBM Plex Mono", monospace; font-size: .625rem; letter-spacing: .18em;
+        text-transform: uppercase; color: #5b6b78; padding: .25rem .75rem; margin-top: .5rem; }
+
+      main > * { animation: ccRise .5s cubic-bezier(.22,1,.36,1) both; }
+
+      /* Tidy scrollbars on the console */
+      .cc-surface ::-webkit-scrollbar { height: 10px; width: 10px; }
+      .cc-surface ::-webkit-scrollbar-thumb { background: rgba(15,23,42,.2); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+      .cc-surface ::-webkit-scrollbar-thumb:hover { background: rgba(15,23,42,.35); background-clip: padding-box; }
+
+      .cc-eyebrow { font-family: "IBM Plex Mono", monospace; font-size: .6875rem; font-weight: 500;
+        letter-spacing: .2em; text-transform: uppercase; color: #10b981; }
+
+      /* Accordion sections */
+      .cc-surface summary { list-style: none; }
+      .cc-surface summary::-webkit-details-marker { display: none; }
+      .cc-chevron { transition: transform .2s ease; }
+      details[open] > summary .cc-chevron { transform: rotate(90deg); }
+
+      /* Severity tags */
+      .cc-sev { display:inline-flex; align-items:center; gap:.35rem; font-family:"IBM Plex Mono",monospace;
+        font-size:.625rem; font-weight:600; letter-spacing:.08em; text-transform:uppercase;
+        border-radius:999px; padding:.2rem .55rem; border:1px solid; }
+      .cc-sev-info  { color:#475569; background:#f1f5f9; border-color:#e2e8f0; }
+      .cc-sev-warn  { color:#d97706; background:#fffbeb; border-color:rgba(217,119,6,.25); }
+      .cc-sev-block { color:#dc2626; background:#fef2f2; border-color:rgba(220,38,38,.25); }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+    
+    <div class="flex min-h-screen">
+        <aside class="w-60 shrink-0 bg-ink-900 text-slate-100 flex flex-col border-r border-white/5">
+            <div class="px-5 pt-6 pb-5 border-b border-white/5">
+                <div class="flex items-center gap-2.5">
+                    <span class="grid place-items-center w-9 h-9 rounded-lg bg-signal/15 ring-1 ring-signal/30">
+                        <svg viewBox="0 0 24 24" fill="none" class="w-5 h-5 text-signal" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/>
+                            <path d="m9 12 2 2 4-4"/>
+                        </svg>
+                    </span>
+                    <div>
+                        <h1 class="cc-display text-lg font-extrabold leading-none text-white">ccguard</h1>
+                        <p class="cc-mono text-[9px] tracking-[0.22em] text-slate-500 mt-1">EDR · AI AGENTS</p>
+                    </div>
+                </div>
+            </div>
+            <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto" aria-label="Навигация">
+                <p class="cc-nav-group">Мониторинг</p>
+                <a href="/" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+                    Обзор
+                </a>
+                <a href="/machines" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                    Машины
+                </a>
+                <a href="/findings" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/></svg>
+                    Находки
+                </a>
+                <a href="/audit" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 3h9l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M9 13h6M9 17h4"/></svg>
+                    Аудит
+                </a>
+                <a href="/anomalies" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg>
+                    Аномалии
+                </a>
+                <p class="cc-nav-group">Управление</p>
+                <a href="/policy" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/></svg>
+                    Политика
+                </a>
+                <a href="/policy/history" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v6h6"/><path d="M3.5 9a9 9 0 1 0 2.1-3.4L3 9"/><path d="M12 7v5l3 2"/></svg>
+                    История
+                </a>
+                <a href="/settings" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+                    Настройки
+                </a>
+            </nav>
+            <div class="px-4 py-3 border-t border-white/5 flex items-center justify-between">
+                <span class="inline-flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <span class="w-1.5 h-1.5 rounded-full bg-signal animate-ccPulse"></span>
+                    <span class="cc-mono">сервер · online</span>
+                </span>
+                <form method="POST" action="/logout">
+                    <input type="hidden" name="csrf_token" value="<CSRF>" />
+                    <button class="text-xs text-slate-400 hover:text-white transition-colors">Выйти</button>
+                </form>
+            </div>
+        </aside>
+        <main class="cc-surface flex-1 p-8 min-w-0">
+<h2 class="text-2xl font-semibold mb-6">Обзор</h2>
+<div class="bg-white rounded-lg shadow p-4"
+     hx-get="/_partials/overview/fleet-table"
+     hx-trigger="every 30s">
+    <table class="w-full text-sm border-separate border-spacing-0">
+    <thead>
+        <tr class="text-left text-slate-500 border-b">
+            <th class="py-3 px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Хост</th>
+            <th class="px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Агент</th>
+            <th class="px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Последний sync</th>
+            <th class="px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Ревизия политики</th>
+            <th class="px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Warn / Block</th>
+            <th class="px-3 cc-mono text-[11px] font-semibold uppercase tracking-wider">Статус</th>
+        </tr>
+    </thead>
+    <tbody>
+        
+        <tr><td colspan="6" class="py-12 text-center text-slate-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" class="w-8 h-8 mx-auto mb-2 opacity-50"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+            Машин пока нет.
+        </td></tr>
+        
+    </tbody>
+</table>
+</div>
+<div class="bg-white rounded-lg shadow p-4 mt-4">
+    <h3 class="font-semibold mb-3 flex items-center gap-2 text-slate-800">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    Риск флота
+</h3>
+
+<p class="text-slate-400 text-sm">Тёплых машин ещё нет.</p>
+
+</div>
+<div class="bg-white rounded-lg shadow p-4 mt-4"
+     hx-get="/_partials/anomalies/overview"
+     hx-trigger="load, every 60s"
+     hx-target="this">
+    <h3 class="text-sm font-semibold text-slate-700 mb-3">Аномалии</h3>
+
+<p class="text-sm text-slate-400 py-6 text-center">Аномалий нет.</p>
+
+</div>
+</main>
+    </div>
+    <script>
+      (function () {
+        var path = window.location.pathname;
+        var links = document.querySelectorAll('.cc-nav-link');
+        var best = null, bestLen = -1;
+        links.forEach(function (a) {
+          var href = a.getAttribute('href');
+          var match = href === '/' ? path === '/' : path.indexOf(href) === 0;
+          if (match && href.length > bestLen) { best = a; bestLen = href.length; }
+        });
+        if (best) best.setAttribute('aria-current', 'page');
+      })();
+      // Live counter for policy list-field textareas (one non-blank line = one item).
+      (function () {
+        function refresh(ta) {
+          var label = document.querySelector('[data-list-counter-for="' + ta.id + '"]');
+          if (!label) return;
+          var n = ta.value.split('\n').filter(function (l) { return l.trim().length > 0; }).length;
+          label.textContent = n + ' элементов';
+        }
+        document.querySelectorAll('textarea[data-list-counter]').forEach(function (ta) {
+          ta.addEventListener('input', function () { refresh(ta); });
+        });
+      })();
+    </script>
+    
+</body>
+</html>
