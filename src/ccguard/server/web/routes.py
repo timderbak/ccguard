@@ -120,12 +120,19 @@ def overview_page(
     user: str = Depends(require_session),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
+    from ccguard.server.services.fleet_risk import compute_fleet_risk
     from ccguard.server.services.machine_service import list_machines_with_status
     machines = list_machines_with_status(session)
+    fleet_risk = compute_fleet_risk(session, limit=10)
     return templates.TemplateResponse(
         request,
         "overview.html",
-        {"user": user, "machines": machines, "csrf_token": _csrf_for(request)},
+        {
+            "user": user,
+            "machines": machines,
+            "fleet_risk": fleet_risk,
+            "csrf_token": _csrf_for(request),
+        },
     )
 
 
