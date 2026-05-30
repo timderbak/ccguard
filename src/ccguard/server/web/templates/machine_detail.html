@@ -159,6 +159,14 @@
         <li class="py-2 flex items-center gap-3">
             <a href="/audit?actor_user={{ a.actor }}&machine_id={{ machine.machine_id }}"
                class="cc-mono text-xs text-slate-700 hover:text-emerald-700 hover:underline">{{ a.actor }}</a>
+            <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 ring-1
+                {% if a.score >= 10 %}bg-red-50 text-red-600 ring-red-200
+                {% elif a.score >= 5 %}bg-amber-50 text-amber-700 ring-amber-200
+                {% elif a.score > 0 %}bg-emerald-50 text-emerald-700 ring-emerald-200
+                {% else %}bg-slate-50 text-slate-400 ring-slate-200{% endif %}">
+                risk: {{ "%.1f"|format(a.score) }}
+            </span>
+            {% if a.top_signal %}<span class="cc-mono text-[11px] text-slate-400">top: {{ a.top_signal }}</span>{% endif %}
             <span class="cc-mono text-[11px] text-slate-400 ml-auto">{{ a.count }} событий</span>
         </li>
         {% endfor %}

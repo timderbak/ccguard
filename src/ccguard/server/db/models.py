@@ -324,6 +324,24 @@ class MachineRiskHistory(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow)
 
 
+class MachineUserRiskHistory(SQLModel, table=True):
+    """Daily per-(machine, user) risk score snapshot.
+
+    Complements the machine-level :class:`MachineRiskHistory`. Populated by
+    ``risk_service.tick`` by grouping events on ``actor_user``. Events with
+    ``actor_user IS NULL`` (v0.1/v0.2 agents) are aggregated under the
+    sentinel ``"_unknown"`` so the table stays well-typed.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    actor_user: str = Field(index=True)
+    date_utc: str = Field(index=True)
+    score: float
+    top_signal: str | None = None
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
 class SourceFetchLog(SQLModel, table=True):
     """Per-URL fetch dedup for source monitors (Rule Discovery Agent · E3).
 
