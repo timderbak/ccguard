@@ -221,6 +221,21 @@ class PromptInjectionConfig(SchemaBase):
     llama_guard: LlamaGuardConfig = Field(default_factory=LlamaGuardConfig)
 
 
+class SignalOverrideIn(SchemaBase):
+    """One catalog signal pushed from the server (Rule Discovery Agent · E4).
+
+    Mirrors :class:`ccguard.agent.signals.catalog.Signal` fields. ``pattern``
+    is a Python regex string compiled with ``re.IGNORECASE`` on the agent.
+    Invalid regex is silently dropped by the extractor — the admin's approve
+    path validates ``re.compile`` so this is defense in depth.
+    """
+
+    id: str = Field(min_length=1, max_length=128)
+    attack_technique: str = Field(min_length=1, max_length=64)
+    pattern: str = Field(min_length=1, max_length=1024)
+    description: str = Field(min_length=1, max_length=512)
+
+
 class Policy(SchemaBase):
     # Backward-compat (D-1): v0.1-агенты, принимающие будущую расширенную политику,
     # должны игнорировать неизвестные поля верхнего уровня вместо ошибки валидации.
@@ -250,3 +265,8 @@ class Policy(SchemaBase):
     # `extra="ignore"`; field uses default_factory so policies without this
     # section parse cleanly.
     prompt_injection: PromptInjectionConfig = Field(default_factory=PromptInjectionConfig)
+    # Rule Discovery Agent (E4): server-pushed catalog overrides. Each entry
+    # is the same shape the catalog Signal uses; agent's extractor compiles
+    # and merges these on top of the baked CATALOG (override-wins precedence
+    # for same id). Empty by default → existing agents unaffected.
+    signal_overrides: list[SignalOverrideIn] = Field(default_factory=list)
