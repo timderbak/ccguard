@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from ccguard.server.services.source_monitors.atlas import AtlasMonitor
 from ccguard.server.services.source_monitors.atomic_red_team import (
     AtomicRedTeamMonitor,
 )
 from ccguard.server.services.source_monitors.cve_ai_filter import CVEAIFilterMonitor
+from ccguard.server.services.source_monitors.lakera_blog import LakeraBlogMonitor
 from ccguard.server.services.source_monitors.mitre_attack import MitreAttackMonitor
 
 
@@ -92,3 +94,71 @@ def test_mitre_attack_respects_since():
     ]
     m = MitreAttackMonitor(fetch_releases=lambda: releases)
     assert m.poll(since=datetime(2026, 1, 1, tzinfo=UTC)) == []
+
+
+def test_atlas_emits_one_per_release():
+    releases = [
+        {"tag_name": "atlas-v4.7", "published_at": "2026-05-20T00:00:00Z",
+         "html_url": "https://github.com/mitre-atlas/atlas-data/releases/tag/atlas-v4.7",
+         "body": "Adds AML.T0051 LLM Prompt Injection; refines AML.T0054."},
+    ]
+    m = AtlasMonitor(fetch_releases=lambda: releases)
+    items = m.poll(since=datetime(2026, 1, 1, tzinfo=UTC))
+    assert len(items) == 1
+    assert "atlas-v4.7" in items[0].title
+    assert "AML.T0051" in items[0].text
+
+
+def test_atlas_skips_old_releases():
+    releases = [
+        {"tag_name": "v0", "published_at": "2020-01-01T00:00:00Z",
+         "html_url": "x", "body": "y"},
+    ]
+    m = AtlasMonitor(fetch_releases=lambda: releases)
+    assert m.poll(since=datetime(2026, 1, 1, tzinfo=UTC)) == []
+
+
+def test_atlas_handles_malformed_payload_safely():
+    m = AtlasMonitor(fetch_releases=lambda: "not a list")
+    assert m.poll(since=datetime(2026, 1, 1, tzinfo=UTC)) == []
+
+
+_LAKERA_RSS = """<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <title>Lakera Blog</title>
+  <item>
+    <title>Catching a prompt-injection in the wild</title>
+    <link>https://lakera.ai/blog/pi-in-wild</link>
+    <description>Real incident: agent X read ~/.env after a prompt injection via Y plugin.</description>
+    <pubDate>Tue, 27 May 2026 14:00:00 +0000</pubDate>
+  </item>
+  <item>
+    <title>Old post</title>
+    <link>https://lakera.ai/blog/old</link>
+    <description>Old stuff.</description>
+    <pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate>
+  </item>
+</channel></rss>"""
+
+
+def test_lakera_blog_extracts_items_after_since():
+    m = LakeraBlogMonitor(fetch_rss=lambda: _LAKERA_RSS)
+    items = m.poll(since=datetime(2026, 1, 1, tzinfo=UTC))
+    assert len(items) == 1
+    assert "prompt-injection" in items[0].title
+    assert items[0].url == "https://lakera.ai/blog/pi-in-wild"
+    assert "agent X" in items[0].text
+
+
+def test_lakera_blog_handles_malformed_xml_safely():
+    m = LakeraBlogMonitor(fetch_rss=lambda: "not xml at all <broken>")
+    assert m.poll(since=datetime(2020, 1, 1, tzinfo=UTC)) == []
+
+
+def test_lakera_blog_skips_items_without_title_or_link():
+    rss = """<?xml version="1.0"?><rss><channel>
+      <item><link>x</link></item>
+      <item><title>only title</title></item>
+    </channel></rss>"""
+    m = LakeraBlogMonitor(fetch_rss=lambda: rss)
+    assert m.poll(since=datetime(2020, 1, 1, tzinfo=UTC)) == []
