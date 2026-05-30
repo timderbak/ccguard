@@ -286,21 +286,26 @@ class ProposedSignal(SQLModel, table=True):
     """
 
     id: int | None = Field(default=None, primary_key=True)
-    draft_json: str  # {id, attack_technique, pattern, description}
-    source_kind: str = Field(index=True)  # manual | mitre | atlas | atomic-red-team | lakera | cve
+    draft_json: str  # signal: {id, attack_technique, pattern, description}
+                     # pi_pattern: {category, pattern, description}
+    source_kind: str = Field(index=True)  # manual | mitre | atlas | atomic-red-team | lakera | cve | manual-pi | llm-pi
     source_url: str | None = None
     source_title: str | None = None
     llm_rationale: str | None = None
     status: str = Field(default="pending", index=True)
+    # ``signal`` (default — behavioral signal catalog) or ``pi_pattern``
+    # (prompt-injection regex). Drives approval validation + override key.
+    kind: str = Field(default="signal", index=True)
     created_at: datetime = Field(default_factory=_utcnow, index=True)
     reviewed_at: datetime | None = None
     reviewed_by: str | None = None
     rejection_reason: str | None = None
 
     def id_in_draft(self) -> str:
-        """Convenience: return the signal id from the draft JSON."""
+        """Convenience: return signal/pattern id from the draft JSON."""
         import json as _json
-        return _json.loads(self.draft_json)["id"]
+        d = _json.loads(self.draft_json)
+        return d.get("id") or d.get("category") or "(unknown)"
 
 
 class MachineRiskHistory(SQLModel, table=True):

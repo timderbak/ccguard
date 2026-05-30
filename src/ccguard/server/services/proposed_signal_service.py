@@ -28,7 +28,10 @@ from ccguard.server.db.models import ProposedSignal, SettingsRecord
 _ID_RE = re.compile(r"^[a-z0-9]+(\.[a-z0-9_]+)+$")
 _ATTACK_RE = re.compile(r"^(T\d{4}(\.\d{3})?|ATLAS\..+)$")
 _REQUIRED_KEYS = ("id", "attack_technique", "pattern", "description")
+_PI_REQUIRED_KEYS = ("category", "pattern", "description")
+_PI_CATEGORY_RE = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
 _OVERRIDE_KEY_PREFIX = "catalog.override."
+_PI_OVERRIDE_KEY_PREFIX = "pi.override."
 
 
 class InvalidDraft(ValueError):
@@ -58,6 +61,17 @@ def _validate_regex(pattern: str) -> None:
         raise InvalidDraft(f"pattern does not compile: {e}") from e
 
 
+def _validate_pi_shape(draft: dict[str, Any]) -> None:
+    """PI patterns have a different shape: {category, pattern, description}."""
+    for k in _PI_REQUIRED_KEYS:
+        if k not in draft or not isinstance(draft[k], str) or not draft[k].strip():
+            raise InvalidDraft(f"missing or empty required key: {k}")
+    if not _PI_CATEGORY_RE.fullmatch(draft["category"]):
+        raise InvalidDraft(
+            f"category {draft['category']!r} must be lowercase snake_case (3-64 chars)"
+        )
+
+
 def propose(
     session: Session,
     *,
@@ -66,10 +80,18 @@ def propose(
     source_url: str | None = None,
     source_title: str | None = None,
     llm_rationale: str | None = None,
+    kind: str = "signal",
 ) -> ProposedSignal:
     """Persist a new pending draft. Shape is validated; regex is not — admins
-    sometimes want to massage a near-miss pattern before approving."""
-    _validate_shape(draft)
+    sometimes want to massage a near-miss pattern before approving.
+
+    ``kind="signal"`` (default) validates the behavioral signal shape.
+    ``kind="pi_pattern"`` validates the prompt-injection pattern shape.
+    """
+    if kind == "pi_pattern":
+        _validate_pi_shape(draft)
+    else:
+        _validate_shape(draft)
     row = ProposedSignal(
         draft_json=json.dumps(draft, ensure_ascii=False, sort_keys=True),
         source_kind=source_kind,
@@ -77,6 +99,7 @@ def propose(
         source_title=source_title,
         llm_rationale=llm_rationale,
         status="pending",
+        kind=kind,
     )
     session.add(row)
     session.commit()
@@ -92,10 +115,16 @@ def approve(session: Session, row_id: int, *, reviewed_by: str) -> ProposedSigna
     if row is None or row.status != "pending":
         raise NotPending(f"draft {row_id} is not pending")
     draft = json.loads(row.draft_json)
-    _validate_shape(draft)
-    _validate_regex(draft["pattern"])
 
-    override_key = f"{_OVERRIDE_KEY_PREFIX}{draft['id']}"
+    if row.kind == "pi_pattern":
+        _validate_pi_shape(draft)
+        _validate_regex(draft["pattern"])
+        override_key = f"{_PI_OVERRIDE_KEY_PREFIX}{draft['category']}"
+    else:
+        _validate_shape(draft)
+        _validate_regex(draft["pattern"])
+        override_key = f"{_OVERRIDE_KEY_PREFIX}{draft['id']}"
+
     existing = session.get(SettingsRecord, override_key)
     now = datetime.now(UTC)
     if existing is None:
