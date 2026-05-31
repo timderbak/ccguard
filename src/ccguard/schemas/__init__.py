@@ -20,6 +20,7 @@ from ccguard.schemas.inventory import (
 from ccguard.schemas.policy import (
     AgentsPolicy,
     CommandsPolicy,
+    DangerousBashRule,
     EnvPolicy,
     HooksPolicy,
     McpServersPolicy,
@@ -36,6 +37,7 @@ __all__ = [
     "AuditEntry",
     "CommandEntry",
     "CommandsPolicy",
+    "DangerousBashRule",
     "EnforceDecision",
     "EnforceHookInput",
     "EnvPolicy",

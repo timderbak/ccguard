@@ -26,3 +26,7 @@ class EnforceDecision(SchemaBase):
     reason: str
     rule_id: str | None = None
     fail_open: bool = False
+    # P1 / Dangerous Bash Patterns: rule_id'ы severity=warn правил, которые
+    # сматчились, но не блокируют. Сохраняются в audit для последующего
+    # анализа без прерывания работы пользователя.
+    warning_signals: list[str] = []

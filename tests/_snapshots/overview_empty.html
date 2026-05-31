@@ -201,7 +201,16 @@
             </div>
         </aside>
         <main class="cc-surface flex-1 p-8 min-w-0">
-<h2 class="text-2xl font-semibold mb-6">Обзор</h2>
+<div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+    <h2 class="text-2xl font-semibold">Обзор</h2>
+    <div class="flex items-center gap-3" data-testid="overview-mode-badge">
+        <span class="cc-sev cc-sev-warn"
+              title="Режим enforce блокирует команды; observe только логирует.">
+            режим: OBSERVE
+        </span>
+        
+    </div>
+</div>
 <div class="bg-white rounded-lg shadow p-4"
      hx-get="/_partials/overview/fleet-table"
      hx-trigger="every 30s">
@@ -238,6 +247,17 @@
 </h3>
 
 <p class="text-slate-400 text-sm">Тёплых машин ещё нет.</p>
+
+</div>
+<div class="bg-white rounded-lg shadow p-4 mt-4"
+     hx-get="/_partials/dangerous/overview"
+     hx-trigger="load, every 60s"
+     hx-target="this">
+    
+<h3 class="text-sm font-semibold text-slate-700 mb-3">Опасные Bash-команды</h3>
+
+
+<p class="text-sm text-slate-400 py-6 text-center">Опасных команд не зафиксировано.</p>
 
 </div>
 <div class="bg-white rounded-lg shadow p-4 mt-4"

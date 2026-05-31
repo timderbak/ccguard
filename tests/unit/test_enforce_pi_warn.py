@@ -70,9 +70,11 @@ def test_pi_warn_falls_through_to_decide_bash(
     )
     d = decide(pl, pol)
 
-    # Existing pipeline still fires
+    # Existing pipeline still fires. P1 dangerous_patterns ловят curl|bash
+    # с понятным reason и побеждают always_deny (см. test_enforce.py); итог
+    # тот же — deny, но rule_id из dangerous.* семейства.
     assert d.permission == "deny"
-    assert d.rule_id == "commands.always_deny"
+    assert d.rule_id in ("commands.always_deny", "dangerous.exfil/curl-pipe-bash")
     # And PI finding was still emitted (warn doesn't block but reports)
     assert mock_emit.call_count == 1
     assert mock_emit.call_args.kwargs["severity"] == "warn"

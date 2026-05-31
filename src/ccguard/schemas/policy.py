@@ -57,6 +57,163 @@ class NetworkPolicy(RuleBase):
     deny_all_unknown: bool = False
 
 
+class DangerousBashRule(SchemaBase):
+    """Realtime PreToolUse-блокировка опасных Bash-команд (P1 — Dangerous Bash Patterns).
+
+    Отличие от ``always_deny`` / ``denylist_patterns`` — этот rule везёт с собой
+    структурированный «почему опасно» / «что делать», чтобы UI рендерил
+    карточку с понятным объяснением, а не голый regex. ``severity="warn"``
+    не блокирует, но добавляет signal-метку в EnforceDecision и попадает в
+    finding-буфер.
+
+    Категории намеренно зеркалят упрощённый MITRE-набор для dev-эндпоинта;
+    точное мэппинг на T#### делается в signal-catalog для PostToolUse audit'а.
+    """
+
+    id: str = Field(min_length=1, max_length=128)
+    pattern: str = Field(min_length=1, max_length=1024)
+    category: Literal["exfil", "destructive", "privilege-esc", "persistence", "tampering"]
+    severity: Literal["warn", "block"] = "block"
+    title: str = Field(min_length=1, max_length=256)
+    reason: str = Field(min_length=1, max_length=512)
+    remediation: str = Field(min_length=1, max_length=512)
+
+
+def _default_dangerous_patterns() -> list[DangerousBashRule]:
+    """Дефолтный набор Dangerous Bash правил.
+
+    Минимум 8 правил, покрывающих основные сценарии: exfil, destructive,
+    persistence, privilege-esc, tampering. Намеренно дублируется с PostToolUse
+    signal catalog (cred.read.dotenv, system.permissive_chmod и т.п.) — цели
+    разные: signal catalog аудит, dangerous_patterns enforce.
+    """
+    return [
+        DangerousBashRule(
+            id="exfil/curl-pipe-bash",
+            pattern=r"curl\s+[^|]+\|\s*(sh|bash|zsh)\b",
+            category="exfil",
+            severity="block",
+            title="Скачивание скрипта из интернета с исполнением",
+            reason=(
+                "curl | bash скачивает произвольный код и сразу его выполняет "
+                "без возможности проверить содержимое."
+            ),
+            remediation=(
+                "Скачай файл отдельно (curl -O), проверь содержимое, "
+                "затем запусти. Или используй пакетный менеджер."
+            ),
+        ),
+        DangerousBashRule(
+            id="exfil/wget-pipe-bash",
+            pattern=r"wget\s+[^|]+\|\s*(sh|bash|zsh)\b",
+            category="exfil",
+            severity="block",
+            title="Скачивание скрипта из интернета через wget с исполнением",
+            reason=(
+                "wget | bash скачивает произвольный код и сразу его выполняет "
+                "без возможности проверить содержимое."
+            ),
+            remediation=(
+                "Скачай файл отдельно (wget -O), проверь содержимое, "
+                "затем запусти."
+            ),
+        ),
+        DangerousBashRule(
+            id="destructive/rm-rf-root",
+            pattern=r"\brm\s+(-[a-zA-Z]*[rRf][a-zA-Z]*\s+)+(/|~|\$HOME)(\s|$)",
+            category="destructive",
+            severity="block",
+            title="Рекурсивное удаление корня или домашней директории",
+            reason=(
+                "rm -rf / (или ~ / $HOME) безвозвратно удалит критические "
+                "файлы системы или весь твой профиль."
+            ),
+            remediation=(
+                "Если действительно нужно удалить — укажи конкретный путь. "
+                "Никогда не запускай rm -rf на / или ~."
+            ),
+        ),
+        DangerousBashRule(
+            id="persistence/ssh-authorized-keys",
+            pattern=r"(>|>>)\s*~/\.ssh/authorized_keys",
+            category="persistence",
+            severity="block",
+            title="Запись в ~/.ssh/authorized_keys",
+            reason=(
+                "Добавление ключа в authorized_keys даёт удалённый SSH-доступ "
+                "и часто используется атакующим для закрепления."
+            ),
+            remediation=(
+                "Если ты сам добавляешь ключ — сделай это вручную через "
+                "редактор. AI-агенту не нужно править authorized_keys."
+            ),
+        ),
+        DangerousBashRule(
+            id="tampering/dotenv-read",
+            pattern=r"\bcat\s+.*\.env\b|\bsource\s+.*\.env\b|\b(grep|less|head|tail)\s+.*\.env\b",
+            category="tampering",
+            severity="warn",
+            title="Чтение .env с секретами",
+            reason=(
+                "В .env обычно лежат API-ключи и пароли. Их попадание в "
+                "stdout-контекст AI-агента увеличивает риск утечки."
+            ),
+            remediation=(
+                "Если ключи нужны агенту — передавай через переменные "
+                "окружения, не показывай содержимое файла."
+            ),
+        ),
+        DangerousBashRule(
+            id="privilege-esc/sudo",
+            pattern=r"\bsudo\s+(?!-n\b)",
+            category="privilege-esc",
+            severity="warn",
+            title="Использование sudo",
+            reason=(
+                "sudo на dev-машине редко легитимен в контексте AI-агента и "
+                "часто говорит о попытке эскалации привилегий."
+            ),
+            remediation=(
+                "Подумай, нужны ли тебе root-права именно для этой задачи. "
+                "Если да — запусти команду сам."
+            ),
+        ),
+        DangerousBashRule(
+            id="tampering/chmod-777",
+            pattern=r"\bchmod\s+[0-7]?7[0-7]{2}\b",
+            category="tampering",
+            severity="warn",
+            title="chmod с правами 777 / world-writable",
+            reason=(
+                "Полностью открытые права (777) на файл или директорию "
+                "позволяют любому процессу их подменить."
+            ),
+            remediation=(
+                "Используй более узкие права (644 для файлов, 755 для "
+                "директорий)."
+            ),
+        ),
+        DangerousBashRule(
+            id="exfil/upload-pastebin",
+            pattern=(
+                r"\b(curl|wget|http)\s+.*"
+                r"(pastebin\.com|paste\.ee|hastebin|transfer\.sh|0x0\.st|ix\.io|gist\.githubusercontent)"
+            ),
+            category="exfil",
+            severity="block",
+            title="Заливка данных на pastebin-подобный сервис",
+            reason=(
+                "Pastebin, transfer.sh и аналоги — классический канал "
+                "exfiltration: данные уходят на внешний хост без аудита."
+            ),
+            remediation=(
+                "Используй внутреннее хранилище организации. Если нужно "
+                "поделиться кодом — gist через ваш корпоративный аккаунт."
+            ),
+        ),
+    ]
+
+
 class CommandsPolicy(RuleBase):
     denylist_patterns: list[str] = []
     allowlist_patterns: list[str] = []
@@ -67,6 +224,13 @@ class CommandsPolicy(RuleBase):
         r"\bcurl\s+.*\|\s*(sh|bash)\b",
         r"\bwget\s+.*\|\s*(sh|bash)\b",
     ]
+    # P1 / Dangerous Bash Patterns (BACKLOG §4): структурированные правила
+    # с понятным «почему» и «что делать» для realtime PreToolUse-блока.
+    # Дефолты подгружаются factory, чтобы Pydantic не шарил mutable между
+    # инстансами Policy.
+    dangerous_patterns: list[DangerousBashRule] = Field(
+        default_factory=_default_dangerous_patterns
+    )
 
 
 class SkillsPolicy(RuleBase):

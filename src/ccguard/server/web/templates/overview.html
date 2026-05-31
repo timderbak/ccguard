@@ -1,7 +1,21 @@
 {% extends "base.html" %}
 {% block title %}ccguard — обзор{% endblock %}
 {% block content %}
-<h2 class="text-2xl font-semibold mb-6">Обзор</h2>
+<div class="flex items-center justify-between mb-6 flex-wrap gap-3">
+    <h2 class="text-2xl font-semibold">Обзор</h2>
+    <div class="flex items-center gap-3" data-testid="overview-mode-badge">
+        <span class="cc-sev {% if enforcement_mode == 'enforce' %}cc-sev-block{% else %}cc-sev-warn{% endif %}"
+              title="Режим enforce блокирует команды; observe только логирует.">
+            режим: {{ enforcement_mode | upper }}
+        </span>
+        {% if dangerous_today is defined and dangerous_today > 0 %}
+        <span class="cc-mono text-xs text-slate-600"
+              data-testid="dangerous-today-counter">
+            {% if enforcement_mode == 'observe' %}за сегодня пропущено{% else %}за сегодня заблокировано{% endif %}: <b class="text-slate-900">{{ dangerous_today }}</b>
+        </span>
+        {% endif %}
+    </div>
+</div>
 <div class="bg-white rounded-lg shadow p-4"
      hx-get="/_partials/overview/fleet-table"
      hx-trigger="every 30s">
@@ -9,6 +23,12 @@
 </div>
 <div class="bg-white rounded-lg shadow p-4 mt-4">
     {% include "components/_fleet_risk_panel.html" %}
+</div>
+<div class="bg-white rounded-lg shadow p-4 mt-4"
+     hx-get="/_partials/dangerous/overview"
+     hx-trigger="load, every 60s"
+     hx-target="this">
+    {% include "components/_dangerous_findings_overview.html" %}
 </div>
 <div class="bg-white rounded-lg shadow p-4 mt-4"
      hx-get="/_partials/anomalies/overview"
