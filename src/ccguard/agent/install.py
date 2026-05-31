@@ -6,6 +6,7 @@ import contextlib
 import json
 import os
 import shutil
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -62,7 +63,14 @@ def audit_shim_path() -> Path:
 
 def _shim_body() -> str:
     """Bash-shim: вызывает либо PyInstaller-бинарник, либо python-fallback.
-    Fail-open при отсутствии бинарей."""
+    Fail-open при отсутствии бинарей.
+
+    Bug fix: ранее использовался ``python3`` напрямую → разрешался в системный
+    интерпретатор, где ccguard НЕ установлен → ``ModuleNotFoundError`` → hook
+    падает с non-zero → Claude Code блокирует все tool calls. Теперь сначала
+    пробуем ``sys.executable`` (Python того venv, откуда установлен ccguard).
+    """
+    py = sys.executable
     return f"""#!/usr/bin/env bash
 {SHIM_MARKER}
 set -e
@@ -70,6 +78,11 @@ set -e
 BIN="/opt/ccguard/bin/ccguard-enforce-bin"
 if [ -x "$BIN" ]; then
     exec "$BIN" "$@"
+fi
+
+PY="{py}"
+if [ -x "$PY" ]; then
+    exec "$PY" -m ccguard.agent.enforce_main "$@"
 fi
 
 if command -v python3 >/dev/null 2>&1; then
@@ -82,7 +95,12 @@ exit 0
 
 
 def _audit_shim_body() -> str:
-    """Bash-shim for PostToolUse audit hook. Fail-silent (audit is best-effort)."""
+    """Bash-shim for PostToolUse audit hook. Fail-silent (audit is best-effort).
+
+    See ``_shim_body`` docstring for the ``python3`` → ``sys.executable``
+    fix; same rationale applies here.
+    """
+    py = sys.executable
     return f"""#!/usr/bin/env bash
 {AUDIT_SHIM_MARKER}
 set -e
@@ -90,6 +108,11 @@ set -e
 BIN="/opt/ccguard/bin/ccguard-audit-bin"
 if [ -x "$BIN" ]; then
     exec "$BIN" "$@"
+fi
+
+PY="{py}"
+if [ -x "$PY" ]; then
+    exec "$PY" -m ccguard.agent.audit_main "$@"
 fi
 
 if command -v python3 >/dev/null 2>&1; then
