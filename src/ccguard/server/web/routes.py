@@ -193,6 +193,9 @@ def machine_detail(
     )
     from ccguard.server.web.finding_view import build_explainable_findings
     from ccguard.server.services import mcp_baseline_service
+    from ccguard.server.services.network_findings import (
+        recent_network_cards_for_machine,
+    )
     from ccguard.server.db.models import MCPServerBaseline
     machine = session.get(Machine, machine_id)
     if machine is None:
@@ -290,6 +293,9 @@ def machine_detail(
             "sync_freshness": sync_freshness,
             "mcp_rug_cards": mcp_rug_cards,
             "mcp_baseline_status": status_by_name,
+            "network_suspicious_cards": recent_network_cards_for_machine(
+                session, machine_id
+            ),
             "csrf_token": _csrf_for(request),
         },
     )
@@ -1251,6 +1257,28 @@ def _settings_context(request: Request, session: Session, user: str) -> dict:
             select(ScanResult).order_by(ScanResult.scanned_at.desc()).limit(10)  # type: ignore[attr-defined]
         )
     )
+    # P1 / Suspicious network calls: read-only view of active network
+    # allowlist from the latest published policy. Источник истины — YAML под
+    # ~/.ccguard/policy.yaml (см. settings.html section). Edit-UI оставлен в
+    # YAML до v0.3 (см. TODO).
+    network_allowlist: list[str] = []
+    try:
+        from ccguard.server.db.models import PolicyVersion
+        import yaml as _yaml
+        pv = session.exec(
+            select(PolicyVersion)
+            .where(PolicyVersion.status == "published")
+            .order_by(PolicyVersion.revision.desc())  # type: ignore[attr-defined]
+            .limit(1)
+        ).first()
+        if pv is not None:
+            data = _yaml.safe_load(pv.yaml_text) or {}
+            network_allowlist = list(
+                (data.get("network") or {}).get("allowlist_hosts") or []
+            )
+    except Exception:
+        # graceful — пустой список лучше, чем 500 на /settings.
+        network_allowlist = []
     # initial-render values for the inline usage counter
     usage = _llm_usage_summary(session)
     return {
@@ -1267,6 +1295,7 @@ def _settings_context(request: Request, session: Session, user: str) -> dict:
         },
         "enforcement_mode": enforcement_mode,
         "scans": scans,
+        "network_allowlist": network_allowlist,
         # variables consumed by the inline-included _llm_usage_counter.html
         "enabled": usage["enabled"],
         "used": usage["used"],

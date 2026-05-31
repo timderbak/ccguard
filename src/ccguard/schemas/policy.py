@@ -51,10 +51,196 @@ class McpServersPolicy(RuleBase):
     deny_all_unknown: bool = False
 
 
+class SuspiciousHostRule(SchemaBase):
+    """Realtime PreToolUse-проверка сетевого target'а (P1 — Suspicious network calls).
+
+    Зеркало :class:`DangerousBashRule`, но для URL/hostname. Выделено в
+    отдельный каталог потому что:
+
+    * Цель не bash-команда, а URL — нужен URL-aware match
+      (``discord.com/api/webhooks/*`` против host+path).
+    * Спец-id'шники (``egress/ip-as-host``, ``egress/private-ip``) — это
+      не fnmatch/regex, а вызов отдельного детектора в коде enforce.
+
+    severity=warn → не блокирует, но добавляет signal-метку в
+    EnforceDecision.warning_signals и попадает в finding-буфер.
+    """
+
+    id: str = Field(min_length=1, max_length=128)
+    pattern: str = Field(min_length=1, max_length=1024)
+    type: Literal["glob", "regex"] = "glob"
+    severity: Literal["warn", "block"] = "block"
+    title: str = Field(min_length=1, max_length=256)
+    reason: str = Field(min_length=1, max_length=512)
+    remediation: str = Field(min_length=1, max_length=512)
+
+
+def _default_suspicious_host_rules() -> list[SuspiciousHostRule]:
+    """Дефолтный набор Suspicious Host правил.
+
+    Категории:
+
+    * Pastebin-like — block (классический exfil/loader канал).
+    * Discord/Telegram/Slack webhooks — block (bot API exfil).
+    * Raw github gists — warn (часто легитимно: install скрипты, README).
+    * IP-as-host — warn (часто легитимно: localhost/cnc-симптом).
+    * Private IP — warn.
+
+    Pattern для ip-as-host / private-ip — placeholder ``__detector__``:
+    специальная логика в ``_decide_web`` обходит fnmatch/regex и
+    использует ``detect_ip_as_host`` / ``is_private_ip``.
+    """
+    pastebin_hosts = [
+        "pastebin.com",
+        "*.pastebin.com",
+        "paste.ee",
+        "hastebin.com",
+        "dpaste.com",
+        "ix.io",
+        "0x0.st",
+        "transfer.sh",
+        "pixeldrain.com",
+    ]
+    rules: list[SuspiciousHostRule] = []
+    for host in pastebin_hosts:
+        rules.append(
+            SuspiciousHostRule(
+                id="egress/pastebin",
+                pattern=host,
+                type="glob",
+                severity="block",
+                title="Загрузка с pastebin-подобного сервиса",
+                reason=(
+                    "Pastebin и аналоги — типичный канал доставки вредоносных "
+                    "скриптов и exfiltration данных."
+                ),
+                remediation=(
+                    "Если знаешь зачем именно этот ресурс — добавь его в "
+                    "network.allowlist_hosts. Иначе откажи."
+                ),
+            )
+        )
+    rules.extend(
+        [
+            SuspiciousHostRule(
+                id="egress/discord-webhook",
+                pattern="discord.com/api/webhooks/*",
+                type="glob",
+                severity="block",
+                title="Discord webhook",
+                reason=(
+                    "Discord webhook — популярный канал exfiltration: данные "
+                    "уходят в чужой чат без аудита."
+                ),
+                remediation=(
+                    "Используй внутренний коммуникационный канал организации."
+                ),
+            ),
+            SuspiciousHostRule(
+                id="egress/telegram-bot",
+                pattern="api.telegram.org/bot*",
+                type="glob",
+                severity="block",
+                title="Telegram bot API",
+                reason=(
+                    "Telegram Bot API — частый exfil-канал для stealer'ов и "
+                    "RAT'ов."
+                ),
+                remediation=(
+                    "Запрети по умолчанию. Если есть легитимный use-case — "
+                    "явно добавь в allowlist."
+                ),
+            ),
+            SuspiciousHostRule(
+                id="egress/slack-webhook",
+                pattern="hooks.slack.com/services/*",
+                type="glob",
+                severity="block",
+                title="Slack incoming webhook",
+                reason=(
+                    "Slack webhook без аутентификации — exfil-вектор: данные "
+                    "уходят в произвольный workspace."
+                ),
+                remediation=(
+                    "Используй авторизованный Slack Bot вместо incoming webhook."
+                ),
+            ),
+            SuspiciousHostRule(
+                id="egress/raw-gist",
+                pattern="raw.githubusercontent.com",
+                type="glob",
+                severity="warn",
+                title="Скачивание raw-файла из GitHub gist/repo",
+                reason=(
+                    "raw.githubusercontent.com часто используется install-"
+                    "скриптами и легитимен, но через него же доставляют "
+                    "malware из вредоносных gists."
+                ),
+                remediation=(
+                    "Проверь, что репозиторий/gist принадлежит ожидаемому "
+                    "автору и содержимое выглядит безобидно."
+                ),
+            ),
+            SuspiciousHostRule(
+                id="egress/raw-gist",
+                pattern="gist.githubusercontent.com",
+                type="glob",
+                severity="warn",
+                title="Скачивание raw-файла из GitHub gist",
+                reason=(
+                    "gist.githubusercontent.com — частый канал доставки "
+                    "одноразовых install-скриптов."
+                ),
+                remediation=(
+                    "Проверь автора gist и содержимое перед запуском."
+                ),
+            ),
+            SuspiciousHostRule(
+                id="egress/ip-as-host",
+                pattern="__detector__",
+                type="regex",
+                severity="warn",
+                title="IP-адрес вместо доменного имени",
+                reason=(
+                    "Обращение по IP (особенно обфусцированному hex/decimal) "
+                    "обходит DNS-логирование и часто признак CnC-связи."
+                ),
+                remediation=(
+                    "Используй DNS-имя. Если IP легитимный — добавь его в "
+                    "network.allowlist_hosts."
+                ),
+            ),
+            SuspiciousHostRule(
+                id="egress/private-ip",
+                pattern="__detector__",
+                type="regex",
+                severity="warn",
+                title="Обращение к private IP",
+                reason=(
+                    "Запросы на 10.*/172.16-31.*/192.168.*/127.* часто "
+                    "легитимны (локальная разработка), но иногда — экспорт "
+                    "к локальному CnC."
+                ),
+                remediation=(
+                    "Если это локальный dev-сервер — добавь его в "
+                    "network.allowlist_hosts, чтобы убрать шум."
+                ),
+            ),
+        ]
+    )
+    return rules
+
+
 class NetworkPolicy(RuleBase):
     allowlist_hosts: list[str] = []
     denylist_hosts: list[str] = []
     deny_all_unknown: bool = False
+    # P1 / Suspicious network calls: каталог подозрительных host'ов с
+    # понятным «почему» и «что делать». Дефолты — factory'ём, чтобы
+    # Pydantic не шарил mutable между Policy-инстансами.
+    suspicious_host_rules: list[SuspiciousHostRule] = Field(
+        default_factory=_default_suspicious_host_rules
+    )
 
 
 class DangerousBashRule(SchemaBase):
