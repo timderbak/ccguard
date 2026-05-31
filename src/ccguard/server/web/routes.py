@@ -151,6 +151,23 @@ def machines_list(
     )
 
 
+@router.get("/admin/install-agent", response_class=HTMLResponse)
+def install_agent_page(
+    request: Request,
+    user: str = Depends(require_session),
+) -> HTMLResponse:
+    """Static onboarding page: how to install the ccguard agent on a dev box.
+
+    Linked from empty-state CTAs on /machines and / (overview) so a fresh
+    instance has a clear next step instead of a silent dashboard.
+    """
+    return templates.TemplateResponse(
+        request,
+        "install_agent.html",
+        {"user": user, "csrf_token": _csrf_for(request)},
+    )
+
+
 @router.get("/machines/{machine_id}", response_class=HTMLResponse)
 def machine_detail(
     request: Request,

@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}ccguard — установка агента{% endblock %}
+{% block content %}
+<header class="mb-7">
+    <p class="cc-eyebrow mb-2">Онбординг · Агент</p>
+    <h2 class="text-2xl font-semibold tracking-tight">Установка агента ccguard</h2>
+    <p class="text-slate-500 text-sm mt-1.5 max-w-2xl">
+        Агент — это endpoint-часть ccguard, которая сканит конфигурацию Claude Code на машине разработчика,
+        отправляет inventory на сервер и применяет политику (PreToolUse hook).
+        После установки агент зарегистрируется при первом <code class="cc-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">ccguard sync</code> и появится на странице
+        <a href="/machines" class="text-emerald-700 hover:underline">Машины</a>.
+    </p>
+</header>
+
+<div class="space-y-5">
+
+    <!-- Шаг 1: где взять токен -->
+    <section class="bg-white rounded-xl shadow p-6">
+        <div class="flex items-start gap-3">
+            <span class="grid place-items-center w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 cc-mono text-xs font-semibold shrink-0">1</span>
+            <div class="flex-1 min-w-0">
+                <h3 class="text-base font-semibold text-slate-800">Получи agent-токен</h3>
+                <p class="text-sm text-slate-600 mt-1.5 leading-relaxed">
+                    На странице <a href="/settings" class="text-emerald-700 hover:underline">Настройки → Токены агентов</a>
+                    создай новый токен с понятным label (например, имя машины: <code class="cc-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">laptop-tim</code>).
+                    Токен показывается один раз — скопируй сразу в безопасное место.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Шаг 2: локально (dev-машина) -->
+    <section class="bg-white rounded-xl shadow p-6">
+        <div class="flex items-start gap-3">
+            <span class="grid place-items-center w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 cc-mono text-xs font-semibold shrink-0">2a</span>
+            <div class="flex-1 min-w-0">
+                <h3 class="text-base font-semibold text-slate-800">Локальный запуск (для разработки)</h3>
+                <p class="text-sm text-slate-600 mt-1.5">Если репозиторий уже склонен на эту же машину:</p>
+                <pre class="cc-mono text-xs bg-slate-900 text-slate-100 rounded-lg p-4 mt-3 overflow-x-auto leading-relaxed"># из корня репо
+pip install -e .
+
+# зарегистрировать PreToolUse hook в settings.json Claude Code
+ccguard install --scope user
+
+# отредактировать конфиг: вписать server.url и token
+$EDITOR ~/.ccguard/config.yaml
+# server:
+#   url: http://localhost:8000
+#   token: ccg_xxxxxxxxxxxx     # из шага 1
+
+# первый sync — зарегистрирует машину
+ccguard sync</pre>
+            </div>
+        </div>
+    </section>
+
+    <!-- Шаг 3: удалённый сервер -->
+    <section class="bg-white rounded-xl shadow p-6">
+        <div class="flex items-start gap-3">
+            <span class="grid place-items-center w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 cc-mono text-xs font-semibold shrink-0">2b</span>
+            <div class="flex-1 min-w-0">
+                <h3 class="text-base font-semibold text-slate-800">На удалённую dev-машину</h3>
+                <p class="text-sm text-slate-600 mt-1.5">
+                    Скопируй snippet ниже, подставь свои <code class="cc-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">SERVER_URL</code> и
+                    <code class="cc-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">TOKEN</code>, выполни на целевой машине под пользователем разработчика
+                    (не под root — агент живёт в <code class="cc-mono text-xs bg-slate-100 px-1.5 py-0.5 rounded">~/.ccguard</code>).
+                </p>
+                <pre class="cc-mono text-xs bg-slate-900 text-slate-100 rounded-lg p-4 mt-3 overflow-x-auto leading-relaxed">export SERVER_URL="https://ccguard.example.com"
+export TOKEN="ccg_xxxxxxxxxxxx"
+
+# TODO: replace with public release URL once published.
+# Пока репо приватный — используй git+ssh или скопируй колесо вручную.
+pip install --user git+https://github.com/timderbak/ccguard.git
+
+# хук в Claude Code (для текущего юзера)
+ccguard install --scope user
+
+# конфиг
+mkdir -p ~/.ccguard
+cat &gt; ~/.ccguard/config.yaml &lt;&lt;EOF
+server:
+  url: $SERVER_URL
+  token: $TOKEN
+EOF
+
+# фоновый daemon (launchd на macOS / systemd --user на Linux)
+ccguard-daemon install
+ccguard-daemon start
+
+# проверить
+ccguard sync</pre>
+                <p class="text-xs text-slate-500 mt-3 leading-relaxed">
+                    После первого успешного sync машина появится во вкладке <a href="/machines" class="text-emerald-700 hover:underline">Машины</a>.
+                    Daemon будет синкаться каждые ~5 минут.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Шаг 4: проверка -->
+    <section class="bg-white rounded-xl shadow p-6">
+        <div class="flex items-start gap-3">
+            <span class="grid place-items-center w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 cc-mono text-xs font-semibold shrink-0">3</span>
+            <div class="flex-1 min-w-0">
+                <h3 class="text-base font-semibold text-slate-800">Проверь, что всё подключено</h3>
+                <ul class="text-sm text-slate-600 mt-1.5 space-y-1.5 list-disc list-inside leading-relaxed">
+                    <li>На странице <a href="/machines" class="text-emerald-700 hover:underline">Машины</a> появилась запись с label из конфига.</li>
+                    <li>В разделе <a href="/audit" class="text-emerald-700 hover:underline">Аудит</a> начали приходить события (если разработчик уже работает с Claude Code).</li>
+                    <li>На <a href="/admin/skills" class="text-emerald-700 hover:underline">Скан скиллов</a> появились результаты LLM-сканера (если он включён в Настройках).</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <!-- Дев-подсказка -->
+    <section class="bg-slate-50 rounded-xl border border-slate-200 p-5">
+        <p class="cc-eyebrow mb-2 text-slate-500">Для разработки</p>
+        <p class="text-sm text-slate-600 leading-relaxed">
+            Чтобы посмотреть, как UI выглядит «с данными», не подключая реальный агент, запусти opt-in seed:
+        </p>
+        <pre class="cc-mono text-xs bg-slate-900 text-slate-100 rounded-lg p-4 mt-3 overflow-x-auto">ccguard seed-demo --help</pre>
+        <p class="text-xs text-slate-500 mt-2">Создаёт demo-машину и серию синтетических событий. Только для локальной разработки.</p>
+    </section>
+
+</div>
+{% endblock %}
