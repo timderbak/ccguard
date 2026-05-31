@@ -176,6 +176,17 @@ def machine_detail(
     risk_series = get_risk_history_14d(session, machine_id)
     risk_max = max((p["score"] for p in risk_series), default=0.0)
     suppressions = suppression_service.list_for_machine(session, machine_id=machine_id)
+    # D3: sync freshness badge — bucket + human label from last_seen.
+    from ccguard.server.services._utc import aware_utc as _aware_utc
+    _now_dt = datetime.now(UTC)
+    _delta = _now_dt - _aware_utc(machine.last_seen)
+    _mins = int(_delta.total_seconds() // 60)
+    if _mins < 30:
+        sync_freshness = {"bucket": "fresh", "label": f"{_mins} мин назад"}
+    elif _mins < 24 * 60:
+        sync_freshness = {"bucket": "stale", "label": f"{_mins // 60} ч назад"}
+    else:
+        sync_freshness = {"bucket": "missing", "label": f"{_mins // (24 * 60)} дн назад"}
     # Per-user attribution: top actors on this machine in the last 7 days.
     from ccguard.server.db.models import ToolUseEvent as _TUE
     from sqlalchemy import func as _func
@@ -215,6 +226,7 @@ def machine_detail(
             "risk_max": risk_max,
             "suppressions": suppressions,
             "top_actors": top_actors,
+            "sync_freshness": sync_freshness,
             "csrf_token": _csrf_for(request),
         },
     )
