@@ -140,6 +140,7 @@ def test_rescan_returns_single_tr_partial(admin_client) -> None:
         f"/admin/scan/{fh}/rescan",
         data={"csrf_token": csrf},
         cookies={"ccg_session": sid},
+        headers={"HX-Request": "true"},
         follow_redirects=False,
     )
     assert r.status_code == 200
@@ -172,6 +173,7 @@ def test_rescan_when_budget_exhausted_inline_notice(admin_client) -> None:
         f"/admin/scan/{fh}/rescan",
         data={"csrf_token": csrf},
         cookies={"ccg_session": sid},
+        headers={"HX-Request": "true"},
         follow_redirects=False,
     )
     assert r.status_code == 200
@@ -188,6 +190,7 @@ def test_rescan_when_scanner_disabled_inline_notice(admin_client) -> None:
         f"/admin/scan/{fh}/rescan",
         data={"csrf_token": csrf},
         cookies={"ccg_session": sid},
+        headers={"HX-Request": "true"},
         follow_redirects=False,
     )
     assert r.status_code == 200

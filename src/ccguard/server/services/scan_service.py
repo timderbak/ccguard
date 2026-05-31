@@ -237,6 +237,16 @@ class ScanService:
                     select(ScanResult).where(ScanResult.file_hash == file_hash)
                 ).one_or_none()
                 ttl = now + CACHE_TTL
+                # Detailed rationale fields are truncated by the LLM client
+                # already, but cap defensively here too — persistence is the
+                # last gate before the DB column constraint.
+                explanation = (outcome.explanation or None)
+                if explanation is not None:
+                    explanation = explanation[:2000]
+                quoted_snippet = (outcome.quoted_snippet or None)
+                if quoted_snippet is not None:
+                    quoted_snippet = quoted_snippet[:500]
+
                 if existing is None:
                     row = ScanResult(
                         file_hash=file_hash,
@@ -248,6 +258,8 @@ class ScanService:
                         scanned_at=now,
                         model=outcome.model,
                         ttl_expires_at=ttl,
+                        explanation=explanation,
+                        quoted_snippet=quoted_snippet,
                     )
                     s.add(row)
                 else:
@@ -259,6 +271,8 @@ class ScanService:
                     existing.scanned_at = now
                     existing.model = outcome.model
                     existing.ttl_expires_at = ttl
+                    existing.explanation = explanation
+                    existing.quoted_snippet = quoted_snippet
                     s.add(existing)
                     row = existing
 

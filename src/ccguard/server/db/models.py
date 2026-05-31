@@ -199,6 +199,14 @@ class ScanResult(SQLModel, table=True):
     scanned_at: datetime = Field(default_factory=_utcnow, index=True)
     model: str
     ttl_expires_at: datetime = Field(index=True)
+    # Detailed rationale fields (feat/skills-detailed-rationale). Optional so
+    # rows produced by pre-feature scanners keep loading; backfilled on next
+    # rescan. The LLM tool-use schema requests these; the parser tolerates
+    # absence so older Anthropic models that ignore the new field still work.
+    # Caps mirror the LLM tool input_schema (2000 / 500); the scanner truncates
+    # before persist so a misbehaving model cannot blow past the column type.
+    explanation: str | None = Field(default=None, max_length=2000)
+    quoted_snippet: str | None = Field(default=None, max_length=500)
 
 
 class LLMCallLog(SQLModel, table=True):
