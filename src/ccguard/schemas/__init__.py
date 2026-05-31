@@ -28,6 +28,7 @@ from ccguard.schemas.policy import (
     Policy,
     PolicyMeta,
     SkillsPolicy,
+    SuspiciousHostRule,
 )
 from ccguard.schemas.sync import SyncPayload
 
@@ -56,5 +57,6 @@ __all__ = [
     "Severity",
     "SkillEntry",
     "SkillsPolicy",
+    "SuspiciousHostRule",
     "SyncPayload",
 ]

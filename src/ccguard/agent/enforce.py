@@ -17,7 +17,9 @@ from urllib.parse import urlparse
 import yaml
 
 from ccguard.agent.audit import make_audit_logger, write_audit
+from ccguard.agent.bash_url_parser import extract_urls_from_command
 from ccguard.agent.findings_hook.buffer import emit_finding
+from ccguard.agent.network_utils import detect_ip_as_host, is_private_ip
 from ccguard.agent.prompt_injection_engine import ScanResult
 from ccguard.agent.prompt_injection_engine import scan as pi_scan
 from ccguard.schemas import (
@@ -156,6 +158,27 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
         # тоже отработают (включая последующий block в denylist).
         warning_signals.append(rid)
 
+    # P1 / Suspicious network calls: если команда вытаскивает URL через
+    # curl/wget/http/nc — проверяем хост по тому же каталогу, что и WebFetch.
+    # Делаем ПОСЛЕ dangerous_patterns (у них своя структурированная reason),
+    # но ПЕРЕД always_deny/denylist (хотим показать понятный «почему» вместо
+    # голого regex).
+    urls = extract_urls_from_command(command)
+    for u in urls:
+        decision, net_warnings = _check_network_target(u, policy)
+        for w in net_warnings:
+            if w not in warning_signals:
+                warning_signals.append(w)
+        if decision is not None and decision.permission == "deny":
+            # Возвращаем deny с warning_signals (как накопили + те, что
+            # пришли из _check_network_target).
+            return EnforceDecision(
+                permission="deny",
+                reason=decision.reason,
+                rule_id=decision.rule_id,
+                warning_signals=warning_signals,
+            )
+
     for pat in _compile_regexes(pol.always_deny):
         if pat.search(command):
             return EnforceDecision(
@@ -209,32 +232,126 @@ def _decide_mcp(tool_name: str, policy: Policy) -> EnforceDecision:
     return EnforceDecision(permission="allow", reason="ok")
 
 
+def _parse_url(url: str) -> tuple[str, str] | None:
+    """Возвращает (hostname, host_path) или None если URL не разобран.
+
+    ``host_path`` = ``hostname + path`` (без схемы/query) — для URL-aware
+    fnmatch вроде ``discord.com/api/webhooks/*``.
+
+    Также принимает голый host (``1.2.3.4`` / ``example.com:8080``) —
+    оборачиваем в http:// чтобы urlparse корректно вытащил hostname.
+    """
+    if not isinstance(url, str) or not url:
+        return None
+    candidate = url
+    if "://" not in candidate:
+        candidate = "http://" + candidate
+    try:
+        parsed = urlparse(candidate)
+    except ValueError:
+        return None
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return None
+    path = parsed.path or ""
+    return host, f"{host}{path}"
+
+
+def _suspicious_match(rule: Any, host: str, host_path: str) -> bool:
+    """Проверить SuspiciousHostRule против hostname/host_path.
+
+    Спец-id'шники для детекторов (``egress/ip-as-host``, ``egress/private-ip``)
+    обходят pattern-match и зовут хелперы из network_utils.
+    """
+    if rule.id == "egress/ip-as-host":
+        return detect_ip_as_host(host)
+    if rule.id == "egress/private-ip":
+        return is_private_ip(host)
+    pat = rule.pattern
+    if rule.type == "glob":
+        # URL-aware: если в pattern есть '/', матчим против host_path,
+        # иначе только против host.
+        target = host_path if "/" in pat else host
+        return fnmatch.fnmatchcase(target.lower(), pat.lower())
+    if rule.type == "regex":
+        compiled = _compile_one(pat)
+        if compiled is None:
+            return False
+        target = host_path if "/" in pat else host
+        return bool(compiled.search(target))
+    return False
+
+
+def _check_network_target(
+    url: str, policy: Policy
+) -> tuple[EnforceDecision | None, list[str]]:
+    """Проверить URL/host против network policy.
+
+    Возвращает ``(decision_or_None, warning_signals)``:
+
+    * ``decision`` != None → терминальное решение (deny от denylist /
+      whitelist mode / suspicious block). Вызывающий должен сразу его вернуть.
+    * ``decision`` is None → нет блока, но могут быть warning_signals
+      (suspicious severity=warn). Вызывающий копит их и решает дальше.
+    """
+    warnings: list[str] = []
+    parsed = _parse_url(url)
+    if parsed is None:
+        return None, warnings
+    host, host_path = parsed
+    pol = policy.network
+    for pat in pol.denylist_hosts:
+        if _host_match(host, pat):
+            return (
+                EnforceDecision(
+                    permission="deny",
+                    reason=f"host '{host}' мэтчит denylist '{pat}'",
+                    rule_id="network.denylist",
+                ),
+                warnings,
+            )
+    if pol.deny_all_unknown:
+        if not any(_host_match(host, pat) for pat in pol.allowlist_hosts):
+            return (
+                EnforceDecision(
+                    permission="deny",
+                    reason=f"host '{host}' не в allowlist (whitelist mode)",
+                    rule_id="network.unknown",
+                ),
+                warnings,
+            )
+    # Suspicious host catalog.
+    # Если host явно в allowlist — пропускаем suspicious checks (admin сказал OK).
+    if any(_host_match(host, pat) for pat in pol.allowlist_hosts):
+        return None, warnings
+    for rule in pol.suspicious_host_rules:
+        if not _suspicious_match(rule, host, host_path):
+            continue
+        rid = f"network.suspicious.{rule.id}"
+        if rule.severity == "block":
+            return (
+                EnforceDecision(
+                    permission="deny",
+                    reason=f"{rule.title}. {rule.reason} {rule.remediation}",
+                    rule_id=rid,
+                    warning_signals=warnings,
+                ),
+                warnings,
+            )
+        # warn — копим и идём дальше (другие правила могут заблочить).
+        if rid not in warnings:
+            warnings.append(rid)
+    return None, warnings
+
+
 def _decide_web(tool_input: dict, policy: Policy) -> EnforceDecision:
     url = tool_input.get("url")
     if not isinstance(url, str) or not url:
         return EnforceDecision(permission="allow", reason="no url")
-    try:
-        host = (urlparse(url).hostname or "").lower()
-    except ValueError:
-        return EnforceDecision(permission="allow", reason="malformed url")
-    if not host:
-        return EnforceDecision(permission="allow", reason="no host")
-    pol = policy.network
-    for pat in pol.denylist_hosts:
-        if _host_match(host, pat):
-            return EnforceDecision(
-                permission="deny",
-                reason=f"host '{host}' мэтчит denylist '{pat}'",
-                rule_id="network.denylist",
-            )
-    if pol.deny_all_unknown:
-        if not any(_host_match(host, pat) for pat in pol.allowlist_hosts):
-            return EnforceDecision(
-                permission="deny",
-                reason=f"host '{host}' не в allowlist (whitelist mode)",
-                rule_id="network.unknown",
-            )
-    return EnforceDecision(permission="allow", reason="ok")
+    decision, warnings = _check_network_target(url, policy)
+    if decision is not None:
+        return decision
+    return EnforceDecision(permission="allow", reason="ok", warning_signals=warnings)
 
 
 def _apply_enforcement_mode(decision: EnforceDecision, policy: Policy) -> EnforceDecision:
