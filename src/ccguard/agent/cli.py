@@ -247,5 +247,94 @@ def report(
         typer.echo(build_text_report(inv, findings))
 
 
+@app.command("seed-demo")
+def seed_demo(
+    server_url: str = typer.Option(
+        "http://localhost:8000",
+        "--server-url",
+        envvar="CCGUARD_SERVER_URL",
+        help="URL сервера ccguard.",
+    ),
+    token: str = typer.Option(
+        "",
+        "--token",
+        envvar="CCGUARD_AGENT_TOKEN",
+        help="Agent-токен (создай на /settings).",
+    ),
+    scenario: str = typer.Option(
+        "kill_chain",
+        "--scenario",
+        help="Имя сценария из scripts/attack_simulator.py (например, kill_chain, recon, mix).",
+    ),
+    machine: str = typer.Option(
+        "m-demo-laptop",
+        "--machine",
+        help="machine_id для demo-машины (получит суффикс (demo) в label на сервере).",
+    ),
+) -> None:
+    """Создать демо-данные для пустого инстанса. Только для разработки.
+
+    Запускает scripts/attack_simulator.py с дефолтным сценарием, чтобы пустой
+    UI наполнился реалистично выглядящими событиями + одной demo-машиной.
+    Команда явно opt-in и НЕ зовётся автоматически ни откуда.
+    """
+    import importlib.util
+    import os
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    if not token:
+        typer.echo(
+            "Нужен --token или env CCGUARD_AGENT_TOKEN (создай на /settings).",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    # Найти scripts/attack_simulator.py относительно установленного пакета.
+    # TODO: при packaged-релизе перенести scenarios внутрь пакета,
+    #       а CLI оставить как тонкую обёртку.
+    repo_root = _Path(__file__).resolve().parents[3]
+    sim_path = repo_root / "scripts" / "attack_simulator.py"
+    if not sim_path.exists():
+        typer.echo(
+            f"attack_simulator.py не найден: {sim_path}. "
+            "Запускай seed-demo из репозитория (pip install -e .).",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+
+    typer.echo(f"[seed-demo] scenario={scenario} machine={machine} → {server_url}")
+
+    # Загружаем модуль и зовём его main() с подменёнными argv — это явно,
+    # без curl-зависимостей и без shell.
+    spec = importlib.util.spec_from_file_location("_ccguard_attack_sim", sim_path)
+    assert spec and spec.loader  # for type checker
+    mod = importlib.util.module_from_spec(spec)
+    saved_argv = _sys.argv
+    saved_env = dict(os.environ)
+    try:
+        os.environ["CCGUARD_SERVER_URL"] = server_url
+        os.environ["CCGUARD_AGENT_TOKEN"] = token
+        _sys.argv = [
+            str(sim_path),
+            "--scenario", scenario,
+            "--machine", machine,
+            "--server-url", server_url,
+            "--token", token,
+        ]
+        spec.loader.exec_module(mod)
+        rc = mod.main()
+    finally:
+        _sys.argv = saved_argv
+        os.environ.clear()
+        os.environ.update(saved_env)
+
+    if rc:
+        raise typer.Exit(code=int(rc))
+    typer.echo(
+        "[seed-demo] готово. Открой /machines и /audit — должны появиться записи."
+    )
+
+
 if __name__ == "__main__":
     app()
