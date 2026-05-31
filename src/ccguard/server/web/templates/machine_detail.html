@@ -13,6 +13,18 @@
         {{ machine.machine_label or machine.machine_id }}
     </h2>
     <p class="text-slate-500 text-sm mb-0 cc-mono">{{ machine.machine_id }} · {{ machine.agent_version or "-" }} · последний sync {{ machine.last_seen.isoformat(timespec="minutes") }}</p>
+    {% if sync_freshness %}
+    <span class="mt-2 inline-flex items-center gap-1.5 cc-mono text-[10px] uppercase rounded-md px-2 py-0.5 ring-1
+        {% if sync_freshness.bucket == 'fresh' %}bg-emerald-50 text-emerald-700 ring-emerald-200
+        {% elif sync_freshness.bucket == 'stale' %}bg-amber-50 text-amber-700 ring-amber-200
+        {% else %}bg-red-50 text-red-600 ring-red-200{% endif %}">
+        <span class="w-1.5 h-1.5 rounded-full
+            {% if sync_freshness.bucket == 'fresh' %}bg-emerald-500
+            {% elif sync_freshness.bucket == 'stale' %}bg-amber-500
+            {% else %}bg-red-500{% endif %}"></span>
+        sync: {{ sync_freshness.label }}
+    </span>
+    {% endif %}
 </header>
 
 <div class="grid grid-cols-2 gap-6">
