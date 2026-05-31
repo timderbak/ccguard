@@ -232,6 +232,51 @@ def machine_detail(
     )
 
 
+@router.get("/admin/skills", response_class=HTMLResponse)
+def skills_overview(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Fleet-wide LLM scan results for skill + agent artifacts."""
+    from sqlalchemy import func as _func
+    from ccguard.server.db.models import ScanResult
+
+    rows = list(session.exec(
+        select(ScanResult)
+        .order_by(ScanResult.scanned_at.desc())  # type: ignore[attr-defined]
+        .limit(100)
+    ))
+    enriched = [
+        {
+            "file_path": r.file_path,
+            "scope": r.scope,
+            "category": r.category,
+            "risk_score": r.risk_score,
+            "scanned_at": r.scanned_at,
+            "suspicious": r.risk_score >= 40,
+        }
+        for r in rows
+    ]
+    total = int(session.exec(select(_func.count()).select_from(ScanResult)).one())
+    suspicious = int(session.exec(
+        select(_func.count()).select_from(ScanResult).where(ScanResult.risk_score >= 40)
+    ).one())
+    unique = int(session.exec(
+        select(_func.count(_func.distinct(ScanResult.file_hash)))
+    ).one())
+    return templates.TemplateResponse(
+        request,
+        "skills_overview.html",
+        {
+            "user": user,
+            "rows": enriched,
+            "stats": {"total": total, "suspicious": suspicious, "unique": unique},
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
 @router.get("/admin/proposed-signals", response_class=HTMLResponse)
 def proposed_signals_page(
     request: Request,
