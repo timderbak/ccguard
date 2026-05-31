@@ -43,6 +43,14 @@ _LLM_SCANNER_INDEX_DDL: tuple[str, ...] = (
     "ON scanresult(scanned_at DESC)",
 )
 
+# Composite unique index for MCPServerBaseline (feat/mcp-rug-pull). Same
+# idempotent pattern as MachineBaseline — one baseline row per
+# (machine_id, mcp_name).
+_MCP_BASELINE_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_mcpserverbaseline_machine_name "
+    "ON mcpserverbaseline(machine_id, mcp_name)",
+)
+
 
 def make_engine(db_url: str) -> Engine:
     """Создать engine. Для SQLite — включить WAL и foreign_keys."""
@@ -77,6 +85,8 @@ def init_db(engine: Engine) -> None:
         for ddl in _MACHINE_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
         for ddl in _LLM_SCANNER_INDEX_DDL:
+            conn.execute(text(ddl))
+        for ddl in _MCP_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
 
 

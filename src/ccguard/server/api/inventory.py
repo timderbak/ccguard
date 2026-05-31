@@ -10,6 +10,7 @@ from sqlmodel import Session
 from ccguard.schemas import SyncPayload
 from ccguard.server.api.deps import get_session, require_token
 from ccguard.server.db.models import AuditRecord, FindingRecord, InventorySnapshot, Machine
+from ccguard.server.services import mcp_baseline_service
 
 router = APIRouter(prefix="/api/v1")
 
@@ -58,6 +59,17 @@ def post_inventory(
         )
         session.add(rec)
         findings_stored += 1
+
+    # MCP rug-pull detection. Side-effect: creates/updates baselines and
+    # appends FindingRecord rows to the session — committed below with the
+    # rest. We count emitted findings so the response can report them.
+    mcp_rug_findings = mcp_baseline_service.update_and_detect(
+        session,
+        machine_id=inv.machine_id,
+        current_mcps=list(inv.mcp_servers),
+        inventory_id=snapshot.id,
+    )
+    findings_stored += len(mcp_rug_findings)
 
     audit_stored = 0
     for a in payload.audit_events:

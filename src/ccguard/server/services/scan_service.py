@@ -168,7 +168,7 @@ class ScanService:
         self,
         content: str,
         file_path: str,
-        scope: Literal["agent", "skill"],
+        scope: Literal["agent", "skill", "mcp_description"],
         *,
         force_rescan: bool = False,
     ) -> ScanResult:

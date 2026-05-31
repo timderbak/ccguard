@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,29 @@ from typing import Any
 from ccguard.agent.masking import mask_secrets
 from ccguard.agent.scan.settings import ParsedSettings
 from ccguard.schemas import McpServerEntry
+
+
+def _hash_text(text: str | None) -> str | None:
+    """sha256 hexdigest truncated to 16 chars, or None for empty/None input.
+
+    Used as the baseline material for MCP rug pull detection — short hashes
+    are enough for collision-resistance at our scale (<<1M MCP entries).
+    """
+    if not text:
+        return None
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _definition_text(command: str | None, args: list[str], url: str | None) -> str:
+    """Канонический "контракт" MCP-сервера для definition_hash.
+
+    Format: ``"{command} {arg1 arg2 ...} | {url}"``. Stable, language-free,
+    independent of dict-ordering.
+    """
+    cmd = command or ""
+    args_str = " ".join(args)
+    url_s = url or ""
+    return f"{cmd} {args_str} | {url_s}"
 
 
 def _classify_transport(spec: dict[str, Any]) -> str:
@@ -36,6 +60,13 @@ def _entry_from_spec(name: str, spec: dict[str, Any], source: str) -> McpServerE
     command = mask_secrets(raw_cmd) if isinstance(raw_cmd, str) else raw_cmd
     raw_url = spec.get("url")
     url = mask_secrets(raw_url) if isinstance(raw_url, str) else raw_url
+    # MCP rug pull detection: capture description (if present in config) +
+    # compute baseline hashes. Description may live in the MCP spec itself
+    # (some plugins write it into ~/.claude.json); otherwise stays None.
+    raw_desc = spec.get("description")
+    description = raw_desc if isinstance(raw_desc, str) else None
+    description_hash = _hash_text(description)
+    definition_hash = _hash_text(_definition_text(command, args, url))
     return McpServerEntry(
         name=name,
         transport=transport,  # type: ignore[arg-type]
@@ -44,6 +75,9 @@ def _entry_from_spec(name: str, spec: dict[str, Any], source: str) -> McpServerE
         url=url,
         env_keys=env_keys,
         source=source,
+        description=description,
+        description_hash=description_hash,
+        definition_hash=definition_hash,
     )
 
 
