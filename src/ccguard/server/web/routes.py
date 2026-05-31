@@ -312,6 +312,14 @@ def skills_overview(
             "risk_score": r.risk_score,
             "scanned_at": r.scanned_at,
             "suspicious": r.risk_score >= 40,
+            # Detailed rationale (feat/skills-detailed-rationale). Backward-
+            # compat: rows scanned before the field existed report None.
+            "rationale": r.rationale,
+            "explanation": getattr(r, "explanation", None),
+            "quoted_snippet": getattr(r, "quoted_snippet", None),
+            "model": r.model,
+            "file_hash": r.file_hash,
+            "ttl_expires_at": r.ttl_expires_at,
         }
         for r in rows
     ]
@@ -1360,6 +1368,13 @@ def admin_scan_rescan(
     scan_row.ttl_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     session.add(scan_row)
     session.commit()
+
+    # Non-HTMX callers (e.g. the /admin/skills detail-row form, where there
+    # may not be a corresponding FindingRecord because the row was below the
+    # finding-emit threshold) just want to land back on the listing page.
+    # HTMX callers (findings_feed) keep the <tr> outerHTML swap.
+    if request.headers.get("HX-Request", "").lower() != "true":
+        return RedirectResponse(url="/admin/skills", status_code=303)
 
     # Pull the latest finding row for this file_hash for the partial render.
     finding_row = session.exec(

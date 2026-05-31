@@ -55,6 +55,29 @@ REPORT_RISK_TOOL: Final[dict[str, Any]] = {
             "risk_score": {"type": "integer", "minimum": 0, "maximum": 100},
             "category": {"type": "string", "enum": list(CATEGORIES)},
             "rationale": {"type": "string", "maxLength": 500},
+            # Detailed reasoning (feat/skills-detailed-rationale). Both
+            # optional: older deployments/models that don't return them keep
+            # parsing cleanly. The UI shows the absent-state gracefully.
+            "explanation": {
+                "type": "string",
+                "maxLength": 2000,
+                "description": (
+                    "2-3 sentence detailed explanation of exactly what is "
+                    "suspicious about the content and why. Plain text, no "
+                    "markdown. Empty / omitted when category is benign."
+                ),
+            },
+            "quoted_snippet": {
+                "type": "string",
+                "maxLength": 500,
+                "description": (
+                    "Exact verbatim substring from the scanned content that "
+                    "best illustrates the risk. Up to ~500 chars. Empty / "
+                    "omitted when nothing in the content is load-bearing "
+                    "(e.g. category is benign, or signal is a structural "
+                    "pattern across the whole file)."
+                ),
+            },
         },
         "required": ["risk_score", "category", "rationale"],
     },
@@ -65,7 +88,12 @@ SYSTEM_PROMPT: Final[str] = (
     "You are a security classifier for AI-agent configuration files "
     "(Claude Code agents and skills). Classify the supplied content into one "
     "risk category and assign a risk_score 0-100. Always respond by invoking "
-    "the `report_risk` tool exactly once. Never reply with prose."
+    "the `report_risk` tool exactly once. Never reply with prose.\n\n"
+    "For non-benign verdicts (risk_score >= 30): include `explanation` with "
+    "2-3 sentences naming the attack technique and why this content is "
+    "suspicious, and `quoted_snippet` with the exact verbatim substring from "
+    "the content that triggered the verdict. Omit both fields when the "
+    "content is benign."
 )
 
 
@@ -83,6 +111,11 @@ class ScanOutcome:
     output_tokens: int
     cost_cents: int
     model: str
+    # Detailed rationale fields (feat/skills-detailed-rationale). Default None
+    # so callers / older mock clients that build a ScanOutcome without these
+    # fields continue to work unchanged.
+    explanation: str | None = None
+    quoted_snippet: str | None = None
 
 
 class LLMClientError(Exception):
@@ -131,6 +164,8 @@ def _synthetic_outcome(
         output_tokens=output_tokens,
         cost_cents=_compute_cost_cents(input_tokens, output_tokens),
         model=MODEL,
+        explanation=None,
+        quoted_snippet=None,
     )
 
 
@@ -189,6 +224,24 @@ def _parse_tool_use(
             output_tokens=output_tokens,
         )
 
+    # Optional detail fields — tolerate absence (older models / older prompts)
+    # and tolerate empty strings (model chose not to elaborate). Defensive
+    # truncate before persist so a misbehaving model cannot blow past the DB
+    # column type. Non-string values are silently dropped to None rather than
+    # tripping the synthetic fail-safe — the core verdict is still valid.
+    explanation_raw = tool_input.get("explanation")
+    explanation = (
+        explanation_raw[:2000]
+        if isinstance(explanation_raw, str) and explanation_raw.strip()
+        else None
+    )
+    snippet_raw = tool_input.get("quoted_snippet")
+    quoted_snippet = (
+        snippet_raw[:500]
+        if isinstance(snippet_raw, str) and snippet_raw.strip()
+        else None
+    )
+
     return ScanOutcome(
         risk_score=risk_score,
         category=category,
@@ -197,6 +250,8 @@ def _parse_tool_use(
         output_tokens=output_tokens,
         cost_cents=_compute_cost_cents(input_tokens, output_tokens),
         model=MODEL,
+        explanation=explanation,
+        quoted_snippet=quoted_snippet,
     )
 
 

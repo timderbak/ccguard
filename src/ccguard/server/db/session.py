@@ -51,6 +51,18 @@ _MCP_BASELINE_INDEX_DDL: tuple[str, ...] = (
     "ON mcpserverbaseline(machine_id, mcp_name)",
 )
 
+# Additive columns for ScanResult (feat/skills-detailed-rationale).
+# ``create_all`` is a no-op on existing tables, so these explicit ALTERs make
+# the new columns appear on pre-feature DBs. SQLite's ``ADD COLUMN`` is the
+# only schema mutation it accepts cleanly, and there is no ``IF NOT EXISTS``
+# clause — so we introspect ``PRAGMA table_info`` and skip if already there
+# (idempotent / safe to re-run on fresh DBs where ``create_all`` already added
+# the column).
+_SCAN_RESULT_RATIONALE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("explanation", "ALTER TABLE scanresult ADD COLUMN explanation TEXT"),
+    ("quoted_snippet", "ALTER TABLE scanresult ADD COLUMN quoted_snippet TEXT"),
+)
+
 
 def make_engine(db_url: str) -> Engine:
     """Создать engine. Для SQLite — включить WAL и foreign_keys."""
@@ -88,6 +100,14 @@ def init_db(engine: Engine) -> None:
             conn.execute(text(ddl))
         for ddl in _MCP_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
+        # Additive ALTERs for ScanResult. SQLite lacks IF NOT EXISTS on
+        # ADD COLUMN — introspect via PRAGMA and skip when already present.
+        existing_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(scanresult)"))
+        }
+        for col_name, ddl in _SCAN_RESULT_RATIONALE_COLUMNS:
+            if col_name not in existing_cols:
+                conn.execute(text(ddl))
 
 
 def session_factory(engine: Engine) -> Iterator[Session]:
