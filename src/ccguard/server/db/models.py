@@ -359,6 +359,34 @@ class SourceFetchLog(SQLModel, table=True):
     proposed_signal_id: int | None = Field(default=None, index=True)
 
 
+class MCPServerBaseline(SQLModel, table=True):
+    """Per-machine MCP server baseline for rug-pull detection.
+
+    One row per (machine_id, mcp_name). Unique constraint installed via
+    DDL in :func:`ccguard.server.db.session.init_db` (mirrors the
+    Phase 2 ``machinebaseline`` pattern — keeps ``create_all`` idempotent
+    against pre-existing tables).
+
+    Hashes are optional so the table can be populated from v0.1 agents that
+    don't yet send ``description_hash`` / ``definition_hash`` — the detection
+    code then skips diffing for that row until the agent upgrades.
+
+    ``description_preview`` is the first 200 chars of the description for UI
+    diffing (we don't store the whole thing — could be long, and privacy is
+    not a concern here since the description is meant to be read by the LLM).
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    mcp_name: str = Field(index=True)
+    transport: str
+    description_hash: str | None = None
+    definition_hash: str | None = None
+    description_preview: str | None = None
+    first_seen_at: datetime = Field(default_factory=_utcnow)
+    last_seen_at: datetime = Field(default_factory=_utcnow)
+
+
 class SettingsRecord(SQLModel, table=True):
     """Key/value store for admin-tunable server settings (Plan 03-01 D-04).
 

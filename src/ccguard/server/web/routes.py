@@ -186,6 +186,8 @@ def machine_detail(
         get_user_scores_today,
     )
     from ccguard.server.web.finding_view import build_explainable_findings
+    from ccguard.server.services import mcp_baseline_service
+    from ccguard.server.db.models import MCPServerBaseline
     machine = session.get(Machine, machine_id)
     if machine is None:
         raise HTTPException(status_code=404)
@@ -231,6 +233,42 @@ def machine_detail(
             "score": score_info.get("score", 0.0),
             "top_signal": score_info.get("top_signal"),
         })
+    # MCP rug pull: load recent findings + baseline status map for this machine.
+    rug_rows = mcp_baseline_service.list_recent_rug_pull_findings(
+        session, machine_id, days=7
+    )
+    mcp_rug_cards: list[dict] = []
+    for r in rug_rows:
+        try:
+            p = json.loads(r.payload_json)
+        except (ValueError, TypeError):
+            p = {}
+        mcp_rug_cards.append({
+            "rule_id": r.rule_id,
+            "severity": r.severity,
+            "discovered_at": r.discovered_at,
+            "mcp_name": p.get("mcp_name") or p.get("matched_value") or "?",
+            "title": p.get("title") or r.rule_id,
+            "description": p.get("description") or "",
+            "recommendation": p.get("recommendation") or "",
+            "old_preview": p.get("old_preview"),
+            "new_preview": p.get("new_preview"),
+            "llm_verdict": p.get("llm_verdict"),
+            "llm_rationale": p.get("llm_rationale"),
+        })
+    baseline_rows = list(session.exec(
+        select(MCPServerBaseline).where(MCPServerBaseline.machine_id == machine_id)
+    ))
+    # Build a per-mcp_name status: 'red' if there's a critical rug pull,
+    # 'amber' if warn, 'green' if baseline exists and no recent findings,
+    # 'none' otherwise.
+    status_by_name: dict[str, str] = {b.mcp_name: "green" for b in baseline_rows}
+    for c in mcp_rug_cards:
+        name = c["mcp_name"]
+        if c["severity"] == "critical":
+            status_by_name[name] = "red"
+        elif c["severity"] == "warn" and status_by_name.get(name) != "red":
+            status_by_name[name] = "amber"
     return templates.TemplateResponse(
         request,
         "machine_detail.html",
@@ -244,6 +282,8 @@ def machine_detail(
             "suppressions": suppressions,
             "top_actors": top_actors,
             "sync_freshness": sync_freshness,
+            "mcp_rug_cards": mcp_rug_cards,
+            "mcp_baseline_status": status_by_name,
             "csrf_token": _csrf_for(request),
         },
     )
@@ -481,6 +521,27 @@ def machine_unsuppress_signal(
     from ccguard.server.services import suppression_service
 
     suppression_service.remove(session, machine_id=machine_id, signal_id=signal_id)
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/mcp-baseline/accept")
+def machine_accept_mcp_baseline(
+    machine_id: str,
+    request: Request,
+    mcp_name: str = Form(...),
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Принять текущий снимок MCP-сервера как новый baseline.
+
+    Используется когда админ подтвердил, что изменение description/definition
+    легитимное (например, плагин действительно выпустил новый релиз и описание
+    обновили). После accept последующий sync с тем же содержимым не будет
+    вызывать новое finding.
+    """
+    from ccguard.server.services import mcp_baseline_service
+    mcp_baseline_service.accept_baseline(session, machine_id, mcp_name)
     return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
 
 

@@ -39,6 +39,12 @@ class McpServerEntry(SchemaBase):
     url: str | None = None
     env_keys: list[str] = []
     source: str
+    # MCP rug pull detection (feat/mcp-rug-pull). All optional so older agents
+    # (v0.1) that don't compute these continue to validate cleanly — server
+    # treats missing values as "no baseline material" and skips diff.
+    description: str | None = None
+    description_hash: str | None = None
+    definition_hash: str | None = None
 
 
 class SkillEntry(SchemaBase):
