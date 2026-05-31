@@ -122,8 +122,12 @@ def overview_page(
 ) -> HTMLResponse:
     from ccguard.server.services.fleet_risk import compute_fleet_risk
     from ccguard.server.services.machine_service import list_machines_with_status
+    from ccguard.server.services.settings_service import get_enforcement_mode
+    from ccguard.server.services.dangerous_findings import todays_blocked_count
     machines = list_machines_with_status(session)
     fleet_risk = compute_fleet_risk(session, limit=10)
+    enforcement_mode = get_enforcement_mode(session)
+    dangerous_today = todays_blocked_count(session)
     return templates.TemplateResponse(
         request,
         "overview.html",
@@ -131,6 +135,8 @@ def overview_page(
             "user": user,
             "machines": machines,
             "fleet_risk": fleet_risk,
+            "enforcement_mode": enforcement_mode,
+            "dangerous_today": dangerous_today,
             "csrf_token": _csrf_for(request),
         },
     )
@@ -1827,6 +1833,27 @@ def _build_sparkline_cell(baseline, labels: list[str]) -> dict:
         "last_value": last_value,
         "is_outlier": is_outlier,
     }
+
+
+@router.get("/_partials/dangerous/overview", response_class=HTMLResponse)
+def dangerous_overview_partial(
+    request: Request,
+    _user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """HTMX-polled card list of the most recent dangerous.* findings.
+
+    Source: FindingRecord rows with rule_id LIKE 'dangerous.%'. Server-side
+    enrichment (reason / remediation lookup) lives in
+    :mod:`ccguard.server.services.dangerous_findings`.
+    """
+    from ccguard.server.services.dangerous_findings import recent_dangerous_cards
+    items = recent_dangerous_cards(session, limit=10)
+    return templates.TemplateResponse(
+        request,
+        "components/_dangerous_findings_overview.html",
+        {"items": items},
+    )
 
 
 @router.get("/_partials/anomalies/overview", response_class=HTMLResponse)

@@ -1,0 +1,36 @@
+{# P1 / Dangerous Bash Patterns — лента карточек последних опасных команд.
+   Подгружается htmx-ом из /_partials/dangerous/overview. Каждая карточка
+   несёт title правила, severity, фрагмент команды, «почему опасно» и
+   «что делать». #}
+<h3 class="text-sm font-semibold text-slate-700 mb-3">Опасные Bash-команды</h3>
+{% set items = items if items is defined else [] %}
+{% if items %}
+<ul class="space-y-3" data-testid="dangerous-findings-list">
+  {% for it in items %}
+  <li class="border border-slate-200 rounded-md p-3 bg-slate-50/50">
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span class="cc-sev cc-sev-{{ 'block' if it.severity in ('block','critical') else 'warn' if it.severity == 'warn' else 'info' }}">{{ it.severity }}</span>
+        <span class="font-semibold text-sm text-slate-800">{{ it.title }}</span>
+      </div>
+      <span class="text-xs text-slate-400 cc-mono">{{ it.ts_short }}</span>
+    </div>
+    <div class="text-xs cc-mono text-slate-500 mb-2">
+      <a href="/machines/{{ it.machine_id }}" class="hover:underline">{{ it.machine_id[:12] }}</a>
+      <span class="text-slate-400"> · {{ it.rule_id }}</span>
+    </div>
+    {% if it.command_snippet %}
+    <pre class="bg-white border border-slate-200 rounded p-2 text-xs cc-mono overflow-x-auto mb-2"><code>{{ it.command_snippet }}</code></pre>
+    {% endif %}
+    {% if it.reason %}
+    <p class="text-sm text-slate-700 mb-1"><span class="font-semibold">Почему опасно:</span> {{ it.reason }}</p>
+    {% endif %}
+    {% if it.remediation %}
+    <p class="text-sm text-slate-600"><span class="font-semibold">Что делать:</span> {{ it.remediation }}</p>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="text-sm text-slate-400 py-6 text-center">Опасных команд не зафиксировано.</p>
+{% endif %}

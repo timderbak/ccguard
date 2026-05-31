@@ -11,6 +11,7 @@ import sys
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 
 import yaml
@@ -104,6 +105,24 @@ def _compile_regexes(patterns: list[str]) -> list[re.Pattern[str]]:
     return out
 
 
+@lru_cache(maxsize=512)
+def _compile_one(pattern: str) -> re.Pattern[str] | None:
+    """LRU-кэш одной regex'ы для горячего пути PreToolUse.
+
+    Latency-budget P1: dangerous_patterns содержат 8+ правил, и в стационарном
+    режиме все они одни и те же между вызовами — без кэша мы бы пересобирали
+    их на каждый PreToolUse. ``lru_cache`` на pattern-строке надёжно работает,
+    так как regex-строка иммутабельна и хешируема.
+
+    Возвращает ``None`` на невалидной regex (как и ``_compile_regexes``), чтобы
+    плохое правило в политике не валило весь хук.
+    """
+    try:
+        return re.compile(pattern)
+    except re.error:
+        return None
+
+
 def _host_match(host: str, pattern: str) -> bool:
     if "*" in pattern:
         return fnmatch.fnmatchcase(host.lower(), pattern.lower())
@@ -112,12 +131,38 @@ def _host_match(host: str, pattern: str) -> bool:
 
 def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
     pol = policy.commands
+
+    # P1 / Dangerous Bash Patterns: проверяем СНАЧАЛА — у этих правил есть
+    # «почему опасно» и «что делать», и они должны побеждать always_deny /
+    # denylist в reason'е (понятнее для пользователя).
+    # Severity=warn копится в warning_signals и пробрасывается дальше — НЕ
+    # блокирует, но попадает в audit/finding.
+    warning_signals: list[str] = []
+    for rule in pol.dangerous_patterns:
+        compiled = _compile_one(rule.pattern)
+        if compiled is None:
+            continue
+        if not compiled.search(command):
+            continue
+        rid = f"dangerous.{rule.id}"
+        if rule.severity == "block":
+            return EnforceDecision(
+                permission="deny",
+                reason=f"{rule.title}. {rule.reason} {rule.remediation}",
+                rule_id=rid,
+                warning_signals=warning_signals,
+            )
+        # warn — копим, но не возвращаем сразу: пусть остальные правила
+        # тоже отработают (включая последующий block в denylist).
+        warning_signals.append(rid)
+
     for pat in _compile_regexes(pol.always_deny):
         if pat.search(command):
             return EnforceDecision(
                 permission="deny",
                 reason=f"always_deny: {pat.pattern}",
                 rule_id="commands.always_deny",
+                warning_signals=warning_signals,
             )
     if pol.allowlist_patterns:
         compiled = _compile_regexes(pol.allowlist_patterns)
@@ -126,6 +171,7 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
                 permission="deny",
                 reason="команда не в commands.allowlist_patterns",
                 rule_id="commands.allowlist",
+                warning_signals=warning_signals,
             )
     for pat in _compile_regexes(pol.denylist_patterns):
         if pat.search(command):
@@ -133,8 +179,13 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
                 permission="deny",
                 reason=f"denylist: {pat.pattern}",
                 rule_id="commands.denylist",
+                warning_signals=warning_signals,
             )
-    return EnforceDecision(permission="allow", reason="ok")
+    return EnforceDecision(
+        permission="allow",
+        reason="ok",
+        warning_signals=warning_signals,
+    )
 
 
 def _decide_mcp(tool_name: str, policy: Policy) -> EnforceDecision:
@@ -205,6 +256,7 @@ def _apply_enforcement_mode(decision: EnforceDecision, policy: Policy) -> Enforc
         reason=f"observe-mode override (would deny: {decision.reason})",
         rule_id=decision.rule_id,
         fail_open=decision.fail_open,
+        warning_signals=decision.warning_signals,
     )
 
 
@@ -407,7 +459,77 @@ def run_enforce(
             tool_input_fingerprint=fp,
         ),
     )
+    _emit_dangerous_findings(decision, payload, policy)
     return 0, render_hook_response(decision)
+
+
+def _emit_dangerous_findings(
+    decision: EnforceDecision,
+    payload: EnforceHookInput,
+    policy: Policy,
+) -> None:
+    """Pipe dangerous.* блок-решения и warn-сигналы в findings_buffer.
+
+    Делается ПОСЛЕ записи в audit и обязательно best-effort: buffer-fail не
+    должен превратить успешный allow/deny в crash хука.
+
+    Emit'им:
+    * Сам block (decision.rule_id startswith "dangerous.")
+    * Каждый warning_signal (severity=warn правила, которые не блокировали).
+    * Observe-mode override deny→allow тоже emit'им, если rule_id остался
+      dangerous.* — иначе SOC потеряет видимость в observe-режиме.
+
+    Подкачиваем title/reason/remediation из policy.commands.dangerous_patterns,
+    чтобы матч rule_id → правило. Если правила нет (custom rule_id) — emit'им
+    минимальный finding с rule_id и фрагментом команды.
+    """
+    try:
+        cmd = ""
+        if payload.tool_name == "Bash":
+            raw = payload.tool_input.get("command", "")
+            if isinstance(raw, str):
+                cmd = raw[:200]
+
+        by_id: dict[str, Any] = {
+            f"dangerous.{r.id}": r for r in policy.commands.dangerous_patterns
+        }
+
+        emitted_ids: set[str] = set()
+
+        def _emit(rule_id: str, severity: str) -> None:
+            if rule_id in emitted_ids:
+                return
+            emitted_ids.add(rule_id)
+            rule = by_id.get(rule_id)
+            title = (
+                rule.title
+                if rule is not None
+                else f"Опасная Bash-команда ({rule_id})"
+            )
+            try:
+                emit_finding(
+                    rule_id=rule_id,
+                    severity=severity,
+                    title=title,
+                    source="dangerous_bash",
+                    matched_pattern=cmd or rule_id,
+                    tool_name=payload.tool_name,
+                )
+            except Exception:
+                # buffer недоступен → silent fail, hook остаётся живым.
+                pass
+
+        # block-уровень: decision.rule_id может быть dangerous.* при deny ИЛИ
+        # при observe-mode override (permission=allow, rule_id сохранён).
+        rid = decision.rule_id or ""
+        if rid.startswith("dangerous."):
+            _emit(rid, "block")
+
+        for w in decision.warning_signals:
+            _emit(w, "warn")
+    except Exception:
+        # Defensive — finding emission НЕ должен ломать enforce.
+        return
 
 
 def main_cli(
