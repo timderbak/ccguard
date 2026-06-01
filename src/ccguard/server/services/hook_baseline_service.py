@@ -229,25 +229,50 @@ def update_and_detect(
         # Existing slot, fingerprint mismatched → file content drifted.
         # ("Command drift" lives in a different slot key — Task 8 handles it.)
         if (existing.file_content_hash or "") != (hk.command_file_hash or ""):
-            findings.append(_make_finding(
-                machine_id=machine_id,
-                inventory_id=inventory_id,
-                rule_id="hook.rug_pull.content",
-                severity="block",
-                title="Содержимое хука изменилось без обновления settings.json",
-                description=(
-                    f"Скрипт {hk.command_file_path or '<inline>'} для хука {event} "
-                    f"({matcher or '*'}) поменялся. Это классический supply chain "
-                    "rug pull: команда та же, но payload новый. Проверь источник "
-                    "плагина. Если ты сам обновлял — нажми «Принять новый baseline»."
-                ),
-                payload={
-                    "event_name": event, "matcher": matcher,
-                    "command": command[:500], "file_path": hk.command_file_path,
-                    "old_file_content_hash": existing.file_content_hash,
-                    "new_file_content_hash": hk.command_file_hash,
-                },
-            ))
+            had_hash_lost_it = (
+                existing.file_content_hash is not None
+                and hk.command_file_hash is None
+            )
+            if had_hash_lost_it:
+                findings.append(_make_finding(
+                    machine_id=machine_id,
+                    inventory_id=inventory_id,
+                    rule_id="hook.unreadable",
+                    severity="warn",
+                    title="Не могу прочитать файл шима",
+                    description=(
+                        f"Файл {hk.command_file_path or '<unknown>'} раньше читался, "
+                        "теперь нет: "
+                        f"{hk.file_unreadable_reason or 'неизвестная причина'}. "
+                        "Drift detection для этого хука сейчас не работает — "
+                        "проверь права или путь."
+                    ),
+                    payload={
+                        "event_name": event, "matcher": matcher,
+                        "command": command[:500], "file_path": hk.command_file_path,
+                        "reason": hk.file_unreadable_reason,
+                    },
+                ))
+            else:
+                findings.append(_make_finding(
+                    machine_id=machine_id,
+                    inventory_id=inventory_id,
+                    rule_id="hook.rug_pull.content",
+                    severity="block",
+                    title="Содержимое хука изменилось без обновления settings.json",
+                    description=(
+                        f"Скрипт {hk.command_file_path or '<inline>'} для хука {event} "
+                        f"({matcher or '*'}) поменялся. Это классический supply chain "
+                        "rug pull: команда та же, но payload новый. Проверь источник "
+                        "плагина. Если ты сам обновлял — нажми «Принять новый baseline»."
+                    ),
+                    payload={
+                        "event_name": event, "matcher": matcher,
+                        "command": command[:500], "file_path": hk.command_file_path,
+                        "old_file_content_hash": existing.file_content_hash,
+                        "new_file_content_hash": hk.command_file_hash,
+                    },
+                ))
 
         # Refresh the slot row in-place. fingerprint/content updated; status
         # is preserved so the admin's prior trust state (active / pending /

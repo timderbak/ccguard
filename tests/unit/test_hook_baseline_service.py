@@ -229,3 +229,35 @@ def test_removed_hook_marks_status_missing_no_finding(session):
     assert findings == []
     row = session.exec(select(HookBaseline)).one()
     assert row.status == "missing"
+
+
+# --- Task 10: hook.unreadable warn (content_hash transition Some → None) ------
+
+
+def test_file_became_unreadable_emits_warn(session):
+    """If we had a content_hash and now we don't (permission denied / file
+    moved), raise a hook.unreadable warn so admin sees they can't trust this
+    hook's drift detection anymore."""
+    seed = HookBaseline(
+        machine_id="machine-A", event_name="PreToolUse", matcher="Bash",
+        command_string="python /opt/x.py", file_path="/opt/x.py",
+        file_content_hash="HAD_HASH",
+        fingerprint=compute_fingerprint("PreToolUse", "Bash", "python /opt/x.py", "HAD_HASH"),
+        status="active",
+        first_seen_at=_now_for_test(), last_seen_at=_now_for_test(),
+    )
+    session.add(seed); session.commit()
+
+    e = HookEntry(
+        event="PreToolUse", matcher="Bash", type="command",
+        command="python /opt/x.py", source="/root/.claude/settings.json",
+        is_ccguard_owned=False, command_file_path="/opt/x.py",
+        command_file_hash=None, file_unreadable_reason="permission_denied",
+    )
+
+    findings = update_and_detect(session, machine_id="machine-A", current_hooks=[e])
+    session.commit()
+
+    assert len(findings) == 1
+    assert findings[0].rule_id == "hook.unreadable"
+    assert findings[0].severity == "warn"
