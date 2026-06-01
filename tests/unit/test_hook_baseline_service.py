@@ -142,3 +142,35 @@ def test_post_bootstrap_new_hook_emits_warn_finding(session):
         select(HookBaseline).where(HookBaseline.matcher == "Write")
     ).one()
     assert new_row.status == "pending"  # still pending until admin clicks accept
+
+
+# --- Task 7: content drift = block --------------------------------------------
+
+
+def test_content_drift_emits_block_finding(session):
+    """Same slot, file_content_hash changed → block-severity finding."""
+    fp_old = compute_fingerprint("PreToolUse", "Bash", "python /opt/x.py", "OLDHASH")
+    seed = HookBaseline(
+        machine_id="machine-A", event_name="PreToolUse", matcher="Bash",
+        command_string="python /opt/x.py", file_path="/opt/x.py",
+        file_content_hash="OLDHASH", fingerprint=fp_old, status="active",
+        first_seen_at=_now_for_test(), last_seen_at=_now_for_test(),
+    )
+    session.add(seed); session.commit()
+
+    findings = update_and_detect(session, machine_id="machine-A", current_hooks=[
+        _entry(file_hash="NEWHASH"),  # same slot, different file content
+    ])
+    session.commit()
+
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.rule_id == "hook.rug_pull.content"
+    assert f.severity == "block"
+    # Old hash + new hash both in payload so UI can show the diff.
+    assert "OLDHASH" in f.payload_json and "NEWHASH" in f.payload_json
+    # Row stays put (slot didn't move) but fingerprint refreshed to new value.
+    row = session.exec(select(HookBaseline)).one()
+    assert row.fingerprint == compute_fingerprint("PreToolUse", "Bash", "python /opt/x.py", "NEWHASH")
+    assert row.file_content_hash == "NEWHASH"
+    assert row.status == "active"  # status doesn't auto-flip; finding alerts
