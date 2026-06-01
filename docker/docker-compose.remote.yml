@@ -52,12 +52,13 @@ services:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       CCGUARD_LOG_LEVEL: "${CCGUARD_LOG_LEVEL:-INFO}"
     volumes:
-      # SQLite WAL — должен переживать рестарт контейнера
-      - ./data:/var/lib/ccguard
+      # SQLite WAL — должен переживать рестарт контейнера.
+      # Пути относительно compose-файла (docker/), поэтому через ../ к корню репо.
+      - ../data:/var/lib/ccguard
       # Policy подкладывается с хоста (можно править без пересборки)
-      - ./config/server_policy.yaml:/etc/ccguard/server_policy.yaml:ro
+      - ../config/server_policy.yaml:/etc/ccguard/server_policy.yaml:ro
       # Логи — на хост, чтобы было что грепать
-      - ./logs:/var/log/ccguard
+      - ../logs:/var/log/ccguard
     healthcheck:
       test:
         - "CMD"

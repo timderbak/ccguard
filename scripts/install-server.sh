@@ -53,13 +53,14 @@ if [[ ! -f "$ENV_FILE" ]]; then
     AGENT_TOKEN="$(openssl rand -hex 24)"
     SESSION_SECRET="$(openssl rand -hex 32)"
 
-    # bcrypt-хеш генерим через docker (чтобы не тащить python+passlib на хост).
+    # bcrypt-хеш генерим через docker (чтобы не тащить python+bcrypt на хост).
     # ВНИМАНИЕ: $ в bcrypt-хеше нужно экранировать как $$ в .env для docker-compose.
+    # passlib сломан с новым bcrypt (см. memory project_local_run_recipe) — берём bcrypt напрямую.
     log "считаю bcrypt-хеш через одноразовый python:3.12-slim контейнер…"
     RAW_HASH="$(
-        docker run --rm python:3.12-slim sh -c \
-            "pip install --quiet 'passlib[bcrypt]' >/dev/null 2>&1 && \
-             python -c 'import sys; from passlib.hash import bcrypt; print(bcrypt.hash(sys.argv[1]))' '$ADMIN_PASSWORD'"
+        docker run --rm -e PWD_INPUT="$ADMIN_PASSWORD" python:3.12-slim sh -c \
+            'pip install --quiet bcrypt >/dev/null 2>&1 && \
+             python -c "import os, bcrypt; print(bcrypt.hashpw(os.environ[\"PWD_INPUT\"].encode(), bcrypt.gensalt()).decode())"'
     )" || die "не удалось сгенерировать bcrypt-хеш админ-пароля"
     # docker-compose интерполирует $X → подставит env. Экранируем $ → $$.
     ESCAPED_HASH="${RAW_HASH//\$/\$\$}"
