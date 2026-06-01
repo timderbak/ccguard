@@ -29,6 +29,12 @@ class HookEntry(SchemaBase):
     source: str
     command_file_hash: str | None = None
     command_file_path: str | None = None
+    # v0.2 UX/forensics field. Agent sets True when the hook command (or its
+    # script file's shebang block) carries a ccguard ownership marker, so the
+    # /admin/machines/<id> UI can show "this hook is ours" vs "unknown — check
+    # source". Default False keeps backward-compat with v0.1 agents that don't
+    # populate the field.
+    is_ccguard_owned: bool = False
 
 
 class McpServerEntry(SchemaBase):
@@ -92,6 +98,10 @@ class SettingsSource(SchemaBase):
     scope: Literal["user", "project", "project_local", "managed"]
     exists: bool
     parse_error: str | None = None
+    # v0.2 UX fields for /admin/machines/<id> inventory rendering. Optional so
+    # v0.1 agents that don't compute them continue to validate cleanly.
+    hooks_count: int | None = None
+    size_bytes: int | None = None
 
 
 class InventoryReport(SchemaBase):
