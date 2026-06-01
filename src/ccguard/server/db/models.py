@@ -395,6 +395,39 @@ class MCPServerBaseline(SQLModel, table=True):
     last_seen_at: datetime = Field(default_factory=_utcnow)
 
 
+class HookBaseline(SQLModel, table=True):
+    """TOFU baseline for Claude Code hooks per machine (feat/hooks-tofu-baseline).
+
+    A row = one "slot" in settings.json (unique by machine + event + matcher +
+    command). ``fingerprint`` = sha256(event_name + matcher + command_string +
+    file_content_hash). Status transitions: pending → active (admin accept) →
+    accepted_drift (on re-accept). Composite UNIQUE
+    ``(machine_id, event_name, matcher, command_string)`` installed via DDL in
+    :func:`ccguard.server.db.session.init_db`, mirroring the
+    ``MCPServerBaseline`` pattern (keeps ``create_all`` idempotent against
+    pre-existing tables).
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+
+    event_name: str = Field(index=True)
+    matcher: str = Field(default="")
+    command_string: str
+
+    file_path: str | None = None
+    file_content_hash: str | None = None
+    fingerprint: str = Field(index=True)
+
+    # pending | active | accepted_drift | missing | removed
+    status: str = Field(default="pending")
+
+    first_seen_at: datetime
+    last_seen_at: datetime
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
+
+
 class SettingsRecord(SQLModel, table=True):
     """Key/value store for admin-tunable server settings (Plan 03-01 D-04).
 

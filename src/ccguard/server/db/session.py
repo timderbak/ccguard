@@ -51,6 +51,14 @@ _MCP_BASELINE_INDEX_DDL: tuple[str, ...] = (
     "ON mcpserverbaseline(machine_id, mcp_name)",
 )
 
+# Composite unique index for HookBaseline (feat/hooks-tofu-baseline). One row
+# per "slot" — (machine_id, event_name, matcher, command_string). Same
+# idempotent IF NOT EXISTS pattern as the other baseline tables.
+_HOOK_BASELINE_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_hookbaseline_slot "
+    "ON hookbaseline(machine_id, event_name, matcher, command_string)",
+)
+
 # Additive columns for ScanResult (feat/skills-detailed-rationale).
 # ``create_all`` is a no-op on existing tables, so these explicit ALTERs make
 # the new columns appear on pre-feature DBs. SQLite's ``ADD COLUMN`` is the
@@ -99,6 +107,8 @@ def init_db(engine: Engine) -> None:
         for ddl in _LLM_SCANNER_INDEX_DDL:
             conn.execute(text(ddl))
         for ddl in _MCP_BASELINE_INDEX_DDL:
+            conn.execute(text(ddl))
+        for ddl in _HOOK_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
         # Additive ALTERs for ScanResult. SQLite lacks IF NOT EXISTS on
         # ADD COLUMN — introspect via PRAGMA and skip when already present.
