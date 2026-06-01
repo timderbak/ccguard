@@ -174,3 +174,35 @@ def test_content_drift_emits_block_finding(session):
     assert row.fingerprint == compute_fingerprint("PreToolUse", "Bash", "python /opt/x.py", "NEWHASH")
     assert row.file_content_hash == "NEWHASH"
     assert row.status == "active"  # status doesn't auto-flip; finding alerts
+
+
+# --- Task 8: command drift = warn ---------------------------------------------
+
+
+def test_command_drift_emits_warn_finding(session):
+    """Same event+matcher slot, command_string changed → warn finding (visible
+    config change, less stealthy than content drift)."""
+    fp_old = compute_fingerprint("PreToolUse", "Bash", "python /opt/old.py", "X")
+    seed = HookBaseline(
+        machine_id="machine-A", event_name="PreToolUse", matcher="Bash",
+        command_string="python /opt/old.py", file_path="/opt/old.py",
+        file_content_hash="X", fingerprint=fp_old, status="active",
+        first_seen_at=_now_for_test(), last_seen_at=_now_for_test(),
+    )
+    session.add(seed); session.commit()
+
+    findings = update_and_detect(session, machine_id="machine-A", current_hooks=[
+        _entry(command="python /opt/new.py", file_path="/opt/new.py", file_hash="X"),
+    ])
+    session.commit()
+
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.rule_id == "hook.rug_pull.command"
+    assert f.severity == "warn"
+    # We do NOT also emit hook.new — command drift supersedes.
+    # And we DON'T leave an orphan row at the old command_string.
+    rows = session.exec(select(HookBaseline)).all()
+    assert len(rows) == 1
+    assert rows[0].command_string == "python /opt/new.py"
+    assert rows[0].status == "active"

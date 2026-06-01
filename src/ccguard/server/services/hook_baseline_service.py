@@ -126,7 +126,58 @@ def update_and_detect(
             continue
 
         if existing is None:
-            # New slot — record as pending. Emit ``hook.new`` only if any
+            # Before treating this as a brand-new hook, look for an existing
+            # baseline on the same (event, matcher) but with a different
+            # command_string. Claude Code allows one hook per (event, matcher)
+            # slot, so any matcher+event reuse with a different command means
+            # the old command was *replaced*, not added — that's command drift.
+            same_slot_other_cmd = session.exec(
+                select(HookBaseline).where(
+                    HookBaseline.machine_id == machine_id,
+                    HookBaseline.event_name == event,
+                    HookBaseline.matcher == matcher,
+                    HookBaseline.command_string != command,
+                    HookBaseline.status.in_(["active", "accepted_drift", "pending"]),
+                )
+            ).first()
+
+            if same_slot_other_cmd is not None:
+                # Command drift: update the existing row in-place, no new row.
+                findings.append(_make_finding(
+                    machine_id=machine_id,
+                    inventory_id=inventory_id,
+                    rule_id="hook.rug_pull.command",
+                    severity="warn",
+                    title=f"Команда хука {event} ({matcher or '*'}) изменилась",
+                    description=(
+                        f"Было: `{same_slot_other_cmd.command_string[:200]}`\n"
+                        f"Стало: `{command[:200]}`\n"
+                        "Кто-то менял settings.json вручную или прошла переустановка "
+                        "плагина. Это видимое изменение — менее изящная атака, но "
+                        "проверь источник."
+                    ),
+                    payload={
+                        "event_name": event, "matcher": matcher,
+                        "old_command": same_slot_other_cmd.command_string,
+                        "new_command": command,
+                        "file_path": hk.command_file_path,
+                    },
+                ))
+                same_slot_other_cmd.command_string = command
+                same_slot_other_cmd.file_path = hk.command_file_path
+                same_slot_other_cmd.file_content_hash = hk.command_file_hash
+                same_slot_other_cmd.fingerprint = new_fp
+                same_slot_other_cmd.last_seen_at = now
+                session.add(same_slot_other_cmd)
+                # Also remove the original slot_key from seen_slot_keys path:
+                # the *new* command is what's seen this sync, so the OLD
+                # command_string is what should fall into the "missing" sweep
+                # at the bottom of the loop. But because we mutated the row to
+                # the new command_string in-place, the missing-sweep below
+                # would no longer match the old key anyway. Nothing to do.
+                continue
+
+            # Truly new slot — record as pending. Emit ``hook.new`` only if any
             # active baseline already exists on this machine; otherwise we're
             # bootstrapping (first sync of a machine that may have 40+ hooks
             # in settings.json already — silent ingestion saves admins from
