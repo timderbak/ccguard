@@ -206,3 +206,26 @@ def test_command_drift_emits_warn_finding(session):
     assert len(rows) == 1
     assert rows[0].command_string == "python /opt/new.py"
     assert rows[0].status == "active"
+
+
+# --- Task 9: removed hook = silent status=missing -----------------------------
+
+
+def test_removed_hook_marks_status_missing_no_finding(session):
+    """Hook in last sync but not in this sync → status=missing, no finding."""
+    seed = HookBaseline(
+        machine_id="machine-A", event_name="PreToolUse", matcher="Bash",
+        command_string="python /opt/x.py", file_path="/opt/x.py",
+        file_content_hash="X",
+        fingerprint=compute_fingerprint("PreToolUse", "Bash", "python /opt/x.py", "X"),
+        status="active",
+        first_seen_at=_now_for_test(), last_seen_at=_now_for_test(),
+    )
+    session.add(seed); session.commit()
+
+    findings = update_and_detect(session, machine_id="machine-A", current_hooks=[])
+    session.commit()
+
+    assert findings == []
+    row = session.exec(select(HookBaseline)).one()
+    assert row.status == "missing"

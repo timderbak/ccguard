@@ -259,6 +259,17 @@ def update_and_detect(
         session.add(existing)
         continue
 
+    # Mark any baseline rows that were NOT seen in this sync as "missing".
+    # (Removal is silent in v1; we keep the row so admin can see history.)
+    all_rows = session.exec(
+        select(HookBaseline).where(HookBaseline.machine_id == machine_id)
+    ).all()
+    for r in all_rows:
+        slot_key = (r.event_name, r.matcher, r.command_string)
+        if slot_key not in seen_slot_keys and r.status != "missing" and r.status != "removed":
+            r.status = "missing"
+            session.add(r)
+
     for f in findings:
         session.add(f)
     return findings
