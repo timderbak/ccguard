@@ -265,6 +265,49 @@
     {% endif %}
 </section>
 
+<section class="bg-white rounded-xl shadow p-5 mt-6">
+    <h3 class="font-semibold mb-3 flex items-center gap-2 text-slate-800">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+        Prompt injection в прочитанных файлах{% if pi_read_cards %} ({{ pi_read_cards|length }}){% endif %}
+    </h3>
+    {% if pi_read_cards %}
+    <ul class="space-y-3">
+    {% for card in pi_read_cards %}
+        <li class="border border-slate-200 rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-2">
+                <span class="font-mono text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 ring-1
+                    {% if card.severity == 'block' %}text-red-700 bg-red-50 ring-red-300
+                    {% elif card.severity == 'warn' %}text-amber-700 bg-amber-50 ring-amber-300
+                    {% else %}text-slate-600 bg-slate-100 ring-slate-300{% endif %}">
+                    {{ card.severity }}
+                </span>
+                <span class="text-sm font-semibold text-slate-800">{{ card.title }}</span>
+                <span class="cc-mono text-[11px] text-slate-400 ml-auto">{{ card.ts_short }}</span>
+            </div>
+            <div class="cc-mono text-xs text-slate-700 bg-slate-50 rounded px-2 py-1 mb-2 break-all">
+                <span class="text-slate-400">file:</span> {{ card.file_path }}
+            </div>
+            {% if card.category %}
+            <p class="text-xs text-slate-600 mb-1"><span class="text-slate-400">Категория:</span>
+                <span class="cc-mono">{{ card.category }}</span>
+            </p>
+            {% endif %}
+            {% if card.snippet %}
+            <div class="cc-mono text-[11px] text-slate-600 bg-amber-50 ring-1 ring-amber-200 rounded px-2 py-1 mb-2 break-all">
+                <span class="text-amber-700">найдено:</span> {{ card.snippet }}
+            </div>
+            {% endif %}
+            <p class="text-xs text-slate-600 mb-1"><span class="text-slate-400">Почему:</span> {{ card.reason }}</p>
+            <p class="text-xs text-slate-500"><span class="text-slate-400">Что делать:</span> {{ card.remediation }}</p>
+            <p class="cc-mono text-[10px] text-slate-400 mt-2">{{ card.rule_id }}</p>
+        </li>
+    {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-slate-400 text-sm">За последние 24 часа в прочитанных файлах prompt injection не обнаружен.</p>
+    {% endif %}
+</section>
+
 {% if risk_series %}
 {% include "components/_risk_sparkline.html" %}
 {% endif %}

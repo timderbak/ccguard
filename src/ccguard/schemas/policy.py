@@ -569,6 +569,19 @@ class PromptInjectionConfig(SchemaBase):
     regex_patterns: list[str] = Field(default_factory=list)
     allowlist_patterns: list[str] = Field(default_factory=list)
     llama_guard: LlamaGuardConfig = Field(default_factory=LlamaGuardConfig)
+    # BACKLOG §6: Read-tool PI scanning. PostToolUse audit-scan of the file
+    # content Claude just opened is always-on (the audit_hook unconditionally
+    # invokes it); the two flags below are PreToolUse opt-ins:
+    #   read_pi_block — when True + enforce mode, denies the Read if file
+    #     content matches a default-catalog PI pattern. Default False because
+    #     false positives in legitimate commercial code (mock injection
+    #     strings in security tests, etc.) are annoying.
+    #   read_pi_mask — when True, the PostToolUse hook attempts to mask the
+    #     tool_response (best-effort; depends on Claude Code accepting
+    #     hookSpecificOutput.updatedToolResponse — see docs/HOOKS_PROTOCOL.md).
+    #     Default False; today this is a no-op pending upstream support.
+    read_pi_block: bool = False
+    read_pi_mask: bool = False
 
 
 class SignalOverrideIn(SchemaBase):

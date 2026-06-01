@@ -29,6 +29,11 @@ from ccguard.agent.config import default_config_dir
 from ccguard.agent.signals import extract_signals
 from ccguard.agent.signals.overrides_loader import load_overrides
 
+# Lazy imports inside the Read-PI helper keep cold-path cost off the hot
+# path (most invocations are NOT Read). Imported at module scope nonetheless
+# because the helpers themselves are pure functions and tests monkeypatch them.
+from ccguard.agent import read_pi_scan as _read_pi_scan_mod
+
 
 def _result_status_from_response(
     tool_response: dict[str, Any],
@@ -71,9 +76,21 @@ def main_cli(stdin_text: str | None = None) -> int:
         if not isinstance(tool_input, dict):
             tool_input = {}
 
-        tool_response = data.get("tool_response") or {}
-        if not isinstance(tool_response, dict):
+        # tool_response: tolerate dict or bare string (Read tool sometimes
+        # returns the file content directly). Keep raw_response separate
+        # from the dict-shape used by _result_status_from_response.
+        raw_response = data.get("tool_response")
+        if isinstance(raw_response, dict):
+            tool_response = raw_response
+        else:
             tool_response = {}
+
+        # BACKLOG §6 (Phase 6 / PI-READ): scan Read tool_response content
+        # against the PI catalog. We do this BEFORE dropping tool_input so we
+        # can grab file_path from it. Failure is silent (fail-open) — audit
+        # buffer write below must not be affected.
+        if tool_name == "Read":
+            _maybe_emit_read_pi_finding(tool_input, raw_response)
 
         # 2. Fingerprint + extract signals, THEN drop raw tool_input (privacy
         #    invariant). Both consume the raw input in-process; only the 16-hex
@@ -111,3 +128,100 @@ def main_cli(stdin_text: str | None = None) -> int:
     except Exception:
         # Fail-open: never propagate any error back to Claude Code.
         return 0
+
+
+def _load_pi_cfg_or_default() -> Any:
+    """Load PromptInjectionConfig from the local policy.yaml cache.
+
+    Failure (file missing, parse error) → default PromptInjectionConfig
+    (enabled=True, severity=warn) so the Read PI scan still runs out of
+    the box — admins who explicitly disable PI in policy will see scans
+    skipped, but a missing/broken policy MUST NOT silently disable the
+    audit detector.
+    """
+    from ccguard.schemas.policy import PromptInjectionConfig
+
+    try:
+        import yaml
+
+        from ccguard.schemas import Policy
+
+        policy_path = default_config_dir() / "policy.yaml"
+        if not policy_path.exists():
+            return PromptInjectionConfig()
+        data = yaml.safe_load(policy_path.read_text()) or {}
+        pol = Policy.model_validate(data)
+        return pol.prompt_injection
+    except Exception:
+        return PromptInjectionConfig()
+
+
+def _maybe_emit_read_pi_finding(
+    tool_input: dict[str, Any],
+    raw_response: Any,
+) -> None:
+    """Best-effort scan of Read tool_response for prompt-injection markers.
+
+    Emits a ``prompt_injection.read_file.<category>`` finding when a
+    match is found. Silent fail on any error — Claude must never see an
+    exception from the audit hook.
+    """
+    try:
+        cfg = _load_pi_cfg_or_default()
+        if not cfg.enabled:
+            return
+        text = _read_pi_scan_mod.extract_read_response_text(raw_response)
+        if not text:
+            return
+        result = _read_pi_scan_mod.scan_read_text(text, cfg)
+        if result is None:
+            return
+        # model_missing marker (D-3 from PI engine): never a real detection.
+        if result.rule_id == "prompt_injection.llama_guard.model_missing":
+            return
+        file_path = tool_input.get("file_path")
+        if not isinstance(file_path, str):
+            file_path = ""
+        # Find matched substring snippet around the regex hit for the
+        # finding's matched_pattern. Capped at 200 chars (mask_secrets
+        # enforces the same ceiling).
+        snippet = _extract_match_snippet(text, result.matched_pattern)
+        # Format the matched_pattern as "<file_path>::<snippet>" so the
+        # server can split it back out. file_path may legitimately be
+        # empty; the format degrades gracefully.
+        composed = f"{file_path}::{snippet}" if file_path else snippet
+
+        from ccguard.agent.findings_hook.buffer import emit_finding
+
+        rule_id = _read_pi_scan_mod.build_rule_id(result)
+        emit_finding(
+            rule_id=rule_id,
+            severity="warn",
+            title=f"Признаки prompt injection в файле ({result.category})",
+            source="regex",
+            matched_pattern=composed,
+            tool_name="Read",
+        )
+    except Exception:
+        # Best-effort — never break the audit pipeline.
+        return
+
+
+def _extract_match_snippet(text: str, pattern_str: str, *, window: int = 80) -> str:
+    """Return a small substring of ``text`` around the first regex hit.
+
+    Falls back to the first 160 chars of ``text`` if the pattern fails to
+    re-compile (admin custom regex is hashed, not the raw source). Truncated
+    to ~160 chars so :func:`mask_secrets` (200-char cap) leaves it intact.
+    """
+    import re as _re
+
+    try:
+        m = _re.search(pattern_str, text, _re.IGNORECASE | _re.DOTALL)
+    except _re.error:
+        m = None
+    if m is None:
+        return text[: 2 * window]
+    start = max(0, m.start() - window // 4)
+    end = min(len(text), m.end() + window)
+    return text[start:end]
