@@ -113,7 +113,21 @@ def macos_plist_path() -> Path:
 
 
 def linux_systemd_unit_path() -> Path:
+    """Return systemd unit path: system-wide for root, user-scoped otherwise.
+
+    Why: на VPS-сценарии (root без linger) user-unit не виден стандартному
+    systemd-инстансу, и daemon не переживает reboot. Для root кладём в
+    /etc/systemd/system; для обычного пользователя — в ~/.config/systemd/user
+    (так разработчику не нужен sudo).
+    """
+    if os.geteuid() == 0:
+        return Path("/etc/systemd/system") / _SYSTEMD_UNIT_NAME
     return Path.home() / ".config" / "systemd" / "user" / _SYSTEMD_UNIT_NAME
+
+
+def _systemctl_scope() -> list[str]:
+    """systemctl args: пустой список (system) для root, ['--user'] иначе."""
+    return [] if os.geteuid() == 0 else ["--user"]
 
 
 def install_daemon(
@@ -208,10 +222,11 @@ def _install_systemd(argv, log_dir, *, dry_run: bool) -> dict[str, object]:
     if dry_run:
         out["status"] = "dry_run"
         return out
-    subprocess.run(["systemctl", "--user", "daemon-reload"],
+    scope = _systemctl_scope()
+    subprocess.run(["systemctl", *scope, "daemon-reload"],
                    capture_output=True, check=False)
     rc = subprocess.run(
-        ["systemctl", "--user", "enable", "--now", _SYSTEMD_UNIT_NAME],
+        ["systemctl", *scope, "enable", "--now", _SYSTEMD_UNIT_NAME],
         capture_output=True, check=False,
     )
     out["loaded"] = rc.returncode == 0
@@ -230,12 +245,13 @@ def _uninstall_systemd(*, dry_run: bool) -> dict[str, object]:
     if dry_run:
         out["status"] = "dry_run"
         return out
+    scope = _systemctl_scope()
     subprocess.run(
-        ["systemctl", "--user", "disable", "--now", _SYSTEMD_UNIT_NAME],
+        ["systemctl", *scope, "disable", "--now", _SYSTEMD_UNIT_NAME],
         capture_output=True, check=False,
     )
     path.unlink(missing_ok=True)
-    subprocess.run(["systemctl", "--user", "daemon-reload"],
+    subprocess.run(["systemctl", *scope, "daemon-reload"],
                    capture_output=True, check=False)
     out["status"] = "removed"
     return out
