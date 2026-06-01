@@ -96,3 +96,49 @@ def test_update_and_detect_no_change_bumps_last_seen(session):
     assert len(rows) == 1
     assert rows[0].last_seen_at > first_seen
     assert rows[0].status == "active"
+
+
+# --- Task 6: bootstrap + post-bootstrap new-hook detection -------------------
+
+
+def test_first_sync_creates_pending_no_findings(session):
+    """Bootstrap: machine has no prior baseline → all hooks become pending,
+    no hook.new findings (would drown user in noise on initial join)."""
+    findings = update_and_detect(session, machine_id="machine-A", current_hooks=[
+        _entry(matcher="Bash"),
+        _entry(matcher="Write|Edit"),
+    ])
+    session.commit()
+
+    assert findings == []
+    rows = session.exec(select(HookBaseline)).all()
+    assert len(rows) == 2
+    assert all(r.status == "pending" for r in rows)
+
+
+def test_post_bootstrap_new_hook_emits_warn_finding(session):
+    """Once at least one baseline is active on this machine, every later new
+    slot raises a warn-level hook.new finding."""
+    # Seed: one active baseline already in place.
+    seed = HookBaseline(
+        machine_id="machine-A", event_name="PreToolUse", matcher="Bash",
+        command_string="seeded-cmd", file_path=None, file_content_hash=None,
+        fingerprint=compute_fingerprint("PreToolUse", "Bash", "seeded-cmd", None),
+        status="active",
+        first_seen_at=_now_for_test(), last_seen_at=_now_for_test(),
+    )
+    session.add(seed); session.commit()
+
+    findings = update_and_detect(session, machine_id="machine-A", current_hooks=[
+        _entry(matcher="Write"),  # new slot
+    ])
+    session.commit()
+
+    assert len(findings) == 1
+    f = findings[0]
+    assert f.rule_id == "hook.new"
+    assert f.severity == "warn"
+    new_row = session.exec(
+        select(HookBaseline).where(HookBaseline.matcher == "Write")
+    ).one()
+    assert new_row.status == "pending"  # still pending until admin clicks accept

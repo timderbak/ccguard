@@ -126,7 +126,20 @@ def update_and_detect(
             continue
 
         if existing is None:
-            # New slot — record as pending; bootstrap-aware emit added in Task 6.
+            # New slot — record as pending. Emit ``hook.new`` only if any
+            # active baseline already exists on this machine; otherwise we're
+            # bootstrapping (first sync of a machine that may have 40+ hooks
+            # in settings.json already — silent ingestion saves admins from
+            # finding-card spam on initial connect).
+            has_active = session.exec(
+                select(HookBaseline)
+                .where(
+                    HookBaseline.machine_id == machine_id,
+                    HookBaseline.status == "active",
+                )
+                .limit(1)
+            ).first()
+
             row = HookBaseline(
                 machine_id=machine_id,
                 event_name=event,
@@ -140,6 +153,26 @@ def update_and_detect(
                 last_seen_at=now,
             )
             session.add(row)
+
+            if has_active is not None:
+                findings.append(_make_finding(
+                    machine_id=machine_id,
+                    inventory_id=inventory_id,
+                    rule_id="hook.new",
+                    severity="warn",
+                    title=f"Появился новый хук {event} ({matcher or '*'})",
+                    description=(
+                        f"Новый хук в {hk.source or 'settings.json'}: команда "
+                        f"`{command[:200]}`. Источник не подтверждён как baseline. "
+                        "Если ты сам ставил — нажми «Принять baseline» в UI. "
+                        "Если нет — удали и пересинхронизируй."
+                    ),
+                    payload={
+                        "event_name": event, "matcher": matcher,
+                        "command": command[:500], "source": hk.source,
+                        "file_path": hk.command_file_path,
+                    },
+                ))
             continue
 
         # Other drift branches (content / command / unreadable) added Tasks 7–10.
