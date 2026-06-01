@@ -50,18 +50,53 @@ def discover_settings_files(claude_home: Path, project_dir: Path) -> list[tuple[
     return files
 
 
+def _count_hooks(data: dict[str, Any]) -> int:
+    """Сколько хук-команд зарегистрировано в settings.json (для UI-бейджа).
+
+    Считаем именно команды (листья), а не группы по событиям — это число,
+    которое юзер ожидает увидеть рядом с путём файла.
+    """
+    section = data.get("hooks") or {}
+    if not isinstance(section, dict):
+        return 0
+    total = 0
+    for entries in section.values():
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            hooks_list = entry.get("hooks") or []
+            if isinstance(hooks_list, list):
+                total += sum(1 for h in hooks_list if isinstance(h, dict))
+    return total
+
+
 def parse_settings_file(path: Path, scope: Scope) -> ParsedSettings:
     """Прочитать и распарсить один settings.json. Не бросает: на ошибках возвращает source.parse_error."""
     if not path.exists():
         return ParsedSettings(
-            source=SettingsSource(path=str(path), scope=scope, exists=False),
+            source=SettingsSource(
+                path=str(path),
+                scope=scope,
+                exists=False,
+                hooks_count=0,
+                size_bytes=0,
+            ),
             data=None,
         )
     try:
         raw = path.read_text()
+        size_bytes = len(raw.encode("utf-8"))
         if not raw.strip():
             return ParsedSettings(
-                source=SettingsSource(path=str(path), scope=scope, exists=True),
+                source=SettingsSource(
+                    path=str(path),
+                    scope=scope,
+                    exists=True,
+                    hooks_count=0,
+                    size_bytes=size_bytes,
+                ),
                 data={},
             )
         data = json.loads(raw)
@@ -72,24 +107,42 @@ def parse_settings_file(path: Path, scope: Scope) -> ParsedSettings:
                     scope=scope,
                     exists=True,
                     parse_error="top-level value is not an object",
+                    hooks_count=0,
+                    size_bytes=size_bytes,
                 ),
                 data=None,
             )
         return ParsedSettings(
-            source=SettingsSource(path=str(path), scope=scope, exists=True),
+            source=SettingsSource(
+                path=str(path),
+                scope=scope,
+                exists=True,
+                hooks_count=_count_hooks(data),
+                size_bytes=size_bytes,
+            ),
             data=data,
         )
     except json.JSONDecodeError as e:
         return ParsedSettings(
             source=SettingsSource(
-                path=str(path), scope=scope, exists=True, parse_error=f"json decode: {e}"
+                path=str(path),
+                scope=scope,
+                exists=True,
+                parse_error=f"json decode: {e}",
+                hooks_count=0,
+                size_bytes=None,
             ),
             data=None,
         )
     except OSError as e:
         return ParsedSettings(
             source=SettingsSource(
-                path=str(path), scope=scope, exists=True, parse_error=f"read error: {e}"
+                path=str(path),
+                scope=scope,
+                exists=True,
+                parse_error=f"read error: {e}",
+                hooks_count=0,
+                size_bytes=None,
             ),
             data=None,
         )

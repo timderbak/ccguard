@@ -102,6 +102,12 @@ def _check_hooks(inv: InventoryReport, policy: Policy) -> list[Finding]:
     out: list[Finding] = []
     pol = policy.hooks
     for h in inv.hooks:
+        # ccguard-собственные хуки считаются известными по факту: иначе при
+        # пустом allowlist + deny_unknown=true (типовой стартовый конфиг
+        # пользователя) ccguard сам себе пишет 5 WARN'ов на свои же шимы и
+        # тонет в шуме. См. fix/inventory-findings-ux.
+        if h.is_ccguard_owned:
+            continue
         if pol.allowlist_commands:
             cmd = h.command or h.url or ""
             allowed = any(allowed in cmd for allowed in pol.allowlist_commands)
@@ -121,13 +127,24 @@ def _check_hooks(inv: InventoryReport, policy: Policy) -> list[Finding]:
 
 def _hook_finding(h: HookEntry, sev, rule_id: str, why: str) -> Finding:  # type: ignore[no-untyped-def]
     cmd = h.command or h.url or "(?)"
+    cmd_trunc = cmd if len(cmd) <= 200 else cmd[:197] + "..."
+    matcher_disp = h.matcher or "*"
+    description = (
+        f"Найден хук {h.event} (matcher: {matcher_disp}) с командой "
+        f"`{cmd_trunc}` в {h.source}. "
+        "Это не ccguard-shim. Если ты сам установил его — добавь в "
+        "allowlist. Если не помнишь — удали."
+    )
     return Finding(
         rule_id=rule_id,
         severity=sev,
-        title=f"Неизвестный хук {h.event}/{h.matcher or '*'}",
-        description=f"{why}. type={h.type}, target={cmd}",
+        title=f"Неизвестный хук {h.event}/{matcher_disp}",
+        description=description,
         source=h.source,
-        recommendation="Добавить в hooks.allowlist_commands или удалить из settings.json.",
+        recommendation=(
+            "Добавить команду в hooks.allowlist_commands в policy или "
+            "удалить хук из settings.json."
+        ),
         matched_value=mask_secrets(cmd),
     )
 

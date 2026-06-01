@@ -95,21 +95,55 @@ def _explainer_for(rule_id: str, payload_json: str) -> dict[str, Any] | None:
     return _sequence_explainer(payload)
 
 
+def _passthrough_payload(payload_json: str) -> dict[str, Any]:
+    """Best-effort decode of Finding.model_dump_json() stored in payload_json.
+
+    The agent's check.py emits Finding(rule_id/severity/title/description/...);
+    inventory.py serialises that with ``model_dump_json()``. For findings the
+    UI doesn't render via a dedicated explainer (e.g. ``hooks.unknown``) we
+    still want description/source/recommendation visible — otherwise the user
+    sees a bare ``WARN hooks.unknown`` chip with no actionable context.
+    """
+    if not payload_json:
+        return {}
+    try:
+        d = json.loads(payload_json)
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(d, dict):
+        return {}
+    return {
+        "title": d.get("title"),
+        "description": d.get("description"),
+        "source": d.get("source"),
+        "recommendation": d.get("recommendation"),
+        "matched_value": d.get("matched_value"),
+    }
+
+
 def build_explainable_findings(findings: Iterable[Any]) -> list[dict[str, Any]]:
     """Enrich finding rows with parsed payloads for the template.
 
     Each row exposes ``rule_id``, ``severity``, ``discovered_at`` and an
     optional ``explainer`` dict (None for findings the engine doesn't know how
     to break down — anomaly findings, etc).
+
+    Findings without an explainer still carry a ``details`` dict with the
+    raw description/source/recommendation copied from the stored
+    ``payload_json`` so the template can render a useful card instead of
+    just severity + rule_id (см. fix/inventory-findings-ux).
     """
     out: list[dict[str, Any]] = []
     for f in findings:
-        out.append(
-            {
-                "rule_id": f.rule_id,
-                "severity": f.severity,
-                "discovered_at": f.discovered_at,
-                "explainer": _explainer_for(f.rule_id, f.payload_json or ""),
-            }
-        )
+        payload_json = f.payload_json or ""
+        explainer = _explainer_for(f.rule_id, payload_json)
+        row: dict[str, Any] = {
+            "rule_id": f.rule_id,
+            "severity": f.severity,
+            "discovered_at": f.discovered_at,
+            "explainer": explainer,
+        }
+        if explainer is None:
+            row["details"] = _passthrough_payload(payload_json)
+        out.append(row)
     return out

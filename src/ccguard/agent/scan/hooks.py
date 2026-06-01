@@ -71,6 +71,30 @@ def _resolve_hook_script(command: str | None) -> tuple[str, str] | None:
     return (str(chosen), h)
 
 
+_CCGUARD_SHIM_MARKER = "ccguard-shim"
+
+
+def _is_ccguard_owned(command: str | None, file_path: str | None) -> bool:
+    """ccguard-собственный хук — либо в command есть подстрока 'ccguard',
+    либо первые 5 строк файла-шима содержат маркер '# ccguard-shim'.
+
+    Используется на /admin/machines/<id>, чтобы отличать "мой ccguard-хук"
+    от "чужого плагина/личного скрипта".
+    """
+    if command and "ccguard" in command.lower():
+        return True
+    if file_path:
+        try:
+            with open(file_path, encoding="utf-8", errors="ignore") as fh:
+                head = [next(fh, "") for _ in range(5)]
+            for line in head:
+                if _CCGUARD_SHIM_MARKER in line:
+                    return True
+        except OSError:
+            return False
+    return False
+
+
 def _extract_one(event: str, matcher: str | None, spec: dict[str, Any], source: str) -> HookEntry | None:
     htype = spec.get("type")
     if htype not in {"command", "http", "mcp_tool", "prompt", "agent"}:
@@ -92,6 +116,7 @@ def _extract_one(event: str, matcher: str | None, spec: dict[str, Any], source: 
         source=source,
         command_file_path=file_path,
         command_file_hash=file_hash,
+        is_ccguard_owned=_is_ccguard_owned(command if isinstance(command, str) else None, file_path),
     )
 
 

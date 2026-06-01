@@ -34,8 +34,133 @@
             Инвентарь
         </h3>
         {% if inventory %}
+            {# --- Источники конфигурации Claude Code --- #}
+            {% if inventory.get("settings_sources") %}
+            {% set _sources = inventory.get("settings_sources") %}
+            {# bool-to-int trick: existing files first, then absent. #}
+            {% set _sources_sorted = _sources|sort(attribute="exists", reverse=true) %}
+            <details class="border-b py-2.5 group" open>
+                <summary class="cursor-pointer flex items-center justify-between text-sm font-medium text-slate-700 hover:text-emerald-700 transition-colors list-none">
+                    <span class="flex items-center gap-2">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-3 h-3 text-slate-400 transition-transform group-open:rotate-90"><path d="m9 18 6-6-6-6"/></svg>
+                        <span title="Места, где Claude Code ищет настройки. Сливаются по приоритету. Зелёная точка — файл существует, серая — пустой/отсутствует.">Источники конфигурации Claude Code</span>
+                    </span>
+                    <span class="cc-mono text-xs rounded-md bg-slate-100 px-1.5 py-0.5 text-slate-500 ring-1 ring-slate-200">{{ _sources|length }}</span>
+                </summary>
+                <p class="ml-6 mt-1.5 text-[11px] text-slate-500">
+                    Места где Claude Code читает настройки. Сливаются по приоритету.
+                    Зелёная точка — файл есть, серая — отсутствует.
+                </p>
+                <ul class="ml-6 mt-2 text-sm space-y-1.5 text-slate-600">
+                    {% for src in _sources_sorted %}
+                    <li class="cc-mono text-xs flex items-center gap-2">
+                        <span class="inline-block w-1.5 h-1.5 rounded-full shrink-0
+                            {% if src.get('exists') %}bg-emerald-500{% else %}bg-slate-300{% endif %}"></span>
+                        <span class="break-all {% if not src.get('exists') %}text-slate-400{% else %}text-slate-700{% endif %}">{{ src.get("path") }}</span>
+                        {% if src.get("scope") %}
+                        <span class="cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-slate-50 text-slate-400 ring-slate-200">{{ src.get("scope") }}</span>
+                        {% endif %}
+                        {% if src.get("exists") and src.get("hooks_count") is not none and src.get("hooks_count") > 0 %}
+                        <span class="cc-mono text-[10px] rounded px-1 py-0.5 ring-1 bg-amber-50 text-amber-700 ring-amber-200" title="Сколько хук-команд зарегистрировано в этом файле">hooks: {{ src.get("hooks_count") }}</span>
+                        {% endif %}
+                        {% if src.get("parse_error") %}
+                        <span class="cc-mono text-[10px] rounded px-1 py-0.5 ring-1 bg-red-50 text-red-600 ring-red-200" title="{{ src.get('parse_error') }}">битый JSON</span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+            </details>
+            {% endif %}
+
+            {# --- Хуки Claude Code --- #}
+            {% if inventory.get("hooks") %}
+            {% set _hooks = inventory.get("hooks") %}
+            {% set _unknown_hooks = _hooks|rejectattr("is_ccguard_owned")|list %}
+            <details class="border-b py-2.5 group" open>
+                <summary class="cursor-pointer flex items-center justify-between text-sm font-medium text-slate-700 hover:text-emerald-700 transition-colors list-none">
+                    <span class="flex items-center gap-2">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-3 h-3 text-slate-400 transition-transform group-open:rotate-90"><path d="m9 18 6-6-6-6"/></svg>
+                        <span title="Эти команды Claude Code запускает ДО и ПОСЛЕ каждого инструмента. Любая может перехватить твои данные.">Хуки Claude Code</span>
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                        {% if _unknown_hooks|length > 0 %}
+                        <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 ring-1 bg-amber-50 text-amber-700 ring-amber-200">unknown: {{ _unknown_hooks|length }}</span>
+                        {% endif %}
+                        <span class="cc-mono text-xs rounded-md bg-slate-100 px-1.5 py-0.5 text-slate-500 ring-1 ring-slate-200">{{ _hooks|length }}</span>
+                    </span>
+                </summary>
+                {% if _unknown_hooks|length > 0 %}
+                <p class="ml-6 mt-1.5 text-[11px] text-amber-700 bg-amber-50 ring-1 ring-amber-200 rounded px-2 py-1.5">
+                    Найдены хуки, которые не установлены через ccguard. Это может быть твой личный
+                    скрипт или сторонний плагин — проверь источник по списку ниже и удали/добавь в allowlist.
+                </p>
+                {% endif %}
+                <ul class="ml-6 mt-2 text-sm space-y-1.5 text-slate-600">
+                    {% for h in _hooks %}
+                    <li>
+                        <details class="group/h border border-slate-200 rounded px-2 py-1.5
+                            {% if h.get('is_ccguard_owned') %}bg-slate-50{% else %}bg-amber-50/30 ring-1 ring-amber-200{% endif %}">
+                            <summary class="cursor-pointer list-none flex items-center gap-2 flex-wrap">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-3 h-3 text-slate-400 transition-transform group-open/h:rotate-90 shrink-0"><path d="m9 18 6-6-6-6"/></svg>
+                                {% if h.get("is_ccguard_owned") %}
+                                <span class="cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200" title="Установлен через ccguard">ccguard</span>
+                                {% else %}
+                                <span class="cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-amber-50 text-amber-700 ring-amber-200" title="Не ccguard-shim — проверь источник">unknown</span>
+                                {% endif %}
+                                <span class="cc-mono text-xs text-slate-700">{{ h.get("event") }}</span>
+                                {% if h.get("matcher") %}
+                                <span class="cc-mono text-[11px] text-slate-500">matcher: {{ h.get("matcher") }}</span>
+                                {% endif %}
+                                <span class="cc-mono text-[11px] text-slate-500 break-all">{{ (h.get("command") or h.get("url") or "")|truncate(80, true, "…") }}</span>
+                            </summary>
+                            <dl class="mt-2 ml-5 text-[11px] cc-mono space-y-1">
+                                {% if h.get("command") %}
+                                <div class="flex gap-2">
+                                    <dt class="text-slate-400 shrink-0">команда:</dt>
+                                    <dd class="text-slate-700 break-all">{{ h.get("command") }}</dd>
+                                </div>
+                                {% endif %}
+                                {% if h.get("url") %}
+                                <div class="flex gap-2">
+                                    <dt class="text-slate-400 shrink-0">url:</dt>
+                                    <dd class="text-slate-700 break-all">{{ h.get("url") }}</dd>
+                                </div>
+                                {% endif %}
+                                <div class="flex gap-2">
+                                    <dt class="text-slate-400 shrink-0">event:</dt>
+                                    <dd class="text-slate-700">{{ h.get("event") }} / matcher: {{ h.get("matcher") or "*" }}</dd>
+                                </div>
+                                {% if h.get("source") %}
+                                <div class="flex gap-2">
+                                    <dt class="text-slate-400 shrink-0">источник:</dt>
+                                    <dd class="text-slate-700 break-all">{{ h.get("source") }}</dd>
+                                </div>
+                                {% endif %}
+                                {% if h.get("command_file_path") %}
+                                <div class="flex gap-2">
+                                    <dt class="text-slate-400 shrink-0">скрипт:</dt>
+                                    <dd class="text-slate-700 break-all">{{ h.get("command_file_path") }}</dd>
+                                </div>
+                                {% endif %}
+                                <p class="pt-1 text-[11px]
+                                    {% if h.get('is_ccguard_owned') %}text-emerald-700{% else %}text-amber-700{% endif %}">
+                                    {% if h.get("is_ccguard_owned") %}
+                                    Этот хук установлен через ccguard.
+                                    {% else %}
+                                    ВНИМАНИЕ: хук не от ccguard — проверь источник и автора.
+                                    {% endif %}
+                                </p>
+                            </dl>
+                        </details>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </details>
+            {% endif %}
+
+            {# --- Остальные секции инвентаря (generic loop) --- #}
             {% for section_name, items in inventory.items() %}
-                {% if items is sequence and items|length > 0 and items[0] is mapping %}
+                {% if section_name not in ("settings_sources", "hooks") and items is sequence and items|length > 0 and items[0] is mapping %}
                 <details class="border-b last:border-0 py-2.5 group">
                     <summary class="cursor-pointer flex items-center justify-between text-sm font-medium text-slate-700 hover:text-emerald-700 transition-colors list-none">
                         <span class="flex items-center gap-2">
@@ -144,6 +269,38 @@
                                 <span class="cc-mono text-slate-400">{{ f.explainer.egress.technique or "" }}</span>
                             </li>
                         </ul>
+                        {% endif %}
+                    </div>
+                </details>
+                {% elif f.details and (f.details.description or f.details.source or f.details.recommendation) %}
+                <details class="group">
+                    <summary class="cursor-pointer list-none flex items-center gap-2.5 hover:text-emerald-700 transition-colors flex-wrap">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-3 h-3 text-slate-400 transition-transform group-open:rotate-90"><path d="m9 18 6-6-6-6"/></svg>
+                        <span class="font-mono text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 ring-1
+                            {% if f.severity == 'high' or f.severity == 'block' %}text-red-600 bg-red-50 ring-red-600/20
+                            {% elif f.severity == 'warn' %}text-amber-600 bg-amber-50 ring-amber-600/20
+                            {% else %}text-slate-500 bg-slate-100 ring-slate-300{% endif %}">
+                            {{ f.severity }}
+                        </span>
+                        <span class="cc-mono text-xs text-slate-700">{{ f.rule_id }}</span>
+                        {% if f.details.title %}
+                        <span class="text-xs text-slate-600">{{ f.details.title }}</span>
+                        {% endif %}
+                    </summary>
+                    <div class="ml-5 mt-2 text-xs text-slate-600 space-y-1.5
+                        {% if f.severity == 'warn' %}border-l-2 border-amber-300 pl-3{% else %}border-l-2 border-slate-200 pl-3{% endif %}">
+                        {% if f.details.description %}
+                        <p class="text-slate-700 break-words">{{ f.details.description }}</p>
+                        {% endif %}
+                        {% if f.details.source %}
+                        <p class="cc-mono text-[11px] text-slate-500 break-all">
+                            <span class="text-slate-400">источник:</span> {{ f.details.source }}
+                        </p>
+                        {% endif %}
+                        {% if f.details.recommendation %}
+                        <p class="text-[11px] text-slate-500">
+                            <span class="text-slate-400">что делать:</span> {{ f.details.recommendation }}
+                        </p>
                         {% endif %}
                     </div>
                 </details>
