@@ -1,0 +1,70 @@
+# docker-compose для развёртывания ccguard-server на удалённом VPS.
+#
+# Запуск:
+#   docker compose -f docker/docker-compose.remote.yml --env-file .env up -d --build
+#
+# .env генерируется через scripts/install-server.sh (см. docs/REMOTE_INSTALL.md).
+#
+# Отличия от docker/docker-compose.yml (dev/e2e):
+#   - порт настраивается через ${CCGUARD_SERVER_PORT}
+#   - данные/логи/конфиг лежат на хосте bind-mount'ами (а не named volume),
+#     чтобы их можно было бэкапить и видеть из root@vps
+#   - токены и пароли тянутся из .env, никаких demo-значений
+#   - агентский профиль (e2e) сюда не включён — это серверный стек
+#
+# TODO(tls): для production выставить наружу через caddy/nginx-proxy
+# с Let's Encrypt. Сейчас стек слушает 8080 plaintext.
+# Пример (заготовка, не активировано):
+#   caddy:
+#     image: caddy:2-alpine
+#     restart: unless-stopped
+#     ports: ["80:80", "443:443"]
+#     volumes:
+#       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+#       - caddy-data:/data
+#       - caddy-config:/config
+
+services:
+  ccguard-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    image: ccguard-server:latest
+    container_name: ccguard-server
+    restart: unless-stopped
+    ports:
+      - "${CCGUARD_SERVER_PORT:-8080}:8080"
+    environment:
+      # Сетевые параметры внутри контейнера
+      CCGUARD_HOST: "0.0.0.0"
+      CCGUARD_PORT: "8080"
+      # БД и policy — пути внутри контейнера, ниже монтируются на хост
+      CCGUARD_DB_URL: "sqlite:////var/lib/ccguard/ccguard.db"
+      CCGUARD_POLICY_PATH: "/etc/ccguard/server_policy.yaml"
+      # Агентские токены (CSV). Хотя бы один обязателен.
+      CCGUARD_TOKENS: "${CCGUARD_TOKENS}"
+      # Админ UI: bcrypt-хеш пароля и session secret.
+      CCGUARD_ADMIN_USER: "${CCGUARD_ADMIN_USER:-admin}"
+      CCGUARD_ADMIN_PASSWORD_HASH: "${CCGUARD_ADMIN_PASSWORD_HASH}"
+      CCGUARD_SESSION_SECRET: "${CCGUARD_SESSION_SECRET}"
+      CCGUARD_COOKIE_SECURE: "${CCGUARD_COOKIE_SECURE:-false}"
+      # Опционально: LLM-сканер
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      CCGUARD_LOG_LEVEL: "${CCGUARD_LOG_LEVEL:-INFO}"
+    volumes:
+      # SQLite WAL — должен переживать рестарт контейнера
+      - ./data:/var/lib/ccguard
+      # Policy подкладывается с хоста (можно править без пересборки)
+      - ./config/server_policy.yaml:/etc/ccguard/server_policy.yaml:ro
+      # Логи — на хост, чтобы было что грепать
+      - ./logs:/var/log/ccguard
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health').status==200 else 1)"
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
