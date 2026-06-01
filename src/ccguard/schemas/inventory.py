@@ -29,6 +29,11 @@ class HookEntry(SchemaBase):
     source: str
     command_file_hash: str | None = None
     command_file_path: str | None = None
+    # TOFU baseline / drift detection. None means "no info" (couldn't read,
+    # inline command, etc); when set, one of {"missing", "permission_denied",
+    # "too_large"} — explains why command_file_hash is None even though the
+    # command appears to reference a file.
+    file_unreadable_reason: str | None = None
     # v0.2 UX/forensics field. Agent sets True when the hook command (or its
     # script file's shebang block) carries a ccguard ownership marker, so the
     # /admin/machines/<id> UI can show "this hook is ours" vs "unknown — check
