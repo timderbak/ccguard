@@ -196,6 +196,9 @@ def machine_detail(
     from ccguard.server.services.network_findings import (
         recent_network_cards_for_machine,
     )
+    from ccguard.server.services.pi_read_findings import (
+        recent_pi_read_cards_for_machine,
+    )
     from ccguard.server.db.models import MCPServerBaseline
     machine = session.get(Machine, machine_id)
     if machine is None:
@@ -294,6 +297,9 @@ def machine_detail(
             "mcp_rug_cards": mcp_rug_cards,
             "mcp_baseline_status": status_by_name,
             "network_suspicious_cards": recent_network_cards_for_machine(
+                session, machine_id
+            ),
+            "pi_read_cards": recent_pi_read_cards_for_machine(
                 session, machine_id
             ),
             "csrf_token": _csrf_for(request),

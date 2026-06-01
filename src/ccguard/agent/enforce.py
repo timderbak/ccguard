@@ -22,6 +22,7 @@ from ccguard.agent.findings_hook.buffer import emit_finding
 from ccguard.agent.network_utils import detect_ip_as_host, is_private_ip
 from ccguard.agent.prompt_injection_engine import ScanResult
 from ccguard.agent.prompt_injection_engine import scan as pi_scan
+from ccguard.agent import read_pi_scan as read_pi_scan_mod
 from ccguard.schemas import (
     AuditEntry,
     EnforceDecision,
@@ -471,7 +472,57 @@ def _decide_inner(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
         return _decide_mcp(tool, policy)
     if tool in ("WebFetch", "WebSearch"):
         return _decide_web(ti, policy)
+    if tool == "Read":
+        # BACKLOG §6 PI-READ: opt-in PreToolUse block of Read on PI-containing
+        # files. Disk-read happens only when the flag is on AND the engine is
+        # enabled — keeps the hot path zero-cost for the default config.
+        return _decide_read(ti, policy)
     return EnforceDecision(permission="allow", reason="tool not in enforce scope")
+
+
+def _decide_read(tool_input: dict, policy: Policy) -> EnforceDecision:
+    """Read tool — opt-in PreToolUse PI scan of the on-disk file content.
+
+    Allow-by-default. Only when both ``prompt_injection.enabled=True`` AND
+    ``prompt_injection.read_pi_block=True`` we read the file from disk
+    (up to 50 KB, text-only extensions) and run the default PI catalog.
+    On match we return deny with a structured rule_id; the caller wraps
+    the result in :func:`_apply_enforcement_mode` so observe mode still
+    flips this to allow + audit.
+    """
+    pi_cfg = policy.prompt_injection
+    if not pi_cfg.enabled or not pi_cfg.read_pi_block:
+        return EnforceDecision(permission="allow", reason="read_pi_block disabled")
+    file_path = tool_input.get("file_path")
+    if not isinstance(file_path, str) or not file_path:
+        return EnforceDecision(permission="allow", reason="no file_path")
+
+    text = read_pi_scan_mod.read_file_truncated(file_path)
+    if not text:
+        return EnforceDecision(permission="allow", reason="file unreadable or non-text")
+
+    try:
+        result = read_pi_scan_mod.scan_read_text(text, pi_cfg)
+    except Exception:
+        # Engine crash on Read content → fail-open. We deliberately do NOT
+        # honor block_fail_mode="closed" here: a closed-fail on every Read
+        # would brick the agent the moment a regex misbehaves on benign text.
+        return EnforceDecision(permission="allow", reason="pi-scan engine error")
+
+    if result is None:
+        return EnforceDecision(permission="allow", reason="no PI markers in file")
+    if result.rule_id == "prompt_injection.llama_guard.model_missing":
+        return EnforceDecision(permission="allow", reason="lg model missing — ignored on Read")
+
+    rule_id = read_pi_scan_mod.build_rule_id(result)
+    return EnforceDecision(
+        permission="deny",
+        reason=(
+            f"файл '{file_path}' содержит признаки prompt injection "
+            f"({result.category}); чтение заблокировано"
+        ),
+        rule_id=rule_id,
+    )
 
 
 def render_hook_response(decision: EnforceDecision) -> str:
