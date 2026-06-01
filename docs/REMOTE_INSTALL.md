@@ -4,36 +4,36 @@
 и подключает к нему агент с dev-машины. Цель — получить рабочий стек
 за один проход, без CI и без публичного домена.
 
-## TL;DR — одна команда для 176.124.212.227
+## TL;DR — одна команда для 78.17.68.120
 
 ```bash
 # 1. С dev-машины. ВАЖНО: если SSH ругается "REMOTE HOST IDENTIFICATION HAS CHANGED" —
 #    см. секцию "Подводные камни" ниже. НЕ удаляй ключ автоматически.
 
 # 2. Поставить docker на VPS (если ещё нет) и склонировать репо
-ssh root@176.124.212.227 'apt-get update -qq && \
+ssh root@78.17.68.120 'apt-get update -qq && \
   apt-get install -y -qq docker.io docker-compose-plugin git openssl curl'
-ssh root@176.124.212.227 'mkdir -p /opt/ccguard && cd /opt/ccguard && \
+ssh root@78.17.68.120 'mkdir -p /opt/ccguard && cd /opt/ccguard && \
   (git clone https://github.com/timderbak/ccguard.git . 2>/dev/null || git pull) && \
   bash scripts/install-server.sh'
 
 # 3. Достать токен агента
-ssh root@176.124.212.227 'grep -E "^(CCGUARD_ADMIN_USER|CCGUARD_ADMIN_PASSWORD_PLAINTEXT|CCGUARD_TOKENS)=" /opt/ccguard/.env'
+ssh root@78.17.68.120 'grep -E "^(CCGUARD_ADMIN_USER|CCGUARD_ADMIN_PASSWORD_PLAINTEXT|CCGUARD_TOKENS)=" /opt/ccguard/.env'
 
 # 4. Поставить агент на dev-машине (из локального клона репо)
 cd /Users/timderbak/dev/ccguard
-SERVER_URL=http://176.124.212.227:8080 \
+SERVER_URL=http://78.17.68.120:8080 \
 TOKEN=<значение CCGUARD_TOKENS> \
   bash scripts/install-agent.sh
 
 # 5. Проверить
-curl -fsS http://176.124.212.227:8080/health
-open http://176.124.212.227:8080/admin   # логин admin + пароль из .env
+curl -fsS http://78.17.68.120:8080/health
+open http://78.17.68.120:8080/admin   # логин admin + пароль из .env
 ```
 
 > Репо пока приватный — `git clone https://github.com/...` на VPS сработает
 > только если ты залогинился туда раньше или если репо публичный. Если ни
-> того, ни другого — `scp` всю папку: `scp -r /Users/timderbak/dev/ccguard root@176.124.212.227:/opt/`
+> того, ни другого — `scp` всю папку: `scp -r /Users/timderbak/dev/ccguard root@78.17.68.120:/opt/`
 > и переходи сразу к `bash scripts/install-server.sh`.
 
 ---
@@ -103,17 +103,17 @@ open http://176.124.212.227:8080/admin   # логин admin + пароль из 
 На сервере:
 
 ```bash
-ssh root@176.124.212.227 'curl -fsS http://localhost:8080/health'
+ssh root@78.17.68.120 'curl -fsS http://localhost:8080/health'
 # → {"status":"ok","policy_revision":1,"db":"ok"}
 
-ssh root@176.124.212.227 'docker compose -f /opt/ccguard/docker/docker-compose.remote.yml ps'
+ssh root@78.17.68.120 'docker compose -f /opt/ccguard/docker/docker-compose.remote.yml ps'
 # должно быть: ccguard-server  Up (healthy)
 ```
 
 На dev-машине:
 
 ```bash
-curl -fsS http://176.124.212.227:8080/health
+curl -fsS http://78.17.68.120:8080/health
 ccguard sync
 # → "sync ok, policy revision N, applied=..."
 ```
@@ -121,8 +121,8 @@ ccguard sync
 В браузере:
 
 ```
-http://176.124.212.227:8080/admin    → логин/пароль из .env
-http://176.124.212.227:8080/admin/machines   → твоя dev-машина должна быть видна
+http://78.17.68.120:8080/admin    → логин/пароль из .env
+http://78.17.68.120:8080/admin/machines   → твоя dev-машина должна быть видна
 ```
 
 ---
@@ -145,12 +145,12 @@ Offending ECDSA key in /Users/timderbak/.ssh/known_hosts:3
 
 ```bash
 # Удалить только этот хост из known_hosts:
-ssh-keygen -R 176.124.212.227
+ssh-keygen -R 78.17.68.120
 
 # Или закомментировать строку 3 в ~/.ssh/known_hosts вручную.
 
 # Затем подключиться — ssh запросит подтверждение нового fingerprint'а.
-ssh root@176.124.212.227
+ssh root@78.17.68.120
 ```
 
 ### 2. Firewall на VPS
@@ -159,7 +159,7 @@ ssh root@176.124.212.227
 открой порт:
 
 ```bash
-ssh root@176.124.212.227 'ufw allow 8080/tcp || iptables -I INPUT -p tcp --dport 8080 -j ACCEPT'
+ssh root@78.17.68.120 'ufw allow 8080/tcp || iptables -I INPUT -p tcp --dport 8080 -j ACCEPT'
 ```
 
 Для production без TLS наружу 8080 выставлять нежелательно — поставь
@@ -215,7 +215,7 @@ export PATH="$HOME/Library/Python/3.12/bin:$PATH"   # macOS
 ## Откат
 
 ```bash
-ssh root@176.124.212.227 '
+ssh root@78.17.68.120 '
   cd /opt/ccguard && \
   docker compose -f docker/docker-compose.remote.yml down && \
   echo "БД и .env не тронуты — лежат в /opt/ccguard/data и /opt/ccguard/.env"
@@ -225,7 +225,7 @@ ssh root@176.124.212.227 '
 Полное удаление (с потерей БД):
 
 ```bash
-ssh root@176.124.212.227 '
+ssh root@78.17.68.120 '
   cd /opt/ccguard && \
   docker compose -f docker/docker-compose.remote.yml down -v && \
   rm -rf /opt/ccguard

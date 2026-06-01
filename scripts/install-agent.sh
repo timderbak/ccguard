@@ -4,7 +4,7 @@
 # launchd/systemd-user daemon, делает первый sync.
 #
 # Использование:
-#   SERVER_URL=http://176.124.212.227:8080 TOKEN=<agent-token> \
+#   SERVER_URL=http://78.17.68.120:8080 TOKEN=<agent-token> \
 #     bash scripts/install-agent.sh
 #
 # Или curl-pipe (когда репо публичный):
@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-: "${SERVER_URL:?SERVER_URL обязателен, например http://176.124.212.227:8080}"
+: "${SERVER_URL:?SERVER_URL обязателен, например http://78.17.68.120:8080}"
 : "${TOKEN:?TOKEN обязателен (значение CCGUARD_TOKENS с сервера)}"
 
 CCGUARD_AGENT_HOME="${CCGUARD_AGENT_HOME:-$HOME/.ccguard}"
