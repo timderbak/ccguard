@@ -96,6 +96,13 @@ ccguard uninstall            # убрать хук
 
 `ccguard enforce` Claude Code вызывает сам — руками не запускай.
 
+### Запуск на удалённом VPS
+
+Для one-liner-установки `ccguard-server` на чистую Ubuntu/Debian-машину
+и подключения агента с dev-машины см. [`docs/REMOTE_INSTALL.md`](docs/REMOTE_INSTALL.md).
+Используется отдельный `docker/docker-compose.remote.yml` с bind-mount'ами
+для `data/`, `logs/`, `config/` — данные переживают пересборку контейнера.
+
 ## Описание политики
 
 См. [`examples/policy.example.yaml`](examples/policy.example.yaml) —
