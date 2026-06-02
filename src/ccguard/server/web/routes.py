@@ -571,6 +571,76 @@ def machine_accept_mcp_baseline(
     return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
 
 
+def _resolve_user_id(session: Session, sid: str) -> str:
+    """``require_session`` returns the opaque session id; baseline audit
+    fields want the human-readable user_id. Resolve via WebSession."""
+    from ccguard.server.db.models import WebSession
+    row = session.get(WebSession, sid)
+    return row.user_id if row is not None else "unknown"
+
+
+@router.post("/machines/{machine_id}/hook-baseline/{baseline_id}/accept")
+def machine_accept_hook_baseline(
+    machine_id: str,
+    baseline_id: int,
+    request: Request,
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Принять pending/accepted_drift HookBaseline → active, записать кто."""
+    from ccguard.server.services import hook_baseline_service
+    user_id = _resolve_user_id(session, sid)
+    try:
+        hook_baseline_service.accept_baseline(
+            session, machine_id=machine_id, baseline_id=baseline_id,
+            accepting_user=user_id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/hook-baseline/accept-all-pending")
+def machine_accept_all_pending_hook_baselines(
+    machine_id: str,
+    request: Request,
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Bulk-промоут всех pending hook baselines для машины (bootstrap UX)."""
+    from ccguard.server.services import hook_baseline_service
+    user_id = _resolve_user_id(session, sid)
+    hook_baseline_service.accept_all_pending(
+        session, machine_id=machine_id, accepting_user=user_id,
+    )
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/hook-baseline/{baseline_id}/reject")
+def machine_reject_hook_baseline(
+    machine_id: str,
+    baseline_id: int,
+    request: Request,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Отклонить baseline → status=removed. Сам хук из settings.json не удаляем."""
+    from ccguard.server.services import hook_baseline_service
+    try:
+        hook_baseline_service.reject_and_mark(
+            session, machine_id=machine_id, baseline_id=baseline_id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
 @router.post("/machines/{machine_id}/revoke")
 def revoke_machine(
     request: Request,
