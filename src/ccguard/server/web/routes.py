@@ -549,6 +549,64 @@ def skills_overview(
     )
 
 
+@router.get("/admin/skills-inventory", response_class=HTMLResponse)
+def skills_inventory_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Fleet-wide aggregate of SkillBaseline + AgentBaseline.
+
+    Surfaces divergent artifacts (same name has multiple dir_hash/
+    file_hash across machines) as the primary signal. Single GROUP BY
+    each, no joins (denormalized parent_plugin/source_marketplace).
+    """
+    from ccguard.server.services.skill_agent_fleet import (
+        aggregate_agents,
+        aggregate_skills,
+    )
+    skills = aggregate_skills(session)
+    agents = aggregate_agents(session)
+    return templates.TemplateResponse(
+        request,
+        "skills_inventory.html",
+        {
+            "user": user,
+            "skills": skills,
+            "agents": agents,
+            "skills_divergent_count": sum(1 for s in skills if s.is_divergent),
+            "agents_divergent_count": sum(1 for a in agents if a.is_divergent),
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+@router.get("/_partials/skills-inventory/drill", response_class=HTMLResponse)
+def skills_inventory_drill_partial(
+    request: Request,
+    kind: str,
+    name: str,
+    origin: str = "local",
+    parent_plugin: str | None = None,
+    _user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """HTMX drill-down: list of (machine, hash, status) for one slot."""
+    from ccguard.server.db.models import AgentBaseline, SkillBaseline
+    from ccguard.server.services.skill_agent_fleet import machines_for_artifact
+
+    table = SkillBaseline if kind == "skill" else AgentBaseline
+    rows = machines_for_artifact(
+        session, table, name=name, origin=origin,
+        parent_plugin=parent_plugin or None,
+    )
+    return templates.TemplateResponse(
+        request,
+        "components/_skill_agent_drill.html",
+        {"rows": rows, "kind": kind, "name": name},
+    )
+
+
 @router.get("/admin/proposed-signals", response_class=HTMLResponse)
 def proposed_signals_page(
     request: Request,
