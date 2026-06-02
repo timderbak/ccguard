@@ -59,6 +59,18 @@ _HOOK_BASELINE_INDEX_DDL: tuple[str, ...] = (
     "ON hookbaseline(machine_id, event_name, matcher, command_string)",
 )
 
+# Composite unique indexes for SkillBaseline / AgentBaseline (specs/2026-06-02-
+# skills-agents-baseline-design.md). Slot = (machine, name, origin,
+# parent_plugin). COALESCE makes SQLite treat NULL parent_plugin as the
+# literal "" so local entries (parent_plugin=NULL) don't all collide with
+# each other.
+_SKILL_AGENT_BASELINE_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_skillbaseline_slot "
+    "ON skillbaseline(machine_id, name, origin, COALESCE(parent_plugin, ''))",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_agentbaseline_slot "
+    "ON agentbaseline(machine_id, name, origin, COALESCE(parent_plugin, ''))",
+)
+
 # Additive columns for ScanResult (feat/skills-detailed-rationale).
 # ``create_all`` is a no-op on existing tables, so these explicit ALTERs make
 # the new columns appear on pre-feature DBs. SQLite's ``ADD COLUMN`` is the
@@ -109,6 +121,8 @@ def init_db(engine: Engine) -> None:
         for ddl in _MCP_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
         for ddl in _HOOK_BASELINE_INDEX_DDL:
+            conn.execute(text(ddl))
+        for ddl in _SKILL_AGENT_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
         # Additive ALTERs for ScanResult. SQLite lacks IF NOT EXISTS on
         # ADD COLUMN — introspect via PRAGMA and skip when already present.

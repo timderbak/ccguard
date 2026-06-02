@@ -428,6 +428,72 @@ class HookBaseline(SQLModel, table=True):
     accepted_by: str | None = None
 
 
+class SkillBaseline(SQLModel, table=True):
+    """TOFU baseline for Claude Code skills per machine
+    (specs/2026-06-02-skills-agents-baseline-design.md).
+
+    Slot identity = (machine_id, name, origin, parent_plugin).
+    fingerprint = sha256(name | origin | parent_plugin | dir_hash).
+
+    Status transitions mirror HookBaseline: pending → active (admin
+    accept) → accepted_drift (re-accept). silent removal = "missing".
+
+    parent_plugin / source_marketplace are denormalized copies from the
+    inventory payload so fleet aggregates ("which marketplace ships the
+    most skills") are single-table GROUP BYs.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+
+    name: str = Field(index=True)
+    origin: str = Field(default="local")  # local | plugin
+    parent_plugin: str | None = Field(default=None, index=True)
+    source_marketplace: str | None = Field(default=None, index=True)
+
+    dir_hash: str
+    has_referenced_scripts: bool = False
+    path: str | None = None
+    fingerprint: str = Field(index=True)
+
+    status: str = Field(default="pending")
+    first_seen_at: datetime
+    last_seen_at: datetime
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
+
+
+class AgentBaseline(SQLModel, table=True):
+    """TOFU baseline for Claude Code custom subagents per machine.
+
+    Slot identity = (machine_id, name, origin, parent_plugin).
+    fingerprint = sha256(name | origin | parent_plugin | file_hash).
+
+    ``tools_csv`` is denormalized (sorted, comma-joined) so we can
+    compute "dangerous tools present" without parsing JSON every check.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+
+    name: str = Field(index=True)
+    origin: str = Field(default="local")
+    parent_plugin: str | None = Field(default=None, index=True)
+    source_marketplace: str | None = Field(default=None, index=True)
+
+    file_hash: str
+    tools_csv: str | None = None  # e.g. "Bash,Edit,Read" (sorted)
+    model: str | None = None
+    path: str | None = None
+    fingerprint: str = Field(index=True)
+
+    status: str = Field(default="pending")
+    first_seen_at: datetime
+    last_seen_at: datetime
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
+
+
 class SettingsRecord(SQLModel, table=True):
     """Key/value store for admin-tunable server settings (Plan 03-01 D-04).
 
