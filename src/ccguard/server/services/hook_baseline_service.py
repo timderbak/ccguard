@@ -298,3 +298,77 @@ def update_and_detect(
     for f in findings:
         session.add(f)
     return findings
+
+
+# --- Accept / reject flow --------------------------------------------------
+
+
+def accept_baseline(
+    session: Session,
+    machine_id: str,
+    baseline_id: int,
+    accepting_user: str,
+) -> HookBaseline:
+    """Promote a pending/accepted_drift row to active and record who accepted.
+
+    Raises LookupError if the row doesn't exist or belongs to another machine
+    (defense in depth against URL-tampering POSTs)."""
+    row = session.exec(
+        select(HookBaseline).where(
+            HookBaseline.id == baseline_id,
+            HookBaseline.machine_id == machine_id,
+        )
+    ).one_or_none()
+    if row is None:
+        raise LookupError(
+            f"HookBaseline id={baseline_id} for machine={machine_id} not found"
+        )
+    row.status = "active"
+    row.accepted_at = _now()
+    row.accepted_by = accepting_user
+    session.add(row)
+    return row
+
+
+def accept_all_pending(
+    session: Session,
+    machine_id: str,
+    accepting_user: str,
+) -> int:
+    """Promote every pending row for this machine to active. Returns count."""
+    rows = session.exec(
+        select(HookBaseline).where(
+            HookBaseline.machine_id == machine_id,
+            HookBaseline.status == "pending",
+        )
+    ).all()
+    now = _now()
+    for r in rows:
+        r.status = "active"
+        r.accepted_at = now
+        r.accepted_by = accepting_user
+        session.add(r)
+    return len(rows)
+
+
+def reject_and_mark(
+    session: Session,
+    machine_id: str,
+    baseline_id: int,
+) -> HookBaseline:
+    """Mark the baseline as removed (admin opted out of trusting it).
+
+    The hook in settings.json is NOT auto-removed — that's the admin's job."""
+    row = session.exec(
+        select(HookBaseline).where(
+            HookBaseline.id == baseline_id,
+            HookBaseline.machine_id == machine_id,
+        )
+    ).one_or_none()
+    if row is None:
+        raise LookupError(
+            f"HookBaseline id={baseline_id} for machine={machine_id} not found"
+        )
+    row.status = "removed"
+    session.add(row)
+    return row
