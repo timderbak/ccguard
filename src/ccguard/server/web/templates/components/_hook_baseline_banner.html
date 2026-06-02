@@ -1,0 +1,25 @@
+{# Bootstrap banner: shown when ≥1 pending HookBaseline exists for this machine.
+
+   Why: на первом sync машина может прилететь с 40 хуками — мы не хотим
+   засыпать админа карточками. Все pending'и группируем в один баннер с
+   одной кнопкой «Подтвердить все». #}
+{% if pending_hook_count and pending_hook_count > 0 %}
+<section class="mb-4 rounded-lg ring-1 ring-amber-200 bg-amber-50 p-4">
+    <h3 class="text-sm font-semibold text-amber-900 mb-1">
+        Найдено {{ pending_hook_count }} {{ pending_hook_count | hook_word }} без подтверждённого baseline
+    </h3>
+    <p class="text-[12px] text-amber-800 mb-3">
+        Подтверди baseline, чтобы ccguard ловил drift в дальнейшем,
+        или удали хук из <span class="cc-mono">settings.json</span> вручную.
+    </p>
+    <form method="POST"
+          action="/machines/{{ machine.machine_id }}/hook-baseline/accept-all-pending"
+          class="inline-block">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit"
+                class="px-3 py-1.5 bg-amber-700 text-white text-xs rounded-md hover:bg-amber-800 transition-colors">
+            Подтвердить все ({{ pending_hook_count }})
+        </button>
+    </form>
+</section>
+{% endif %}

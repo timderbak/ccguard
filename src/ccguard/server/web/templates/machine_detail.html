@@ -33,6 +33,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M3 7l9-4 9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/><path d="m12 11v10"/></svg>
             Инвентарь
         </h3>
+        {# Hook TOFU baseline UI lives above inventory because pending/drift
+           must be visible even when InventorySnapshot is absent (fresh machine). #}
+        {% include "components/_hook_baseline_banner.html" %}
+        {% include "components/_hook_drift_cards.html" %}
         {% if inventory %}
             {# --- Источники конфигурации Claude Code --- #}
             {% if inventory.get("settings_sources") %}
@@ -106,6 +110,16 @@
                                 <span class="cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200" title="Установлен через ccguard">ccguard</span>
                                 {% else %}
                                 <span class="cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-amber-50 text-amber-700 ring-amber-200" title="Не ccguard-shim — проверь источник">unknown</span>
+                                {% endif %}
+                                {# Hook TOFU status badge (Task 18). Key matches the format built in machine_detail handler. #}
+                                {% set _hb_key = (h.get("event") or "") ~ "|" ~ (h.get("matcher") or "") ~ "|" ~ (h.get("command") or "") %}
+                                {% set _hb_status = hook_baseline_status_map.get(_hb_key) if hook_baseline_status_map else None %}
+                                {% if _hb_status == "active" %}
+                                <span class="cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200" title="Baseline подтверждён — drift отслеживается">baseline</span>
+                                {% elif _hb_status == "pending" %}
+                                <span class="cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-amber-50 text-amber-700 ring-amber-200" title="Baseline ещё не подтверждён — подтверди через карточку выше">pending</span>
+                                {% elif _hb_status == "accepted_drift" %}
+                                <span class="cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-sky-50 text-sky-700 ring-sky-200" title="Baseline принят после обнаруженного drift">drift accepted</span>
                                 {% endif %}
                                 <span class="cc-mono text-xs text-slate-700">{{ h.get("event") }}</span>
                                 {% if h.get("matcher") %}

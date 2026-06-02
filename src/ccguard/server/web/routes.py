@@ -26,6 +26,23 @@ from ccguard.server.services.auth_service import (
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
+
+def _hook_word(n: int) -> str:
+    """Russian plural: 1 хук / 2-4 хука / 5-20 хуков / 21 хук / 22-24 хука / etc."""
+    n = abs(int(n))
+    last_two = n % 100
+    if 11 <= last_two <= 14:
+        return "хуков"
+    last = n % 10
+    if last == 1:
+        return "хук"
+    if 2 <= last <= 4:
+        return "хука"
+    return "хуков"
+
+
+templates.env.filters["hook_word"] = _hook_word
+
 router = APIRouter()
 
 COOKIE_NAME = "ccg_session"
@@ -271,6 +288,73 @@ def machine_detail(
     baseline_rows = list(session.exec(
         select(MCPServerBaseline).where(MCPServerBaseline.machine_id == machine_id)
     ))
+
+    # Hook TOFU baseline: bootstrap banner + drift cards + status badges.
+    from sqlalchemy import func as _hbf
+    from ccguard.server.db.models import FindingRecord, HookBaseline
+    pending_hook_count = session.exec(
+        select(_hbf.count(HookBaseline.id)).where(
+            HookBaseline.machine_id == machine_id,
+            HookBaseline.status == "pending",
+        )
+    ).one()
+    if isinstance(pending_hook_count, tuple):
+        pending_hook_count = pending_hook_count[0]
+    pending_hook_count = int(pending_hook_count or 0)
+
+    hook_drift_findings = list(session.exec(
+        select(FindingRecord)
+        .where(
+            FindingRecord.machine_id == machine_id,
+            FindingRecord.rule_id.in_([  # type: ignore[attr-defined]
+                "hook.rug_pull.content",
+                "hook.rug_pull.command",
+                "hook.unreadable",
+                "hook.new",
+            ]),
+        )
+        .order_by(FindingRecord.discovered_at.desc())  # type: ignore[attr-defined]
+        .limit(30)
+    ))
+    hook_drift_cards: list[dict] = []
+    for hf in hook_drift_findings:
+        try:
+            p = json.loads(hf.payload_json) if hf.payload_json else {}
+        except (ValueError, TypeError):
+            p = {}
+        if not isinstance(p, dict):
+            p = {}
+        # Resolve the baseline row for accept/reject buttons. Slot identity is
+        # (event_name, matcher, command_string); finding payload carries the
+        # first two; command is the post-drift state for content drift and
+        # comes from p["command"], whereas command-drift uses p["new_command"].
+        cmd_key = p.get("new_command") or p.get("command") or ""
+        bl = session.exec(
+            select(HookBaseline).where(
+                HookBaseline.machine_id == machine_id,
+                HookBaseline.event_name == (p.get("event_name") or ""),
+                HookBaseline.matcher == (p.get("matcher") or ""),
+                HookBaseline.command_string == cmd_key,
+            )
+        ).first()
+        hook_drift_cards.append({
+            "title": p.get("title", hf.rule_id),
+            "description": p.get("description", ""),
+            "severity": hf.severity,
+            "payload": p,
+            "baseline_id": bl.id if bl is not None else None,
+        })
+
+    # Per-slot status for the badge on the existing «Хуки» block (Task 18).
+    # Key shape: "event|matcher|command" — matches the Jinja string built in
+    # the template (matcher/command default to "" when None).
+    hook_baseline_rows = list(session.exec(
+        select(HookBaseline).where(HookBaseline.machine_id == machine_id)
+    ))
+    hook_baseline_status_map: dict[str, str] = {}
+    for hb in hook_baseline_rows:
+        key = f"{hb.event_name}|{hb.matcher or ''}|{hb.command_string or ''}"
+        hook_baseline_status_map[key] = hb.status
     # Build a per-mcp_name status: 'red' if there's a critical rug pull,
     # 'amber' if warn, 'green' if baseline exists and no recent findings,
     # 'none' otherwise.
@@ -296,6 +380,9 @@ def machine_detail(
             "sync_freshness": sync_freshness,
             "mcp_rug_cards": mcp_rug_cards,
             "mcp_baseline_status": status_by_name,
+            "pending_hook_count": pending_hook_count,
+            "hook_drift_cards": hook_drift_cards,
+            "hook_baseline_status_map": hook_baseline_status_map,
             "network_suspicious_cards": recent_network_cards_for_machine(
                 session, machine_id
             ),
