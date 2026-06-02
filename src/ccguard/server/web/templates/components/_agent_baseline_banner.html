@@ -1,0 +1,21 @@
+{# Bootstrap banner для agents — bulk accept всех pending. #}
+{% if pending_agent_count and pending_agent_count > 0 %}
+<section class="mb-4 rounded-lg ring-1 ring-amber-200 bg-amber-50 p-4">
+    <h3 class="text-sm font-semibold text-amber-900 mb-1">
+        Найдено {{ pending_agent_count }} {{ pending_agent_count | agent_word }} без подтверждённого baseline
+    </h3>
+    <p class="text-[12px] text-amber-800 mb-3">
+        Субагенты с правами на <span class="cc-mono">Bash/Write/Edit</span> могут выполнять
+        опасные действия. Подтверди baseline только для тех, что ставил сам.
+    </p>
+    <form method="POST"
+          action="/machines/{{ machine.machine_id }}/agent-baseline/accept-all-pending"
+          class="inline-block">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit"
+                class="px-3 py-1.5 bg-amber-700 text-white text-xs rounded-md hover:bg-amber-800 transition-colors">
+            Подтвердить все ({{ pending_agent_count }})
+        </button>
+    </form>
+</section>
+{% endif %}

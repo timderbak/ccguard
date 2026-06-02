@@ -33,10 +33,15 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M3 7l9-4 9 4-9 4-9-4Z"/><path d="M3 7v10l9 4 9-4V7"/><path d="m12 11v10"/></svg>
             Инвентарь
         </h3>
-        {# Hook TOFU baseline UI lives above inventory because pending/drift
-           must be visible even when InventorySnapshot is absent (fresh machine). #}
+        {# Hook / Skill / Agent TOFU baseline UI lives above inventory because
+           pending/drift must be visible even when InventorySnapshot is absent
+           (fresh machine). All partials no-op when there's no data. #}
         {% include "components/_hook_baseline_banner.html" %}
         {% include "components/_hook_drift_cards.html" %}
+        {% include "components/_skill_baseline_banner.html" %}
+        {% include "components/_skill_drift_cards.html" %}
+        {% include "components/_agent_baseline_banner.html" %}
+        {% include "components/_agent_drift_cards.html" %}
         {% if inventory %}
             {# --- Источники конфигурации Claude Code --- #}
             {% if inventory.get("settings_sources") %}
@@ -185,7 +190,7 @@
                     </summary>
                     <ul class="ml-6 mt-2 text-sm space-y-1 text-slate-600">
                         {% for item in items %}
-                        <li class="cc-mono text-xs flex items-center gap-2">
+                        <li class="cc-mono text-xs flex items-center gap-2 flex-wrap">
                             <span>{{ item.get("name") or item.get("event") or item.get("path") or "-" }}</span>
                             {% if section_name == "mcp_servers" and item.get("name") and mcp_baseline_status and mcp_baseline_status.get(item.get("name")) %}
                                 {% set _bs = mcp_baseline_status.get(item.get("name")) %}
@@ -194,6 +199,26 @@
                                       {% if _bs == 'red' %}bg-red-500
                                       {% elif _bs == 'amber' %}bg-amber-500
                                       {% else %}bg-emerald-500{% endif %}"></span>
+                            {% endif %}
+                            {# Source label + TOFU baseline status for skills/agents (spec 2026-06-02). #}
+                            {% if section_name in ("skills", "agents") %}
+                                {% if item.get("parent_plugin") %}
+                                <span class="cc-mono text-[10px] rounded px-1 py-0.5 ring-1 bg-slate-50 text-slate-500 ring-slate-200"
+                                      title="источник: {{ item.get('parent_plugin') }}@{{ item.get('source_marketplace') or 'unknown' }}">
+                                    {{ item.get("parent_plugin") }}
+                                </span>
+                                {% else %}
+                                <span class="cc-mono text-[10px] rounded px-1 py-0.5 ring-1 bg-slate-50 text-slate-400 ring-slate-200" title="источник: local">local</span>
+                                {% endif %}
+                                {% set _sa_key = (item.get("name") or "") ~ "|" ~ (item.get("origin") or "local") ~ "|" ~ (item.get("parent_plugin") or "") %}
+                                {% set _sa_status = (skill_baseline_status_map if section_name == "skills" else agent_baseline_status_map).get(_sa_key) if (skill_baseline_status_map if section_name == "skills" else agent_baseline_status_map) else None %}
+                                {% if _sa_status == "active" %}
+                                <span class="cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200" title="Baseline подтверждён">baseline</span>
+                                {% elif _sa_status == "pending" %}
+                                <span class="cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-amber-50 text-amber-700 ring-amber-200" title="Baseline ещё не подтверждён">pending</span>
+                                {% elif _sa_status == "accepted_drift" %}
+                                <span class="cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-sky-50 text-sky-700 ring-sky-200" title="Baseline принят после drift">drift accepted</span>
+                                {% endif %}
                             {% endif %}
                         </li>
                         {% endfor %}
