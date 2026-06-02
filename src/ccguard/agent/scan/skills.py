@@ -13,7 +13,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from pathlib import Path
 from typing import Literal
 
@@ -40,7 +39,13 @@ def compute_dir_hash(directory: Path) -> str:
     return sha.hexdigest()
 
 
-def _scan_skills_dir(skills_dir: Path, origin: Origin) -> list[SkillEntry]:
+def _scan_skills_dir(
+    skills_dir: Path,
+    origin: Origin,
+    *,
+    parent_plugin: str | None = None,
+    source_marketplace: str | None = None,
+) -> list[SkillEntry]:
     """Каждая поддиректория с SKILL.md = один скилл."""
     out: list[SkillEntry] = []
     if not skills_dir.exists() or not skills_dir.is_dir():
@@ -58,6 +63,8 @@ def _scan_skills_dir(skills_dir: Path, origin: Origin) -> list[SkillEntry]:
                 origin=origin,
                 dir_hash=compute_dir_hash(child),
                 has_referenced_scripts=_has_scripts(child),
+                parent_plugin=parent_plugin,
+                source_marketplace=source_marketplace,
             )
         )
     return out
@@ -71,43 +78,27 @@ def _has_scripts(skill_dir: Path) -> bool:
     return False
 
 
-def _plugin_install_paths(claude_home: Path) -> list[Path]:
-    """installPath'ы из installed_plugins.json."""
-    f = claude_home / "plugins" / "installed_plugins.json"
-    if not f.exists():
-        return []
-    try:
-        data = json.loads(f.read_text())
-    except (json.JSONDecodeError, OSError):
-        return []
-    if not isinstance(data, dict):
-        return []
-    plugins = data.get("plugins") or {}
-    if not isinstance(plugins, dict):
-        return []
-    paths: list[Path] = []
-    seen: set[str] = set()
-    for installs in plugins.values():
-        if not isinstance(installs, list):
-            continue
-        for inst in installs:
-            if not isinstance(inst, dict):
-                continue
-            p = inst.get("installPath")
-            if isinstance(p, str) and p not in seen:
-                paths.append(Path(p))
-                seen.add(p)
-    return paths
-
-
 def scan_all_skills(claude_home: Path) -> list[SkillEntry]:
-    """Local-скиллы из ~/.claude/skills/ + per-plugin-скиллы из installed_plugins.json."""
+    """Local-скиллы из ~/.claude/skills/ + per-plugin-скиллы из installed_plugins.json.
+
+    Скиллы из плагинов получают parent_plugin/source_marketplace из
+    installed_plugins.json (см. ``plugins.plugin_install_index``); local
+    оставляет оба None.
+    """
+    from ccguard.agent.scan.plugins import plugin_install_index
+
     out: list[SkillEntry] = []
     out.extend(_scan_skills_dir(claude_home / "skills", "local"))
 
-    for plugin_root in _plugin_install_paths(claude_home):
+    for plugin_root, plugin_name, marketplace in plugin_install_index(claude_home):
         # Каждый плагин может выкладывать скиллы либо в `<root>/skills/`,
         # либо (старый формат) в `<root>/.claude/skills/`.
-        out.extend(_scan_skills_dir(plugin_root / "skills", "plugin"))
-        out.extend(_scan_skills_dir(plugin_root / ".claude" / "skills", "plugin"))
+        out.extend(_scan_skills_dir(
+            plugin_root / "skills", "plugin",
+            parent_plugin=plugin_name, source_marketplace=marketplace,
+        ))
+        out.extend(_scan_skills_dir(
+            plugin_root / ".claude" / "skills", "plugin",
+            parent_plugin=plugin_name, source_marketplace=marketplace,
+        ))
     return out

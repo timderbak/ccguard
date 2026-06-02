@@ -110,6 +110,43 @@ def _read_installed_plugins(claude_home: Path) -> list[PluginEntry]:
     return out
 
 
+def plugin_install_index(claude_home: Path) -> list[tuple[Path, str, str]]:
+    """Helper for skill/agent scanners: список (install_path, plugin_name, marketplace).
+
+    Marketplace = часть после '@' в `enabledPlugins`-ключе (например
+    `claude-mem@anthropics/claude-plugins-official` → marketplace=
+    `anthropics/claude-plugins-official`). Если у ключа нет `@`,
+    marketplace='unknown'. Поле используется для denormalized source-
+    tracking в SkillBaseline/AgentBaseline.
+    """
+    f = claude_home / "plugins" / "installed_plugins.json"
+    if not f.exists():
+        return []
+    try:
+        data = json.loads(f.read_text())
+    except (json.JSONDecodeError, OSError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    plugins = data.get("plugins") or {}
+    if not isinstance(plugins, dict):
+        return []
+    out: list[tuple[Path, str, str]] = []
+    seen: set[str] = set()
+    for key, installs in plugins.items():
+        name, marketplace = _split_marketplace(str(key))
+        if not isinstance(installs, list):
+            continue
+        for inst in installs:
+            if not isinstance(inst, dict):
+                continue
+            p = inst.get("installPath")
+            if isinstance(p, str) and p not in seen:
+                out.append((Path(p), name, marketplace))
+                seen.add(p)
+    return out
+
+
 def scan_local_plugins(claude_home: Path) -> list[PluginEntry]:
     """Найти установленные плагины. Приоритет: installed_plugins.json.
 
