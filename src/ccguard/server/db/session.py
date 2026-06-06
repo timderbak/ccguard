@@ -83,6 +83,20 @@ _SCAN_RESULT_RATIONALE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("quoted_snippet", "ALTER TABLE scanresult ADD COLUMN quoted_snippet TEXT"),
 )
 
+# Additive column for ToolUseEvent (ТЗ-01: session-scoped correlation). Same
+# PRAGMA-guarded ADD COLUMN pattern as the ScanResult rationale columns —
+# ``create_all`` is a no-op on existing tables, so pre-feature DBs need this
+# explicit ALTER to gain ``session_id``. The matching index is created
+# separately below via CREATE INDEX IF NOT EXISTS (create_all only emits the
+# model's ``index=True`` index on a freshly-created table).
+_TOOL_USE_SESSION_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("session_id", "ALTER TABLE tooluseevent ADD COLUMN session_id TEXT"),
+)
+_TOOL_USE_SESSION_INDEX_DDL: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS ix_tooluseevent_session_id "
+    "ON tooluseevent(session_id)",
+)
+
 
 def make_engine(db_url: str) -> Engine:
     """Создать engine. Для SQLite — включить WAL и foreign_keys."""
@@ -132,6 +146,15 @@ def init_db(engine: Engine) -> None:
         for col_name, ddl in _SCAN_RESULT_RATIONALE_COLUMNS:
             if col_name not in existing_cols:
                 conn.execute(text(ddl))
+        # Additive ALTER for ToolUseEvent.session_id (ТЗ-01) + its index.
+        tooluse_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(tooluseevent)"))
+        }
+        for col_name, ddl in _TOOL_USE_SESSION_COLUMNS:
+            if col_name not in tooluse_cols:
+                conn.execute(text(ddl))
+        for ddl in _TOOL_USE_SESSION_INDEX_DDL:
+            conn.execute(text(ddl))
 
 
 def session_factory(engine: Engine) -> Iterator[Session]:

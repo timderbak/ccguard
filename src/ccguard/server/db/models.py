@@ -135,6 +135,11 @@ class ToolUseEvent(SQLModel, table=True):
     # Per-User Attribution: shell user the tool call ran under. Nullable so
     # old agents (which don't send this) ingest cleanly.
     actor_user: str | None = Field(default=None, index=True)
+    # Claude Code session id (ТЗ-01). Nullable — old agents don't send it;
+    # sequence correlation groups by session_id and falls back to machine-scope
+    # when NULL. Indexed because correlation filters on it. Additive column on
+    # existing DBs is created by init_db's ALTER (create_all is a no-op there).
+    session_id: str | None = Field(default=None, index=True)
 
 
 class MachineBaseline(SQLModel, table=True):

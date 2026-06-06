@@ -61,4 +61,16 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "discovery.network_scan": 2.0,
     "discovery.secret_grep": 4.0,
     "config.agent_settings_edit": 4.0,  # AI-specific high-value
+    # ТЗ-02 staging-write action signals. normal is very noisy (every project
+    # write) → low; hidden/temp writes are staging-suspicious → moderate.
+    "fs.write.hidden": 2.0,
+    "fs.write.normal": 1.0,
+    # ТЗ-03 external-content read. Common on its own (every web fetch) → low;
+    # the danger is the combination (external→stage), scored by the staging
+    # detector, not by this per-event weight.
+    "content.read.external": 1.0,
+    # ТЗ-04 benign-category write markers (build/package caches, VCS). Almost
+    # always legitimate build noise → minimal weight.
+    "fs.write.cache": 0.5,
+    "fs.write.vcs": 0.5,
 }

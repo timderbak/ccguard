@@ -136,7 +136,77 @@ def test_drain_returns_typed_dict_shape(audit_buffer_path: Path) -> None:
             "result_status",
             "signals",
             "actor_user",
+            "session_id",
         }
+
+
+# --- session_id (ТЗ-01) -----------------------------------------------------
+
+
+def test_insert_and_drain_session_id(audit_buffer_path: Path) -> None:
+    with ToolBufferDB(audit_buffer_path) as buf:
+        buf.insert(
+            ts="2026-06-06T12:00:00Z",
+            tool_name="Bash",
+            fingerprint="0123456789abcdef",
+            decision="allow",
+            result_status="success",
+            session_id="sess-abc",
+        )
+        [row] = buf.drain()
+        assert row["session_id"] == "sess-abc"
+
+
+def test_session_id_defaults_to_none(audit_buffer_path: Path) -> None:
+    """Old agents / call sites that omit session_id store NULL (backward compat)."""
+    with ToolBufferDB(audit_buffer_path) as buf:
+        _insert(buf)
+        [row] = buf.drain()
+        assert row["session_id"] is None
+
+
+def test_buffer_migrates_session_id_column_on_legacy_db(audit_buffer_path: Path) -> None:
+    """A buffer DB created before session_id (events table lacks the column)
+    must gain it via forward-add ALTER on reopen — no data loss, drain works."""
+    # Simulate a pre-session-id buffer: events table WITHOUT session_id.
+    conn = sqlite3.connect(str(audit_buffer_path))
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ts TEXT NOT NULL,
+              tool_name TEXT NOT NULL,
+              fingerprint TEXT NOT NULL,
+              decision TEXT NOT NULL,
+              result_status TEXT NOT NULL,
+              signals TEXT NOT NULL DEFAULT '[]',
+              actor_user TEXT
+            );
+            INSERT INTO events(ts, tool_name, fingerprint, decision, result_status)
+            VALUES ('2026-06-06T00:00:00Z', 'Bash', '0123456789abcdef', 'allow', 'success');
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Reopen via ToolBufferDB — should ALTER in the missing column, preserving
+    # the legacy row, and accept a new insert carrying session_id.
+    with ToolBufferDB(audit_buffer_path) as buf:
+        assert buf.row_count() == 1  # legacy row survived
+        buf.insert(
+            ts="2026-06-06T00:01:00Z",
+            tool_name="Bash",
+            fingerprint="fedcba9876543210",
+            decision="allow",
+            result_status="success",
+            session_id="sess-new",
+        )
+        rows = buf.drain()
+    assert len(rows) == 2
+    assert rows[0]["session_id"] is None  # legacy row → NULL
+    assert rows[1]["session_id"] == "sess-new"
 
 
 # --- delete_ids -------------------------------------------------------------

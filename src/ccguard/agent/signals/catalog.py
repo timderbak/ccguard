@@ -269,4 +269,67 @@ CATALOG: tuple[Signal, ...] = (
         _p(r"\.claude/(settings\.json|claude\.json|\.mcp\.json)\b|claude_desktop_config\.json"),
         "AI-agent config tamper — Claude settings / MCP config edit",
     ),
+    # --- Action signals (ТЗ-02 staging middle link) ----------------------
+    # These are ACTION signals, not content-regex signals: emission is gated on
+    # the tool being a write tool (Write/Edit/NotebookEdit) and decided by the
+    # target path shape in ``extractor._write_signals`` — NOT by the generic
+    # regex loop (a Read of ``.env`` must not look like a write). They live in
+    # CATALOG only so their MITRE metadata flows to the UI / drafter the same
+    # way cred/egress signals do; ``ACTION_SIGNAL_IDS`` excludes them from the
+    # regex loop. The ``pattern`` below is documentary (the hidden-path rule)
+    # and is never used for matching.
+    Signal(
+        "fs.write.hidden",
+        "T1074",
+        _p(r"(^|/)\.[^/]+|/(tmp|var/tmp)/"),
+        "Write to a hidden/temp path — data staging",
+    ),
+    Signal(
+        "fs.write.normal",
+        "T1074",
+        _p(r".+"),
+        "Write to a normal project path (weak staging signal)",
+    ),
+    # ТЗ-03: ingestion of external/untrusted content — the delivery vector for
+    # indirect prompt injection. Action signal (tool-gated on WebFetch/WebSearch
+    # or a Read from an untrusted path) — emission lives in
+    # ``extractor._external_content_signals``; the pattern below is documentary.
+    # Mapped to ATLAS LLM Prompt Injection (the AI-specific technique this read
+    # enables) rather than a generic ATT&CK id.
+    Signal(
+        "content.read.external",
+        "ATLAS.AML.T0051",
+        _p(r"/(tmp|var/tmp|downloads|node_modules|site-packages)/|/\.(cache|cargo|npm)/"),
+        "Read of external/untrusted content (web fetch or untrusted path)",
+    ),
+    # ТЗ-04: category MARKERS emitted ALONGSIDE fs.write.{hidden,normal} when the
+    # write target is a known build/package cache or a VCS dir. They carry only a
+    # path CATEGORY (privacy — never the path) so the server-side staging
+    # orchestrator can allowlist build noise without seeing the path. Documentary
+    # patterns; emission is tool-gated in ``extractor._write_signals``.
+    Signal(
+        "fs.write.cache",
+        "T1074",
+        _p(r"/(node_modules|site-packages|__pycache__)/|/\.(cache|cargo|npm|pytest_cache|mypy_cache|tox)/"),
+        "Write to a build/package cache (benign-staging allowlist marker)",
+    ),
+    Signal(
+        "fs.write.vcs",
+        "T1074",
+        _p(r"/\.git/"),
+        "Write to a VCS internal dir (benign-staging allowlist marker)",
+    ),
+)
+
+# Action signals (see note above): excluded from the generic regex loop in
+# ``extractor.extract_signals`` and emitted only by tool-gated paths
+# (``_write_signals`` / ``_external_content_signals``).
+ACTION_SIGNAL_IDS: frozenset[str] = frozenset(
+    {
+        "fs.write.hidden",
+        "fs.write.normal",
+        "content.read.external",
+        "fs.write.cache",
+        "fs.write.vcs",
+    }
 )

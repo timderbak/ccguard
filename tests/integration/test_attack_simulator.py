@@ -69,7 +69,8 @@ def test_exfil_scenario_drives_sequence_finding(client, auth_headers):
             select(FindingRecord).where(FindingRecord.rule_id == SEQUENCE_RULE_ID)
         ).first()
     assert f is not None
-    assert f.severity == "high"
+    # ТЗ-02 severity fix: cred→egress now emits schema-valid "critical".
+    assert f.severity == "critical"
 
 
 def test_kill_chain_fires_both_risk_and_sequence(client, auth_headers):

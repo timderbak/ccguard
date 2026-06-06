@@ -72,6 +72,13 @@ def main_cli(stdin_text: str | None = None) -> int:
         if not isinstance(tool_name, str):
             tool_name = "(unknown)"
 
+        # ТЗ-01: session_id is a top-level field on the hook payload (NOT inside
+        # tool_input), so it is untouched by the `del tool_input` privacy-drop
+        # below. Coerce non-str to None so old/odd payloads ingest cleanly.
+        session_id = data.get("session_id")
+        if not isinstance(session_id, str):
+            session_id = None
+
         tool_input = data.get("tool_input") or {}
         if not isinstance(tool_input, dict):
             tool_input = {}
@@ -119,6 +126,7 @@ def main_cli(stdin_text: str | None = None) -> int:
                 result_status=result_status,
                 signals=signals,
                 actor_user=actor_user,
+                session_id=session_id,
             )
             row_count = buf.row_count()
 

@@ -64,7 +64,9 @@ def test_ingested_cred_then_egress_drives_sequence_finding(
             select(FindingRecord).where(FindingRecord.rule_id == SEQUENCE_RULE_ID)
         ).first()
     assert finding is not None
-    assert finding.severity == "high"
+    # ТЗ-02 severity fix: cred→egress now emits a schema-valid severity
+    # (was the out-of-schema "high").
+    assert finding.severity == "critical"
     payload = json.loads(finding.payload_json)
     assert payload["cred_signal"] == "cred.read.aws"
     assert payload["egress_signal"] == "egress.network_tool"

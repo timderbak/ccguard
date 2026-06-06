@@ -40,6 +40,63 @@ def _buffer_rows(home: Path) -> list[tuple]:
         conn.close()
 
 
+def _session_ids(home: Path) -> list:
+    db = home / "audit_buffer.db"
+    conn = sqlite3.connect(str(db))
+    try:
+        return [r[0] for r in conn.execute("SELECT session_id FROM events").fetchall()]
+    finally:
+        conn.close()
+
+
+# --- session_id (ТЗ-01) -----------------------------------------------------
+
+
+def test_session_id_extracted_and_stored(
+    _isolated_home: Path, mock_spawn: MagicMock
+) -> None:
+    stdin = json.dumps(
+        {
+            "session_id": "sess-xyz",
+            "tool_name": "Bash",
+            "tool_input": {"command": "git status"},
+            "tool_response": {},
+        }
+    )
+    hook_main.main_cli(stdin)
+    assert _session_ids(_isolated_home) == ["sess-xyz"]
+
+
+def test_missing_session_id_stored_as_null(
+    _isolated_home: Path, mock_spawn: MagicMock
+) -> None:
+    """v0.1/v0.2 hook payloads have no session_id → NULL, no crash."""
+    stdin = json.dumps(
+        {
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "tool_response": {},
+        }
+    )
+    hook_main.main_cli(stdin)
+    assert _session_ids(_isolated_home) == [None]
+
+
+def test_non_str_session_id_coerced_to_null(
+    _isolated_home: Path, mock_spawn: MagicMock
+) -> None:
+    stdin = json.dumps(
+        {
+            "session_id": 12345,
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "tool_response": {},
+        }
+    )
+    hook_main.main_cli(stdin)
+    assert _session_ids(_isolated_home) == [None]
+
+
 def test_happy_path_inserts_row_and_spawns_flusher(
     _isolated_home: Path, mock_spawn: MagicMock
 ) -> None:

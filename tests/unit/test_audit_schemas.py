@@ -124,3 +124,17 @@ def test_audit_batch_out_roundtrip() -> None:
 def test_no_tool_input_field_exists() -> None:
     """Privacy invariant: ToolUseEventIn must NEVER carry raw tool_input."""
     assert "tool_input" not in ToolUseEventIn.model_fields
+
+
+# --- session_id (ТЗ-01) -----------------------------------------------------
+
+
+def test_session_id_defaults_to_none_when_omitted() -> None:
+    """Old agents never send session_id → validation must not fail."""
+    e = ToolUseEventIn.model_validate(_good_event())
+    assert e.session_id is None
+
+
+def test_session_id_accepted_when_present() -> None:
+    e = ToolUseEventIn.model_validate(_good_event() | {"session_id": "sess-1"})
+    assert e.session_id == "sess-1"
