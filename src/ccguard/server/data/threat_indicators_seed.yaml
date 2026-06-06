@@ -1,0 +1,320 @@
+# ThreatIndicator seed — vetted core of detection indicators (ТЗ-05).
+#
+# This file is the version-controlled, code-reviewed seed loaded into the
+# `threatindicator` table at startup (idempotent). It is a CATALOG of detection
+# inputs (indicators), NOT a log of detection events (those are FindingRecord).
+#
+# Adding an indicator = add a YAML entry below (no code change). Path-2
+# autocollection (Atomic/Gitleaks/CVE — future ТЗ) will instead INSERT rows
+# directly with status=pending for admin approval; this file stays the curated
+# `active` core.
+#
+# Fields: indicator_type (sensitive_path|dangerous_command|suspicious_host|
+# safe_path), value, value_kind (exact|glob|regex|prefix), source, source_ref,
+# technique (MITRE/ATLAS id), tactic, weight, platform_relevant, description.
+# Loader stamps status=active, enabled=true.
+
+indicators:
+  # =========================================================================
+  # source: os-standard — documented credential/secret file locations (T1552)
+  # =========================================================================
+  - indicator_type: sensitive_path
+    value: "~/.ssh/id_rsa"
+    value_kind: exact
+    source: os-standard
+    technique: T1552.004
+    tactic: credential-access
+    weight: 5.0
+    description: "SSH RSA private key"
+  - indicator_type: sensitive_path
+    value: "~/.ssh/id_*"
+    value_kind: glob
+    source: os-standard
+    technique: T1552.004
+    tactic: credential-access
+    weight: 5.0
+    description: "SSH private keys (any algorithm)"
+  - indicator_type: sensitive_path
+    value: "~/.ssh/*"
+    value_kind: glob
+    source: os-standard
+    technique: T1552.004
+    tactic: credential-access
+    weight: 3.0
+    description: "SSH directory contents (keys, known_hosts, config)"
+  - indicator_type: sensitive_path
+    value: "~/.aws/credentials"
+    value_kind: exact
+    source: os-standard
+    technique: T1552.001
+    tactic: credential-access
+    weight: 5.0
+    description: "AWS static credentials"
+  - indicator_type: sensitive_path
+    value: "~/.aws/config"
+    value_kind: exact
+    source: os-standard
+    technique: T1552.001
+    tactic: credential-access
+    weight: 3.0
+    description: "AWS CLI config (may carry SSO/role secrets)"
+  - indicator_type: sensitive_path
+    value: "~/.config/gcloud/**"
+    value_kind: glob
+    source: os-standard
+    technique: T1552.001
+    tactic: credential-access
+    weight: 5.0
+    description: "Google Cloud credential store"
+  - indicator_type: sensitive_path
+    value: "~/.kube/config"
+    value_kind: exact
+    source: os-standard
+    technique: T1552.001
+    tactic: credential-access
+    weight: 5.0
+    description: "Kubernetes kubeconfig (cluster creds)"
+  - indicator_type: sensitive_path
+    value: "~/.docker/config.json"
+    value_kind: exact
+    source: os-standard
+    technique: T1552.001
+    tactic: credential-access
+    weight: 4.0
+    description: "Docker registry auth tokens"
+  - indicator_type: sensitive_path
+    value: "~/.netrc"
+    value_kind: exact
+    source: os-standard
+    technique: T1552.001
+    tactic: credential-access
+    weight: 4.0
+    description: "netrc machine credentials"
+  - indicator_type: sensitive_path
+    value: "~/.npmrc"
+    value_kind: exact
+    source: os-standard
+    technique: T1552.001
+    tactic: credential-access
+    weight: 3.0
+    description: "npm registry auth token"
+  - indicator_type: sensitive_path
+    value: "~/.pypirc"
+    value_kind: exact
+    source: os-standard
+    technique: T1552.001
+    tactic: credential-access
+    weight: 3.0
+    description: "PyPI upload credentials"
+  - indicator_type: sensitive_path
+    value: "~/.git-credentials"
+    value_kind: exact
+    source: os-standard
+    technique: T1552.001
+    tactic: credential-access
+    weight: 4.0
+    description: "git stored credentials"
+
+  # =========================================================================
+  # source: atomic-red-team — commands from MITRE techniques, filtered to what
+  # an AI agent can actually run (Bash/Read/Write). Windows/registry/PowerShell
+  # post-exploitation intentionally excluded (platform_relevant gates the rest).
+  # =========================================================================
+  - indicator_type: dangerous_command
+    value: "cat\\s+\\S*\\.aws/credentials"
+    value_kind: regex
+    source: atomic-red-team
+    source_ref: "T1552.001/atomic-1"
+    technique: T1552.001
+    tactic: credential-access
+    weight: 4.0
+    description: "Read AWS credentials file"
+  - indicator_type: dangerous_command
+    value: "find\\s+/.*-name\\s+['\\\"]?\\*\\.pem"
+    value_kind: regex
+    source: atomic-red-team
+    source_ref: "T1552.001/atomic-7"
+    technique: T1552.001
+    tactic: credential-access
+    weight: 4.0
+    description: "Filesystem sweep for PEM private keys"
+  - indicator_type: dangerous_command
+    value: "find\\s+/.*-name\\s+id_rsa"
+    value_kind: regex
+    source: atomic-red-team
+    source_ref: "T1552.004/atomic-1"
+    technique: T1552.004
+    tactic: credential-access
+    weight: 4.0
+    description: "Filesystem sweep for SSH private keys"
+  - indicator_type: dangerous_command
+    value: "grep\\s+-r\\w*\\s+.*(password|api[_-]?key|secret)"
+    value_kind: regex
+    source: atomic-red-team
+    source_ref: "T1552.001/atomic-9"
+    technique: T1552.001
+    tactic: credential-access
+    weight: 3.0
+    description: "Recursive grep for secrets in files"
+  - indicator_type: dangerous_command
+    value: "tar\\s+.*c.*f.*\\s+(~|/home|/Users)"
+    value_kind: regex
+    source: atomic-red-team
+    source_ref: "T1005/atomic-2"
+    technique: T1005
+    tactic: collection
+    weight: 3.0
+    description: "Archive of home directory — bulk local data collection"
+  - indicator_type: dangerous_command
+    value: "curl\\s+.*\\|\\s*(ba|z)?sh"
+    value_kind: regex
+    source: atomic-red-team
+    source_ref: "T1059.004/atomic-1"
+    technique: T1059.004
+    tactic: execution
+    weight: 5.0
+    description: "Pipe remote script straight into a shell"
+  - indicator_type: dangerous_command
+    value: "(curl|wget)\\s+.*169\\.254\\.169\\.254"
+    value_kind: regex
+    source: atomic-red-team
+    source_ref: "T1552.005/atomic-1"
+    technique: T1552.005
+    tactic: credential-access
+    weight: 5.0
+    description: "Cloud instance metadata endpoint access (IMDS cred theft)"
+
+  # =========================================================================
+  # source: atomic-red-team / threat-intel — known exfil channels (T1041/T1567)
+  # =========================================================================
+  - indicator_type: suspicious_host
+    value: "pastebin.com"
+    value_kind: exact
+    source: atomic-red-team
+    source_ref: "T1567/exfil-paste"
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Paste site — common exfil drop"
+  - indicator_type: suspicious_host
+    value: "0x0.st"
+    value_kind: exact
+    source: atomic-red-team
+    source_ref: "T1567/exfil-paste"
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anonymous file upload — exfil drop"
+  - indicator_type: suspicious_host
+    value: "transfer.sh"
+    value_kind: exact
+    source: atomic-red-team
+    source_ref: "T1567/exfil-upload"
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anonymous file transfer — exfil drop"
+  - indicator_type: suspicious_host
+    value: "api.telegram.org"
+    value_kind: exact
+    source: atomic-red-team
+    source_ref: "T1102/bot-c2"
+    technique: T1102
+    tactic: exfiltration
+    weight: 4.0
+    description: "Telegram bot API — C2 / exfil channel"
+  - indicator_type: suspicious_host
+    value: "discord.com/api/webhooks"
+    value_kind: prefix
+    source: atomic-red-team
+    source_ref: "T1102/bot-c2"
+    technique: T1102
+    tactic: exfiltration
+    weight: 4.0
+    description: "Discord webhook — exfil channel"
+  - indicator_type: suspicious_host
+    value: "hooks.slack.com/services"
+    value_kind: prefix
+    source: atomic-red-team
+    source_ref: "T1102/bot-c2"
+    technique: T1102
+    tactic: exfiltration
+    weight: 3.0
+    description: "Slack incoming webhook — exfil channel"
+
+  # =========================================================================
+  # source: manual — safe_path allowlist carried over from ТЗ-04 (build noise).
+  # Mirrors signals/extractor._CACHE_WRITE_COMPONENTS / _VCS_WRITE_COMPONENTS.
+  # Kept here so the allowlist lives in the single store too — but the engine is
+  # NOT switched to read it yet (consolidation is a later ТЗ).
+  # =========================================================================
+  - indicator_type: safe_path
+    value: "node_modules"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "npm dependency tree — build noise"
+  - indicator_type: safe_path
+    value: ".cache"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "Generic cache dir — build noise"
+  - indicator_type: safe_path
+    value: ".cargo"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "Rust cargo cache — build noise"
+  - indicator_type: safe_path
+    value: ".npm"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "npm cache — build noise"
+  - indicator_type: safe_path
+    value: ".pytest_cache"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "pytest cache — build noise"
+  - indicator_type: safe_path
+    value: ".mypy_cache"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "mypy cache — build noise"
+  - indicator_type: safe_path
+    value: ".tox"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "tox env cache — build noise"
+  - indicator_type: safe_path
+    value: "__pycache__"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "Python bytecode cache — build noise"
+  - indicator_type: safe_path
+    value: "site-packages"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "Python installed packages — build noise"
+  - indicator_type: safe_path
+    value: ".git"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "VCS internal dir — build noise"

@@ -21,6 +21,10 @@ htmlcov/
 *.db-shm
 *.db-wal
 data/
+# ТЗ-05: the versioned ThreatIndicator seed lives under a data/ dir — re-include
+# it explicitly (the broad data/ rule above is for runtime data, not this seed).
+!src/ccguard/server/data/
+!src/ccguard/server/data/threat_indicators_seed.yaml
 ccguard.db*
 .idea/
 .vscode/

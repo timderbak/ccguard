@@ -514,3 +514,53 @@ class SettingsRecord(SQLModel, table=True):
     key: str = Field(primary_key=True)
     value: str
     updated_at: datetime = Field(default_factory=_utcnow)
+
+
+class ThreatIndicator(SQLModel, table=True):
+    """Reference catalog of detection INDICATORS (ТЗ-05).
+
+    An *indicator* is a rule/feature used to look for threats ("the path
+    ``~/.aws/credentials`` is sensitive") — an INPUT to detection. This is
+    distinct from :class:`FindingRecord`, which records detection EVENTS
+    (outputs). Do not conflate the two in one table.
+
+    Designed for MANY sources from day one so Path-2 autocollection (Atomic /
+    Gitleaks / CVE feeds — a future ТЗ) plugs in with NO schema change: it just
+    inserts rows with a new ``source`` and ``status="pending"`` for admin
+    review, mirroring :class:`ProposedSignal`. Seed rows load as ``active``.
+
+    Composite UNIQUE ``(indicator_type, value, source)`` is installed via DDL in
+    :func:`ccguard.server.db.session.init_db` (mirrors ``MCPServerBaseline``):
+    the same value attested by two sources is two rows (cross-corroboration),
+    but one source never duplicates it.
+
+    NOTE (ТЗ-05 §0.2): existing indicators still live scattered in their current
+    places (dangerous-bash in ``schemas/policy.py``, suspicious hosts in
+    ``agent/bash_url_parser.py``, sensitive paths in ``signals/catalog.py``,
+    safe caches in ``signals/extractor.py``). They are duplicated into the seed
+    here but NOT yet removed — engines are wired to this store in a later ТЗ.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    # Identity: what to look for and how to match it.
+    indicator_type: str = Field(index=True)  # sensitive_path|dangerous_command|suspicious_host|safe_path
+    value: str
+    value_kind: str = "exact"  # exact|glob|regex|prefix
+    # Provenance — the key to Path-2 multi-source collection.
+    source: str  # os-standard|atomic-red-team|manual|gitleaks|llm-proposed|...
+    source_ref: str | None = None  # technique id / atomic name / URL in the source
+    # Classification — the seed of the ATLAS/ATT&CK coverage map.
+    technique: str | None = Field(default=None, index=True)  # T#### / AML.T####
+    tactic: str | None = None  # credential-access|exfiltration|...
+    # Scoring & applicability.
+    weight: float = 1.0
+    platform_relevant: bool = True  # applies to an AI agent (filters Atomic noise)
+    # Lifecycle — seed=active; Path-2 sends pending → admin approves → active.
+    status: str = Field(default="active", index=True)  # active|pending|rejected|disabled
+    enabled: bool = True  # consumers read only enabled+active
+    # Metadata.
+    description: str | None = None
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+    reviewed_by: str | None = None  # who promoted pending → active (Path 2)
+    reviewed_at: datetime | None = None

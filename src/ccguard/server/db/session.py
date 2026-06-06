@@ -97,6 +97,14 @@ _TOOL_USE_SESSION_INDEX_DDL: tuple[str, ...] = (
     "ON tooluseevent(session_id)",
 )
 
+# Composite UNIQUE for ThreatIndicator (ТЗ-05). Same idempotent pattern as the
+# baseline tables — one row per (indicator_type, value, source) so the same
+# value from two sources is two rows, but one source can't duplicate it.
+_THREAT_INDICATOR_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_threatindicator_type_value_source "
+    "ON threatindicator(indicator_type, value, source)",
+)
+
 
 def make_engine(db_url: str) -> Engine:
     """Создать engine. Для SQLite — включить WAL и foreign_keys."""
@@ -137,6 +145,8 @@ def init_db(engine: Engine) -> None:
         for ddl in _HOOK_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
         for ddl in _SKILL_AGENT_BASELINE_INDEX_DDL:
+            conn.execute(text(ddl))
+        for ddl in _THREAT_INDICATOR_INDEX_DDL:
             conn.execute(text(ddl))
         # Additive ALTERs for ScanResult. SQLite lacks IF NOT EXISTS on
         # ADD COLUMN — introspect via PRAGMA and skip when already present.

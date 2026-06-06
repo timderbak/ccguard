@@ -37,6 +37,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_sequence_settings,
     )
     from ccguard.server.services.token_service import bootstrap_env_tokens
+    from ccguard.server.services import indicator_seed_service
     with _Session(engine) as _s:
         bootstrap_env_tokens(_s, env_tokens=[t.value for t in cfg.tokens])
         # Plan 03-01 D-04: seed LLM-scanner KV defaults on first startup;
@@ -48,6 +49,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_sequence_settings(_s)
         # Behavioral Detection Stage 5: seed enforcement_mode = observe.
         seed_enforcement_mode(_s)
+        # ТЗ-05: load the vetted ThreatIndicator core (idempotent; a broken
+        # seed file logs + loads nothing, never blocks startup).
+        indicator_seed_service.load_seed(_s)
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)
