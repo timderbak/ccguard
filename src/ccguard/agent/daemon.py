@@ -190,6 +190,10 @@ def _build_real_sync_callable() -> SyncCallable:
                 audit_cursor_path=audit_cursor_path,
                 policy_cache_path=cache,
             )
+            # ТЗ-07: explicit heartbeat every cycle — sent even when the sync
+            # carried nothing, so the server can tell idle-but-alive from dead.
+            # Best-effort: a heartbeat failure never affects the sync result.
+            _send_heartbeat_best_effort(cfg, inv.machine_id)
             dur_ms = (time.monotonic() - t0) * 1000.0
             if getattr(result, "error", None):
                 return DaemonResult(ok=False, error=str(result.error), duration_ms=dur_ms)
@@ -199,6 +203,33 @@ def _build_real_sync_callable() -> SyncCallable:
             return DaemonResult(ok=False, error=f"{type(exc).__name__}: {exc}", duration_ms=dur_ms)
 
     return do_sync
+
+
+def _send_heartbeat_best_effort(cfg: object, machine_id: str) -> None:
+    """Fire one heartbeat with a self-integrity check. Swallows everything."""
+    try:
+        import os as _os
+        from pathlib import Path as _Path
+
+        from ccguard.agent import heartbeat as _hb
+        from ccguard.agent.config import default_config_dir as _dcd
+
+        settings_path = (
+            _Path(_os.environ.get("CCGUARD_CLAUDE_HOME", _Path.home() / ".claude"))
+            / "settings.json"
+        )
+        interval = int(getattr(cfg, "interval_seconds", 0) or 0) or None
+        payload = _hb.build_heartbeat(
+            machine_id=machine_id,
+            agent_version=getattr(cfg, "agent_version", None),
+            hooks_intact=_hb.check_hooks_intact(settings_path),
+            expected_interval_sec=interval,
+        )
+        _hb.send_heartbeat(
+            server_url=cfg.server.url, token=cfg.server.token, payload=payload
+        )
+    except Exception:  # noqa: BLE001 — heartbeat must never break the daemon
+        pass
 
 
 def main() -> int:

@@ -22,6 +22,15 @@ class Machine(SQLModel, table=True):
     first_seen: datetime = Field(default_factory=_utcnow)
     last_seen: datetime = Field(default_factory=_utcnow)
     agent_version: str | None = None
+    # ТЗ-07 sensor self-protection. ``last_heartbeat_at`` is the explicit "I'm
+    # alive" ping (distinct from last_seen, which only moves on inventory/audit)
+    # — lets the server tell an idle-but-alive sensor from a dead/suppressed one.
+    # NULL = a legacy agent that never sent a heartbeat (never alerted on).
+    # Additive columns are created on existing DBs via ALTER in init_db.
+    last_heartbeat_at: datetime | None = None
+    expected_interval_sec: int | None = None  # agent-declared heartbeat cadence
+    hooks_intact: bool | None = None  # last self-check: ccguard hook still installed?
+    silent_since: datetime | None = None  # open silence episode (dedup); NULL = active
 
 
 class InventorySnapshot(SQLModel, table=True):

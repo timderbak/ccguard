@@ -92,6 +92,15 @@ _SCAN_RESULT_RATIONALE_COLUMNS: tuple[tuple[str, str], ...] = (
 _TOOL_USE_SESSION_COLUMNS: tuple[tuple[str, str], ...] = (
     ("session_id", "ALTER TABLE tooluseevent ADD COLUMN session_id TEXT"),
 )
+
+# Additive columns for Machine (ТЗ-07 sensor self-protection). create_all is a
+# no-op on existing tables, so pre-feature DBs need these explicit ALTERs.
+_MACHINE_HEARTBEAT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("last_heartbeat_at", "ALTER TABLE machine ADD COLUMN last_heartbeat_at TIMESTAMP"),
+    ("expected_interval_sec", "ALTER TABLE machine ADD COLUMN expected_interval_sec INTEGER"),
+    ("hooks_intact", "ALTER TABLE machine ADD COLUMN hooks_intact BOOLEAN"),
+    ("silent_since", "ALTER TABLE machine ADD COLUMN silent_since TIMESTAMP"),
+)
 _TOOL_USE_SESSION_INDEX_DDL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS ix_tooluseevent_session_id "
     "ON tooluseevent(session_id)",
@@ -173,6 +182,13 @@ def init_db(engine: Engine) -> None:
         }
         for col_name, ddl in _TOOL_USE_SESSION_COLUMNS:
             if col_name not in tooluse_cols:
+                conn.execute(text(ddl))
+        # Additive ALTERs for Machine heartbeat columns (ТЗ-07).
+        machine_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(machine)"))
+        }
+        for col_name, ddl in _MACHINE_HEARTBEAT_COLUMNS:
+            if col_name not in machine_cols:
                 conn.execute(text(ddl))
         for ddl in _TOOL_USE_SESSION_INDEX_DDL:
             conn.execute(text(ddl))
