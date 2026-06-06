@@ -564,3 +564,58 @@ class ThreatIndicator(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=_utcnow)
     reviewed_by: str | None = None  # who promoted pending → active (Path 2)
     reviewed_at: datetime | None = None
+    # ТЗ-06: DEPRECATED — single-technique attribution superseded by the
+    # many-to-many IndicatorTechniqueMapping. Kept (not dropped) so the ТЗ-05
+    # seed loader keeps writing it and the migration can read it; source of
+    # truth for attribution is now the junction table.
+
+
+class AtlasTechnique(SQLModel, table=True):
+    """Catalog of threat techniques — ATLAS (AI) + the ATT&CK techniques our
+    indicators reference (ТЗ-06).
+
+    One table with a ``framework`` discriminator (``atlas`` | ``attack``) so an
+    indicator can map to either taxonomy (0.3 decision). Hierarchy
+    (tactic → technique → sub-technique) via the self-referential
+    ``parent_technique`` — relational, no graph DB needed.
+
+    Hybrid load like ThreatIndicator: a vetted seed
+    (``data/atlas_techniques_seed.yaml``) loads idempotently at startup.
+    Network autoload of the full ATLAS taxonomy is Path-2 (future ТЗ) — hence
+    the ``source`` column.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    technique_id: str = Field(index=True)  # "AML.T0051" / "T1552.001"; UNIQUE via DDL
+    framework: str = Field(index=True)  # atlas | attack
+    name: str
+    tactic: str = Field(index=True)  # credential-access | exfiltration | ...
+    description: str | None = None
+    parent_technique: str | None = None  # parent technique_id; NULL at top level
+    url: str | None = None
+    source: str = "atlas-seed"
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
+class IndicatorTechniqueMapping(SQLModel, table=True):
+    """Junction table: ThreatIndicator ↔ AtlasTechnique (many-to-many, ТЗ-06).
+
+    One indicator (e.g. reading ``~/.aws/credentials``) is relevant to several
+    techniques (T1552 Unsecured Credentials AND T1005 Data from Local System) —
+    hence the link lives here, not as a scalar on the indicator. Composite
+    UNIQUE ``(indicator_id, technique_id)`` via DDL prevents double-linking.
+
+    ``mapping_source`` records who linked it: ``seed`` (vetted), ``manual``,
+    ``auto`` (heuristic remap when a new technique arrives — lower
+    ``confidence``, distinguishable for review). Indexed both ways since queries
+    run in both directions (a technique's indicators / an indicator's techniques).
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    indicator_id: int = Field(index=True)  # FK → ThreatIndicator.id
+    technique_id: str = Field(index=True)  # FK → AtlasTechnique.technique_id
+    mapping_source: str = "seed"  # seed | manual | auto
+    confidence: float = 1.0
+    created_at: datetime = Field(default_factory=_utcnow)
+    created_by: str | None = None

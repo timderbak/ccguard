@@ -52,6 +52,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # ТЗ-05: load the vetted ThreatIndicator core (idempotent; a broken
         # seed file logs + loads nothing, never blocks startup).
         indicator_seed_service.load_seed(_s)
+        # ТЗ-06: load ATLAS taxonomy, then migrate ТЗ-05 scalar technique
+        # attribution into the many-to-many junction. Both idempotent.
+        from ccguard.server.services import atlas_seed_service
+        atlas_seed_service.load_atlas_seed(_s)
+        atlas_seed_service.migrate_indicator_techniques(_s)
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)

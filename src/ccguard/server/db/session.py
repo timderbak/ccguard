@@ -105,6 +105,15 @@ _THREAT_INDICATOR_INDEX_DDL: tuple[str, ...] = (
     "ON threatindicator(indicator_type, value, source)",
 )
 
+# ATLAS taxonomy (ТЗ-06): unique technique_id, and the junction's composite
+# UNIQUE (indicator_id, technique_id). Same idempotent pattern as above.
+_ATLAS_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_atlastechnique_technique_id "
+    "ON atlastechnique(technique_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_indicatortechniquemapping_pair "
+    "ON indicatortechniquemapping(indicator_id, technique_id)",
+)
+
 
 def make_engine(db_url: str) -> Engine:
     """Создать engine. Для SQLite — включить WAL и foreign_keys."""
@@ -147,6 +156,8 @@ def init_db(engine: Engine) -> None:
         for ddl in _SKILL_AGENT_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
         for ddl in _THREAT_INDICATOR_INDEX_DDL:
+            conn.execute(text(ddl))
+        for ddl in _ATLAS_INDEX_DDL:
             conn.execute(text(ddl))
         # Additive ALTERs for ScanResult. SQLite lacks IF NOT EXISTS on
         # ADD COLUMN — introspect via PRAGMA and skip when already present.
