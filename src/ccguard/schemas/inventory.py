@@ -29,6 +29,11 @@ class HookEntry(SchemaBase):
     source: str
     command_file_hash: str | None = None
     command_file_path: str | None = None
+    # TOFU baseline / drift detection. None means "no info" (couldn't read,
+    # inline command, etc); when set, one of {"missing", "permission_denied",
+    # "too_large"} — explains why command_file_hash is None even though the
+    # command appears to reference a file.
+    file_unreadable_reason: str | None = None
     # v0.2 UX/forensics field. Agent sets True when the hook command (or its
     # script file's shebang block) carries a ccguard ownership marker, so the
     # /admin/machines/<id> UI can show "this hook is ours" vs "unknown — check
@@ -59,6 +64,12 @@ class SkillEntry(SchemaBase):
     origin: Literal["local", "marketplace", "plugin"]
     dir_hash: str
     has_referenced_scripts: bool
+    # v0.3 source tracking. Optional so v0.1/v0.2 inventory payloads parse.
+    # parent_plugin: имя плагина-родителя (без marketplace), source_marketplace:
+    # marketplace-key (например "anthropics/claude-plugins-official"). Для
+    # local-скиллов оба None. См. specs/2026-06-02-skills-agents-baseline-design.md.
+    parent_plugin: str | None = None
+    source_marketplace: str | None = None
 
 
 class PluginEntry(SchemaBase):
@@ -68,7 +79,8 @@ class PluginEntry(SchemaBase):
 
 
 class AgentEntry(SchemaBase):
-    """Кастомный субагент: `~/.claude/agents/<name>.md`."""
+    """Кастомный субагент: `~/.claude/agents/<name>.md` (local) или
+    `<plugin_install_path>/agents/<name>.md` (plugin-bundled, v0.3+)."""
 
     name: str
     path: str
@@ -76,6 +88,11 @@ class AgentEntry(SchemaBase):
     tools: list[str] | None = None  # из YAML frontmatter `tools:` (если есть)
     model: str | None = None
     description: str | None = None
+    # v0.3 source tracking — параллельно SkillEntry. До v0.3 агенты
+    # сканировались только из ~/.claude/agents/, поэтому default "local".
+    origin: Literal["local", "plugin"] = "local"
+    parent_plugin: str | None = None
+    source_marketplace: str | None = None
 
 
 class CommandEntry(SchemaBase):

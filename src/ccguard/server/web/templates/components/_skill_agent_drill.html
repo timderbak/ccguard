@@ -1,0 +1,21 @@
+{# HTMX drill-down partial: список (machine_id, hash, status) для одного слота. #}
+<div class="ml-4 py-2">
+    <p class="text-[10px] uppercase tracking-wide text-slate-400 cc-mono mb-1">{{ kind }} «{{ name }}» — на машинах</p>
+    {% if rows %}
+    <ul class="cc-mono text-[11px] space-y-0.5">
+        {% for machine_id, h, status in rows %}
+        <li class="flex items-center gap-2">
+            <a href="/machines/{{ machine_id }}" class="text-emerald-700 hover:underline">{{ machine_id }}</a>
+            <span class="text-slate-500 truncate" style="max-width: 14rem;" title="{{ h }}">{{ h[:12] }}…</span>
+            <span class="rounded px-1 py-0.5 ring-1
+                {% if status == 'active' %}bg-emerald-50 text-emerald-700 ring-emerald-200
+                {% elif status == 'pending' %}bg-amber-50 text-amber-700 ring-amber-200
+                {% elif status == 'accepted_drift' %}bg-sky-50 text-sky-700 ring-sky-200
+                {% else %}bg-slate-100 text-slate-500 ring-slate-200{% endif %}">{{ status }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-slate-400 text-[11px]">Ничего не найдено.</p>
+    {% endif %}
+</div>

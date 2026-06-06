@@ -10,7 +10,12 @@ from sqlmodel import Session
 from ccguard.schemas import SyncPayload
 from ccguard.server.api.deps import get_session, require_token
 from ccguard.server.db.models import AuditRecord, FindingRecord, InventorySnapshot, Machine
-from ccguard.server.services import mcp_baseline_service
+from ccguard.server.services import (
+    agent_baseline_service,
+    hook_baseline_service,
+    mcp_baseline_service,
+    skill_baseline_service,
+)
 
 router = APIRouter(prefix="/api/v1")
 
@@ -70,6 +75,35 @@ def post_inventory(
         inventory_id=snapshot.id,
     )
     findings_stored += len(mcp_rug_findings)
+
+    # Hook TOFU baseline + drift detection. Same shape as the MCP path above:
+    # service appends FindingRecords to the session, we count them for the
+    # response. See ccguard.server.services.hook_baseline_service.
+    hook_findings = hook_baseline_service.update_and_detect(
+        session,
+        machine_id=inv.machine_id,
+        current_hooks=list(inv.hooks),
+        inventory_id=snapshot.id,
+    )
+    findings_stored += len(hook_findings)
+
+    # Skill TOFU baseline. Same contract as hooks/MCP — service mutates
+    # session, we count findings for the response.
+    skill_findings = skill_baseline_service.update_and_detect(
+        session,
+        machine_id=inv.machine_id,
+        current_skills=list(inv.skills),
+        inventory_id=snapshot.id,
+    )
+    findings_stored += len(skill_findings)
+
+    agent_findings = agent_baseline_service.update_and_detect(
+        session,
+        machine_id=inv.machine_id,
+        current_agents=list(inv.agents),
+        inventory_id=snapshot.id,
+    )
+    findings_stored += len(agent_findings)
 
     audit_stored = 0
     for a in payload.audit_events:

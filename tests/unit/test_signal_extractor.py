@@ -101,3 +101,154 @@ def test_empty_and_malformed_input_is_safe():
 
 def test_case_insensitive():
     assert "egress.network_tool" in extract_signals("Bash", {"command": "CURL x"})
+
+
+# --- fs.write.* signals (ТЗ-02 — staging middle link) -----------------------
+
+
+@pytest.mark.parametrize("tool", ["Write", "Edit", "NotebookEdit"])
+def test_write_to_hidden_path_fires_hidden(tool):
+    fired = set(extract_signals(tool, {"file_path": "/home/u/.cache/loot.txt"}))
+    assert "fs.write.hidden" in fired
+    assert "fs.write.normal" not in fired
+
+
+@pytest.mark.parametrize("tool", ["Write", "Edit", "NotebookEdit"])
+def test_write_to_normal_path_fires_normal(tool):
+    fired = set(extract_signals(tool, {"file_path": "/proj/src/app.py"}))
+    assert "fs.write.normal" in fired
+    assert "fs.write.hidden" not in fired
+
+
+def test_write_to_dotfile_is_hidden():
+    fired = set(extract_signals("Write", {"file_path": "/proj/.env.bak"}))
+    assert "fs.write.hidden" in fired
+
+
+def test_write_to_tmp_is_hidden():
+    fired = set(extract_signals("Write", {"file_path": "/tmp/stage.bin"}))
+    assert "fs.write.hidden" in fired
+
+
+def test_read_to_hidden_path_does_not_fire_write_signal():
+    """Read must NEVER emit a write signal — tool-gated, not content-gated."""
+    fired = set(extract_signals("Read", {"file_path": "/home/u/.ssh/id_rsa"}))
+    assert "fs.write.hidden" not in fired
+    assert "fs.write.normal" not in fired
+    # but the content-based cred signal still fires
+    assert "cred.read.ssh" in fired
+
+
+def test_bash_never_fires_write_signal():
+    fired = set(extract_signals("Bash", {"command": "echo hi > /tmp/x"}))
+    assert "fs.write.hidden" not in fired
+    assert "fs.write.normal" not in fired
+
+
+def test_write_without_path_is_safe():
+    assert "fs.write.normal" not in extract_signals("Write", {})
+    assert "fs.write.hidden" not in extract_signals("Write", {"file_path": None})  # type: ignore[arg-type]
+
+
+def test_write_signals_not_emitted_via_regex_loop():
+    """Action signals must be excluded from the generic regex catalog loop so a
+    non-write tool can never surface them through path matching."""
+    from ccguard.agent.signals.catalog import ACTION_SIGNAL_IDS
+
+    assert "fs.write.hidden" in ACTION_SIGNAL_IDS
+    assert "fs.write.normal" in ACTION_SIGNAL_IDS
+
+
+# --- content.read.external signal (ТЗ-03 — sharp first link) -----------------
+
+
+@pytest.mark.parametrize("tool", ["WebFetch", "WebSearch"])
+def test_web_tools_fire_external(tool):
+    fired = set(extract_signals(tool, {"url": "https://evil.example/x"}))
+    assert "content.read.external" in fired
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/tmp/payload.md",
+        "/var/tmp/x.txt",
+        "/Users/x/Downloads/report.pdf",
+        "/home/u/.cache/pip/http/abc",
+        "/proj/node_modules/evil/readme.md",
+        "/usr/lib/python3.12/site-packages/pkg/x.py",
+        "/Users/x/.cargo/registry/src/crate/lib.rs",
+    ],
+)
+def test_read_from_untrusted_path_fires_external(path):
+    assert "content.read.external" in extract_signals("Read", {"file_path": path})
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/Users/x/repo/src/main.py",
+        "/home/u/project/README.md",
+        "/proj/app/models.py",
+    ],
+)
+def test_read_from_project_path_does_not_fire_external(path):
+    """The whole point: ordinary project reads must NOT look external."""
+    assert "content.read.external" not in extract_signals("Read", {"file_path": path})
+
+
+def test_external_without_path_is_safe():
+    assert "content.read.external" not in extract_signals("Read", {})
+    assert "content.read.external" not in extract_signals("Read", {"file_path": None})  # type: ignore[arg-type]
+
+
+def test_external_signal_is_action_excluded_from_regex_loop():
+    from ccguard.agent.signals.catalog import ACTION_SIGNAL_IDS
+
+    assert "content.read.external" in ACTION_SIGNAL_IDS
+
+
+# --- fs.write.cache / fs.write.vcs category markers (ТЗ-04 allowlist) --------
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/proj/node_modules/.cache/x.js",
+        "/home/u/.cache/pip/http/abc",
+        "/home/u/.cargo/registry/src/c/lib.rs",
+        "/home/u/.npm/_cacache/x",
+        "/proj/.pytest_cache/v/cache/lastfailed",
+        "/usr/lib/python3.12/site-packages/pkg/x.py",
+    ],
+)
+def test_cache_path_emits_cache_marker(path):
+    fired = set(extract_signals("Write", {"file_path": path}))
+    assert "fs.write.cache" in fired
+
+
+def test_vcs_path_emits_vcs_marker():
+    fired = set(extract_signals("Write", {"file_path": "/proj/.git/objects/ab/cdef"}))
+    assert "fs.write.vcs" in fired
+
+
+def test_secret_path_emits_no_cache_or_vcs_marker():
+    """The allowlist must never cover secret/unusual hidden dirs."""
+    for path in ("/home/u/.ssh/authorized_keys", "/home/u/.config/.audit/loot"):
+        fired = set(extract_signals("Write", {"file_path": path}))
+        assert "fs.write.hidden" in fired  # still a hidden write
+        assert "fs.write.cache" not in fired
+        assert "fs.write.vcs" not in fired
+
+
+def test_normal_project_write_emits_no_marker():
+    fired = set(extract_signals("Write", {"file_path": "/proj/src/main.py"}))
+    assert "fs.write.cache" not in fired
+    assert "fs.write.vcs" not in fired
+
+
+def test_markers_are_action_excluded():
+    from ccguard.agent.signals.catalog import ACTION_SIGNAL_IDS
+
+    assert "fs.write.cache" in ACTION_SIGNAL_IDS
+    assert "fs.write.vcs" in ACTION_SIGNAL_IDS

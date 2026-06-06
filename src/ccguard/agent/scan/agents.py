@@ -1,4 +1,10 @@
-"""Сканер кастомных субагентов: `~/.claude/agents/<name>.md`.
+"""Сканер кастомных субагентов.
+
+Источники (v0.3):
+  * `~/.claude/agents/<name>.md`                    — origin="local"
+  * `<plugin_install_path>/agents/<name>.md`        — origin="plugin",
+    parent_plugin/source_marketplace из installed_plugins.json
+  * `<plugin_install_path>/.claude/agents/<name>.md` (legacy plugin layout)
 
 Парсит YAML-frontmatter для извлечения `tools`, `model`, `description`.
 Содержимое тела (промпт) не инвентаризируется — только хеш файла целиком.
@@ -9,11 +15,13 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
 from ccguard.schemas import AgentEntry
+
+Origin = Literal["local", "plugin"]
 
 _FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
@@ -44,8 +52,13 @@ def _normalize_tools(value: Any) -> list[str] | None:
     return None
 
 
-def scan_agents(claude_home: Path) -> list[AgentEntry]:
-    agents_dir = claude_home / "agents"
+def _scan_agents_dir(
+    agents_dir: Path,
+    origin: Origin,
+    *,
+    parent_plugin: str | None = None,
+    source_marketplace: str | None = None,
+) -> list[AgentEntry]:
     if not agents_dir.exists() or not agents_dir.is_dir():
         return []
     out: list[AgentEntry] = []
@@ -66,6 +79,32 @@ def scan_agents(claude_home: Path) -> list[AgentEntry]:
                 description=str(fm["description"])
                 if isinstance(fm.get("description"), str)
                 else None,
+                origin=origin,
+                parent_plugin=parent_plugin,
+                source_marketplace=source_marketplace,
             )
         )
+    return out
+
+
+def scan_agents(claude_home: Path) -> list[AgentEntry]:
+    """Local-агенты + plugin-bundled агенты.
+
+    Plugin-агенты идентифицируются через ``plugins.plugin_install_index`` —
+    тот же источник истины что и для скиллов.
+    """
+    from ccguard.agent.scan.plugins import plugin_install_index
+
+    out: list[AgentEntry] = []
+    out.extend(_scan_agents_dir(claude_home / "agents", "local"))
+
+    for plugin_root, plugin_name, marketplace in plugin_install_index(claude_home):
+        out.extend(_scan_agents_dir(
+            plugin_root / "agents", "plugin",
+            parent_plugin=plugin_name, source_marketplace=marketplace,
+        ))
+        out.extend(_scan_agents_dir(
+            plugin_root / ".claude" / "agents", "plugin",
+            parent_plugin=plugin_name, source_marketplace=marketplace,
+        ))
     return out

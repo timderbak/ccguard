@@ -135,6 +135,11 @@ class ToolUseEvent(SQLModel, table=True):
     # Per-User Attribution: shell user the tool call ran under. Nullable so
     # old agents (which don't send this) ingest cleanly.
     actor_user: str | None = Field(default=None, index=True)
+    # Claude Code session id (ТЗ-01). Nullable — old agents don't send it;
+    # sequence correlation groups by session_id and falls back to machine-scope
+    # when NULL. Indexed because correlation filters on it. Additive column on
+    # existing DBs is created by init_db's ALTER (create_all is a no-op there).
+    session_id: str | None = Field(default=None, index=True)
 
 
 class MachineBaseline(SQLModel, table=True):
@@ -393,6 +398,105 @@ class MCPServerBaseline(SQLModel, table=True):
     description_preview: str | None = None
     first_seen_at: datetime = Field(default_factory=_utcnow)
     last_seen_at: datetime = Field(default_factory=_utcnow)
+
+
+class HookBaseline(SQLModel, table=True):
+    """TOFU baseline for Claude Code hooks per machine (feat/hooks-tofu-baseline).
+
+    A row = one "slot" in settings.json (unique by machine + event + matcher +
+    command). ``fingerprint`` = sha256(event_name + matcher + command_string +
+    file_content_hash). Status transitions: pending → active (admin accept) →
+    accepted_drift (on re-accept). Composite UNIQUE
+    ``(machine_id, event_name, matcher, command_string)`` installed via DDL in
+    :func:`ccguard.server.db.session.init_db`, mirroring the
+    ``MCPServerBaseline`` pattern (keeps ``create_all`` idempotent against
+    pre-existing tables).
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+
+    event_name: str = Field(index=True)
+    matcher: str = Field(default="")
+    command_string: str
+
+    file_path: str | None = None
+    file_content_hash: str | None = None
+    fingerprint: str = Field(index=True)
+
+    # pending | active | accepted_drift | missing | removed
+    status: str = Field(default="pending")
+
+    first_seen_at: datetime
+    last_seen_at: datetime
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
+
+
+class SkillBaseline(SQLModel, table=True):
+    """TOFU baseline for Claude Code skills per machine
+    (specs/2026-06-02-skills-agents-baseline-design.md).
+
+    Slot identity = (machine_id, name, origin, parent_plugin).
+    fingerprint = sha256(name | origin | parent_plugin | dir_hash).
+
+    Status transitions mirror HookBaseline: pending → active (admin
+    accept) → accepted_drift (re-accept). silent removal = "missing".
+
+    parent_plugin / source_marketplace are denormalized copies from the
+    inventory payload so fleet aggregates ("which marketplace ships the
+    most skills") are single-table GROUP BYs.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+
+    name: str = Field(index=True)
+    origin: str = Field(default="local")  # local | plugin
+    parent_plugin: str | None = Field(default=None, index=True)
+    source_marketplace: str | None = Field(default=None, index=True)
+
+    dir_hash: str
+    has_referenced_scripts: bool = False
+    path: str | None = None
+    fingerprint: str = Field(index=True)
+
+    status: str = Field(default="pending")
+    first_seen_at: datetime
+    last_seen_at: datetime
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
+
+
+class AgentBaseline(SQLModel, table=True):
+    """TOFU baseline for Claude Code custom subagents per machine.
+
+    Slot identity = (machine_id, name, origin, parent_plugin).
+    fingerprint = sha256(name | origin | parent_plugin | file_hash).
+
+    ``tools_csv`` is denormalized (sorted, comma-joined) so we can
+    compute "dangerous tools present" without parsing JSON every check.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+
+    name: str = Field(index=True)
+    origin: str = Field(default="local")
+    parent_plugin: str | None = Field(default=None, index=True)
+    source_marketplace: str | None = Field(default=None, index=True)
+
+    file_hash: str
+    tools_csv: str | None = None  # e.g. "Bash,Edit,Read" (sorted)
+    model: str | None = None
+    path: str | None = None
+    fingerprint: str = Field(index=True)
+
+    status: str = Field(default="pending")
+    first_seen_at: datetime
+    last_seen_at: datetime
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
 
 
 class SettingsRecord(SQLModel, table=True):

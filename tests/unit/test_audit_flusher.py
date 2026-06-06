@@ -291,6 +291,49 @@ def test_run_flush_loop_chunks_over_max_batch(
         assert buf.row_count() == 0
 
 
+def test_run_flush_loop_includes_session_id_in_batch(
+    _isolated_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ТЗ-01: session_id from the buffer row must reach the POSTed batch so the
+    server can persist it onto ToolUseEvent."""
+    db = _isolated_home / "audit_buffer.db"
+    ts = datetime.now(UTC).isoformat()
+    with ToolBufferDB(db) as buf:
+        buf.insert(
+            ts=ts,
+            tool_name="Bash",
+            fingerprint="0123456789abcdef",
+            decision="allow",
+            result_status="success",
+            session_id="sess-flush",
+        )
+    _patch_config_and_machine(monkeypatch)
+
+    captured: dict = {}
+
+    class _MockClient:
+        def __init__(self, *a: object, **k: object) -> None:
+            pass
+
+        def __enter__(self) -> _MockClient:
+            return self
+
+        def __exit__(self, *a: object) -> None:
+            pass
+
+        def post(self, url: str, *, content: bytes | str, headers: dict) -> httpx.Response:
+            import json as _json
+
+            captured["payload"] = _json.loads(content)
+            req = httpx.Request("POST", url)
+            return httpx.Response(200, request=req, json={"accepted": True})
+
+    monkeypatch.setattr(httpx, "Client", _MockClient)
+    flusher._run_flush_loop()
+
+    assert captured["payload"]["events"][0]["session_id"] == "sess-flush"
+
+
 def test_run_flush_loop_calls_trim_to_cap(
     _isolated_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

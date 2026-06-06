@@ -51,6 +51,26 @@ _MCP_BASELINE_INDEX_DDL: tuple[str, ...] = (
     "ON mcpserverbaseline(machine_id, mcp_name)",
 )
 
+# Composite unique index for HookBaseline (feat/hooks-tofu-baseline). One row
+# per "slot" — (machine_id, event_name, matcher, command_string). Same
+# idempotent IF NOT EXISTS pattern as the other baseline tables.
+_HOOK_BASELINE_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_hookbaseline_slot "
+    "ON hookbaseline(machine_id, event_name, matcher, command_string)",
+)
+
+# Composite unique indexes for SkillBaseline / AgentBaseline (specs/2026-06-02-
+# skills-agents-baseline-design.md). Slot = (machine, name, origin,
+# parent_plugin). COALESCE makes SQLite treat NULL parent_plugin as the
+# literal "" so local entries (parent_plugin=NULL) don't all collide with
+# each other.
+_SKILL_AGENT_BASELINE_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_skillbaseline_slot "
+    "ON skillbaseline(machine_id, name, origin, COALESCE(parent_plugin, ''))",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_agentbaseline_slot "
+    "ON agentbaseline(machine_id, name, origin, COALESCE(parent_plugin, ''))",
+)
+
 # Additive columns for ScanResult (feat/skills-detailed-rationale).
 # ``create_all`` is a no-op on existing tables, so these explicit ALTERs make
 # the new columns appear on pre-feature DBs. SQLite's ``ADD COLUMN`` is the
@@ -61,6 +81,20 @@ _MCP_BASELINE_INDEX_DDL: tuple[str, ...] = (
 _SCAN_RESULT_RATIONALE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("explanation", "ALTER TABLE scanresult ADD COLUMN explanation TEXT"),
     ("quoted_snippet", "ALTER TABLE scanresult ADD COLUMN quoted_snippet TEXT"),
+)
+
+# Additive column for ToolUseEvent (ТЗ-01: session-scoped correlation). Same
+# PRAGMA-guarded ADD COLUMN pattern as the ScanResult rationale columns —
+# ``create_all`` is a no-op on existing tables, so pre-feature DBs need this
+# explicit ALTER to gain ``session_id``. The matching index is created
+# separately below via CREATE INDEX IF NOT EXISTS (create_all only emits the
+# model's ``index=True`` index on a freshly-created table).
+_TOOL_USE_SESSION_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("session_id", "ALTER TABLE tooluseevent ADD COLUMN session_id TEXT"),
+)
+_TOOL_USE_SESSION_INDEX_DDL: tuple[str, ...] = (
+    "CREATE INDEX IF NOT EXISTS ix_tooluseevent_session_id "
+    "ON tooluseevent(session_id)",
 )
 
 
@@ -100,6 +134,10 @@ def init_db(engine: Engine) -> None:
             conn.execute(text(ddl))
         for ddl in _MCP_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
+        for ddl in _HOOK_BASELINE_INDEX_DDL:
+            conn.execute(text(ddl))
+        for ddl in _SKILL_AGENT_BASELINE_INDEX_DDL:
+            conn.execute(text(ddl))
         # Additive ALTERs for ScanResult. SQLite lacks IF NOT EXISTS on
         # ADD COLUMN — introspect via PRAGMA and skip when already present.
         existing_cols = {
@@ -108,6 +146,15 @@ def init_db(engine: Engine) -> None:
         for col_name, ddl in _SCAN_RESULT_RATIONALE_COLUMNS:
             if col_name not in existing_cols:
                 conn.execute(text(ddl))
+        # Additive ALTER for ToolUseEvent.session_id (ТЗ-01) + its index.
+        tooluse_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(tooluseevent)"))
+        }
+        for col_name, ddl in _TOOL_USE_SESSION_COLUMNS:
+            if col_name not in tooluse_cols:
+                conn.execute(text(ddl))
+        for ddl in _TOOL_USE_SESSION_INDEX_DDL:
+            conn.execute(text(ddl))
 
 
 def session_factory(engine: Engine) -> Iterator[Session]:

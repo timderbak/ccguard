@@ -50,6 +50,13 @@ class ToolUseEventIn(SchemaBase):
     # os.getlogin). Optional — v0.1/v0.2 agents don't send this, in which
     # case events are attributed to the machine only.
     actor_user: str | None = Field(default=None, max_length=64)
+    # Claude Code session id (ТЗ-01). Present in every hook payload; threaded
+    # through so server-side correlation can scope cred→egress sequences to a
+    # single agent session instead of the whole machine. Optional — v0.1/v0.2
+    # agents never send it, in which case correlation falls back to machine
+    # scope. Not raw tool_input — it's an opaque session identifier, so storing
+    # it does not breach the privacy contract above. Bounded for DoS hardening.
+    session_id: str | None = Field(default=None, max_length=128)
 
     @field_validator("ts", mode="after")
     @classmethod

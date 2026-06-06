@@ -249,6 +249,7 @@ def _run_flush_loop() -> None:
                         result_status=r["result_status"],  # type: ignore[arg-type]
                         signals=r["signals"],
                         actor_user=r.get("actor_user"),
+                        session_id=r.get("session_id"),
                     )
                     for r in rows
                 ]

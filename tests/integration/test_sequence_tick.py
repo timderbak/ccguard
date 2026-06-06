@@ -82,7 +82,8 @@ def test_cred_then_egress_in_window_emits_high_finding(client: TestClient) -> No
             select(FindingRecord).where(FindingRecord.rule_id == SEQUENCE_RULE_ID)
         ).first()
         assert f is not None
-        assert f.severity == "high"
+        # ТЗ-02 severity fix: was the out-of-schema "high".
+        assert f.severity == "critical"
         assert f.machine_id == mid
         payload = json.loads(f.payload_json)
         assert payload["cred_signal"] == "cred.read.aws"

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}ccguard — артефакты флита{% endblock %}
+{% block content %}
+<header class="mb-7">
+    <h2 class="text-2xl font-semibold mb-2">Артефакты флита</h2>
+    <p class="text-slate-500 text-sm cc-mono">
+        Skills + custom subagents по всем машинам. Расхождение версий (одна и та же
+        запись на разных машинах с разным hash) подсвечено — это сильный signal
+        supply chain compromise или локального тампера.
+    </p>
+    <div class="mt-3 flex items-center gap-3 text-xs cc-mono">
+        <span class="rounded px-2 py-0.5 ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200">
+            skills: {{ skills|length }}
+        </span>
+        {% if skills_divergent_count > 0 %}
+        <span class="rounded px-2 py-0.5 ring-1 bg-red-50 text-red-700 ring-red-200">
+            расхождения skills: {{ skills_divergent_count }}
+        </span>
+        {% endif %}
+        <span class="rounded px-2 py-0.5 ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200">
+            agents: {{ agents|length }}
+        </span>
+        {% if agents_divergent_count > 0 %}
+        <span class="rounded px-2 py-0.5 ring-1 bg-red-50 text-red-700 ring-red-200">
+            расхождения agents: {{ agents_divergent_count }}
+        </span>
+        {% endif %}
+    </div>
+</header>
+
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+    {# --- Skills column --- #}
+    <section class="bg-white rounded-xl shadow p-5">
+        <h3 class="font-semibold mb-4 text-slate-800">Skills</h3>
+        {% if skills %}
+        <table class="w-full text-sm">
+            <thead class="text-left text-[11px] uppercase tracking-wide text-slate-500 cc-mono">
+                <tr class="border-b">
+                    <th class="py-1.5 pr-2">Скилл</th>
+                    <th class="py-1.5 pr-2">Источник</th>
+                    <th class="py-1.5 pr-2 text-right">Машины</th>
+                    <th class="py-1.5 pr-2 text-right">Версии</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in skills %}
+                <tr class="border-b last:border-0 {% if s.is_divergent %}bg-red-50{% endif %}">
+                    <td class="py-1.5 pr-2">
+                        <button
+                            class="text-left text-emerald-700 hover:underline cc-mono text-xs"
+                            hx-get="/_partials/skills-inventory/drill?kind=skill&name={{ s.name|urlencode }}&origin={{ s.origin }}{% if s.parent_plugin %}&parent_plugin={{ s.parent_plugin|urlencode }}{% endif %}"
+                            hx-target="next .cc-drill"
+                            hx-swap="innerHTML">
+                            {{ s.name }}
+                        </button>
+                        {% if s.is_divergent %}
+                        <span class="ml-1 cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-red-700 text-white">divergent</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-1.5 pr-2 cc-mono text-[11px] text-slate-600">
+                        {% if s.parent_plugin %}{{ s.parent_plugin }}@{{ s.source_marketplace or "unknown" }}{% else %}<span class="text-slate-400">local</span>{% endif %}
+                    </td>
+                    <td class="py-1.5 pr-2 text-right cc-mono">{{ s.machines_total }}</td>
+                    <td class="py-1.5 pr-2 text-right cc-mono">{{ s.versions|length }}</td>
+                </tr>
+                <tr><td colspan="4" class="cc-drill text-[11px]"></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-slate-400 text-sm">Пока ни одного skill baseline. Сделай <span class="cc-mono">ccguard sync</span> с агента.</p>
+        {% endif %}
+    </section>
+
+    {# --- Agents column --- #}
+    <section class="bg-white rounded-xl shadow p-5">
+        <h3 class="font-semibold mb-4 text-slate-800">Custom subagents</h3>
+        {% if agents %}
+        <table class="w-full text-sm">
+            <thead class="text-left text-[11px] uppercase tracking-wide text-slate-500 cc-mono">
+                <tr class="border-b">
+                    <th class="py-1.5 pr-2">Агент</th>
+                    <th class="py-1.5 pr-2">Источник</th>
+                    <th class="py-1.5 pr-2 text-right">Машины</th>
+                    <th class="py-1.5 pr-2 text-right">Версии</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in agents %}
+                <tr class="border-b last:border-0 {% if a.is_divergent %}bg-red-50{% endif %}">
+                    <td class="py-1.5 pr-2">
+                        <button
+                            class="text-left text-emerald-700 hover:underline cc-mono text-xs"
+                            hx-get="/_partials/skills-inventory/drill?kind=agent&name={{ a.name|urlencode }}&origin={{ a.origin }}{% if a.parent_plugin %}&parent_plugin={{ a.parent_plugin|urlencode }}{% endif %}"
+                            hx-target="next .cc-drill"
+                            hx-swap="innerHTML">
+                            {{ a.name }}
+                        </button>
+                        {% if a.is_divergent %}
+                        <span class="ml-1 cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-red-700 text-white">divergent</span>
+                        {% endif %}
+                    </td>
+                    <td class="py-1.5 pr-2 cc-mono text-[11px] text-slate-600">
+                        {% if a.parent_plugin %}{{ a.parent_plugin }}@{{ a.source_marketplace or "unknown" }}{% else %}<span class="text-slate-400">local</span>{% endif %}
+                    </td>
+                    <td class="py-1.5 pr-2 text-right cc-mono">{{ a.machines_total }}</td>
+                    <td class="py-1.5 pr-2 text-right cc-mono">{{ a.versions|length }}</td>
+                </tr>
+                <tr><td colspan="4" class="cc-drill text-[11px]"></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-slate-400 text-sm">Пока ни одного agent baseline.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

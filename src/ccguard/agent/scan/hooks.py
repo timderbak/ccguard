@@ -15,6 +15,55 @@ from ccguard.schemas.inventory import HookEntry as _HookEntry
 _KNOWN_EVENTS = set(get_args(_HookEntry.model_fields["event"].annotation))
 
 
+_SHIM_HASH_BYTE_CAP = 256 * 1024  # 256 KB
+
+
+def _extract_shim_path(command: str) -> str | None:
+    """Return the first non-flag token in `command` that refers to an existing file.
+
+    Used to locate the shim/script that the hook actually executes so we can
+    fingerprint its content. Returns None when nothing in the command looks
+    like a file path on disk (inline `bash -c`, builtins, etc).
+    """
+    if not command:
+        return None
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return None
+    for tok in tokens:
+        if tok.startswith("-"):
+            continue
+        # Only accept tokens that name a real file. Avoids false positives like
+        # "bash", "python", "node" (which exist on $PATH but aren't shims).
+        if "/" in tok and Path(tok).is_file():
+            return tok
+    return None
+
+
+def _hash_shim_file(path: str) -> tuple[str | None, str | None]:
+    """Return (sha256_hex32, reason_or_None).
+
+    reason ∈ {"missing", "permission_denied", "too_large"} when hash is None.
+    Reads up to 256 KB; large shims get a "too_large" sentinel rather than a
+    truncated hash, so we never silently lie about what we fingerprinted.
+    """
+    try:
+        p = Path(path)
+        if not p.exists():
+            return None, "missing"
+        size = p.stat().st_size
+        if size > _SHIM_HASH_BYTE_CAP:
+            return None, "too_large"
+        with open(p, "rb") as f:
+            data = f.read(_SHIM_HASH_BYTE_CAP)
+    except PermissionError:
+        return None, "permission_denied"
+    except OSError:
+        return None, "missing"
+    return hashlib.sha256(data).hexdigest()[:32], None
+
+
 _SCRIPT_EXTS = {".sh", ".bash", ".zsh", ".js", ".mjs", ".cjs", ".ts", ".py", ".rb", ".pl", ".php"}
 _INTERPRETER_BASENAMES = {
     "node", "deno", "bun",
@@ -102,10 +151,22 @@ def _extract_one(event: str, matcher: str | None, spec: dict[str, Any], source: 
     command = spec.get("command")
     file_path: str | None = None
     file_hash: str | None = None
+    unreadable: str | None = None
     if isinstance(command, str):
         resolved = _resolve_hook_script(command)
         if resolved is not None:
             file_path, file_hash = resolved
+        # If we could spot a likely shim path but couldn't hash it (perm/too
+        # large/missing), surface that to the server so drift detection can
+        # warn about lost visibility instead of silently treating it as inline.
+        if file_path is None:
+            shim_candidate = _extract_shim_path(command)
+            if shim_candidate is not None:
+                # exists() returned True for it; capture failure reason via
+                # _hash_shim_file (which retries the stat + open).
+                _, unreadable = _hash_shim_file(shim_candidate)
+                if unreadable is not None:
+                    file_path = shim_candidate
     return HookEntry(
         event=event,  # type: ignore[arg-type]
         matcher=matcher,
@@ -116,6 +177,7 @@ def _extract_one(event: str, matcher: str | None, spec: dict[str, Any], source: 
         source=source,
         command_file_path=file_path,
         command_file_hash=file_hash,
+        file_unreadable_reason=unreadable,
         is_ccguard_owned=_is_ccguard_owned(command if isinstance(command, str) else None, file_path),
     )
 

@@ -26,6 +26,37 @@ from ccguard.server.services.auth_service import (
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(_TEMPLATES_DIR))
 
+
+def _ru_plural(n: int, one: str, few: str, many: str) -> str:
+    """Russian plural picker: one/few/many forms."""
+    n = abs(int(n))
+    last_two = n % 100
+    if 11 <= last_two <= 14:
+        return many
+    last = n % 10
+    if last == 1:
+        return one
+    if 2 <= last <= 4:
+        return few
+    return many
+
+
+def _hook_word(n: int) -> str:
+    return _ru_plural(n, "хук", "хука", "хуков")
+
+
+def _skill_word(n: int) -> str:
+    return _ru_plural(n, "скилл", "скилла", "скиллов")
+
+
+def _agent_word(n: int) -> str:
+    return _ru_plural(n, "агент", "агента", "агентов")
+
+
+templates.env.filters["hook_word"] = _hook_word
+templates.env.filters["skill_word"] = _skill_word
+templates.env.filters["agent_word"] = _agent_word
+
 router = APIRouter()
 
 COOKIE_NAME = "ccg_session"
@@ -271,6 +302,155 @@ def machine_detail(
     baseline_rows = list(session.exec(
         select(MCPServerBaseline).where(MCPServerBaseline.machine_id == machine_id)
     ))
+
+    # Hook TOFU baseline: bootstrap banner + drift cards + status badges.
+    from sqlalchemy import func as _hbf
+    from ccguard.server.db.models import FindingRecord, HookBaseline
+    pending_hook_count = session.exec(
+        select(_hbf.count(HookBaseline.id)).where(
+            HookBaseline.machine_id == machine_id,
+            HookBaseline.status == "pending",
+        )
+    ).one()
+    if isinstance(pending_hook_count, tuple):
+        pending_hook_count = pending_hook_count[0]
+    pending_hook_count = int(pending_hook_count or 0)
+
+    hook_drift_findings = list(session.exec(
+        select(FindingRecord)
+        .where(
+            FindingRecord.machine_id == machine_id,
+            FindingRecord.rule_id.in_([  # type: ignore[attr-defined]
+                "hook.rug_pull.content",
+                "hook.rug_pull.command",
+                "hook.unreadable",
+                "hook.new",
+            ]),
+        )
+        .order_by(FindingRecord.discovered_at.desc())  # type: ignore[attr-defined]
+        .limit(30)
+    ))
+    hook_drift_cards: list[dict] = []
+    for hf in hook_drift_findings:
+        try:
+            p = json.loads(hf.payload_json) if hf.payload_json else {}
+        except (ValueError, TypeError):
+            p = {}
+        if not isinstance(p, dict):
+            p = {}
+        # Resolve the baseline row for accept/reject buttons. Slot identity is
+        # (event_name, matcher, command_string); finding payload carries the
+        # first two; command is the post-drift state for content drift and
+        # comes from p["command"], whereas command-drift uses p["new_command"].
+        cmd_key = p.get("new_command") or p.get("command") or ""
+        bl = session.exec(
+            select(HookBaseline).where(
+                HookBaseline.machine_id == machine_id,
+                HookBaseline.event_name == (p.get("event_name") or ""),
+                HookBaseline.matcher == (p.get("matcher") or ""),
+                HookBaseline.command_string == cmd_key,
+            )
+        ).first()
+        hook_drift_cards.append({
+            "title": p.get("title", hf.rule_id),
+            "description": p.get("description", ""),
+            "severity": hf.severity,
+            "payload": p,
+            "baseline_id": bl.id if bl is not None else None,
+        })
+
+    # Per-slot status for the badge on the existing «Хуки» block (Task 18).
+    # Key shape: "event|matcher|command" — matches the Jinja string built in
+    # the template (matcher/command default to "" when None).
+    hook_baseline_rows = list(session.exec(
+        select(HookBaseline).where(HookBaseline.machine_id == machine_id)
+    ))
+    hook_baseline_status_map: dict[str, str] = {}
+    for hb in hook_baseline_rows:
+        key = f"{hb.event_name}|{hb.matcher or ''}|{hb.command_string or ''}"
+        hook_baseline_status_map[key] = hb.status
+
+    # Skill + Agent TOFU baselines (specs/2026-06-02-skills-agents-baseline-design.md).
+    from ccguard.server.db.models import AgentBaseline, SkillBaseline
+
+    pending_skill_count = int(
+        session.exec(
+            select(_hbf.count(SkillBaseline.id)).where(
+                SkillBaseline.machine_id == machine_id,
+                SkillBaseline.status == "pending",
+            )
+        ).one() or 0
+    )
+    pending_agent_count = int(
+        session.exec(
+            select(_hbf.count(AgentBaseline.id)).where(
+                AgentBaseline.machine_id == machine_id,
+                AgentBaseline.status == "pending",
+            )
+        ).one() or 0
+    )
+
+    def _build_drift_cards(rule_ids: list[str], baseline_table) -> list[dict]:
+        rows = list(session.exec(
+            select(FindingRecord)
+            .where(
+                FindingRecord.machine_id == machine_id,
+                FindingRecord.rule_id.in_(rule_ids),  # type: ignore[attr-defined]
+            )
+            .order_by(FindingRecord.discovered_at.desc())  # type: ignore[attr-defined]
+            .limit(30)
+        ))
+        out: list[dict] = []
+        for fr in rows:
+            try:
+                p = json.loads(fr.payload_json) if fr.payload_json else {}
+            except (ValueError, TypeError):
+                p = {}
+            if not isinstance(p, dict):
+                p = {}
+            # Resolve baseline_id for accept/reject buttons. Slot identity is
+            # (name, origin, parent_plugin).
+            bl = session.exec(
+                select(baseline_table).where(
+                    baseline_table.machine_id == machine_id,
+                    baseline_table.name == (p.get("name") or ""),
+                    baseline_table.origin == (p.get("origin") or "local"),
+                    baseline_table.parent_plugin == (p.get("parent_plugin") or None),
+                )
+            ).first()
+            out.append({
+                "title": p.get("title", fr.rule_id),
+                "description": p.get("description", ""),
+                "severity": fr.severity,
+                "payload": p,
+                "baseline_id": bl.id if bl is not None else None,
+            })
+        return out
+
+    skill_drift_cards = _build_drift_cards(
+        ["skill.new", "skill.rug_pull.content", "skill.drift.text"],
+        SkillBaseline,
+    )
+    agent_drift_cards = _build_drift_cards(
+        ["agent.new", "agent.rug_pull.dangerous", "agent.drift.text"],
+        AgentBaseline,
+    )
+
+    # Status map for badges in the existing skills/agents blocks. Key
+    # composed in Jinja as "name|origin|parent_plugin".
+    skill_status_map: dict[str, str] = {}
+    for sb in session.exec(
+        select(SkillBaseline).where(SkillBaseline.machine_id == machine_id)
+    ):
+        key = f"{sb.name}|{sb.origin}|{sb.parent_plugin or ''}"
+        skill_status_map[key] = sb.status
+
+    agent_status_map: dict[str, str] = {}
+    for ab in session.exec(
+        select(AgentBaseline).where(AgentBaseline.machine_id == machine_id)
+    ):
+        key = f"{ab.name}|{ab.origin}|{ab.parent_plugin or ''}"
+        agent_status_map[key] = ab.status
     # Build a per-mcp_name status: 'red' if there's a critical rug pull,
     # 'amber' if warn, 'green' if baseline exists and no recent findings,
     # 'none' otherwise.
@@ -296,6 +476,15 @@ def machine_detail(
             "sync_freshness": sync_freshness,
             "mcp_rug_cards": mcp_rug_cards,
             "mcp_baseline_status": status_by_name,
+            "pending_hook_count": pending_hook_count,
+            "hook_drift_cards": hook_drift_cards,
+            "hook_baseline_status_map": hook_baseline_status_map,
+            "pending_skill_count": pending_skill_count,
+            "skill_drift_cards": skill_drift_cards,
+            "skill_baseline_status_map": skill_status_map,
+            "pending_agent_count": pending_agent_count,
+            "agent_drift_cards": agent_drift_cards,
+            "agent_baseline_status_map": agent_status_map,
             "network_suspicious_cards": recent_network_cards_for_machine(
                 session, machine_id
             ),
@@ -357,6 +546,64 @@ def skills_overview(
             "stats": {"total": total, "suspicious": suspicious, "unique": unique},
             "csrf_token": _csrf_for(request),
         },
+    )
+
+
+@router.get("/admin/skills-inventory", response_class=HTMLResponse)
+def skills_inventory_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Fleet-wide aggregate of SkillBaseline + AgentBaseline.
+
+    Surfaces divergent artifacts (same name has multiple dir_hash/
+    file_hash across machines) as the primary signal. Single GROUP BY
+    each, no joins (denormalized parent_plugin/source_marketplace).
+    """
+    from ccguard.server.services.skill_agent_fleet import (
+        aggregate_agents,
+        aggregate_skills,
+    )
+    skills = aggregate_skills(session)
+    agents = aggregate_agents(session)
+    return templates.TemplateResponse(
+        request,
+        "skills_inventory.html",
+        {
+            "user": user,
+            "skills": skills,
+            "agents": agents,
+            "skills_divergent_count": sum(1 for s in skills if s.is_divergent),
+            "agents_divergent_count": sum(1 for a in agents if a.is_divergent),
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+@router.get("/_partials/skills-inventory/drill", response_class=HTMLResponse)
+def skills_inventory_drill_partial(
+    request: Request,
+    kind: str,
+    name: str,
+    origin: str = "local",
+    parent_plugin: str | None = None,
+    _user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """HTMX drill-down: list of (machine, hash, status) for one slot."""
+    from ccguard.server.db.models import AgentBaseline, SkillBaseline
+    from ccguard.server.services.skill_agent_fleet import machines_for_artifact
+
+    table = SkillBaseline if kind == "skill" else AgentBaseline
+    rows = machines_for_artifact(
+        session, table, name=name, origin=origin,
+        parent_plugin=parent_plugin or None,
+    )
+    return templates.TemplateResponse(
+        request,
+        "components/_skill_agent_drill.html",
+        {"rows": rows, "kind": kind, "name": name},
     )
 
 
@@ -568,6 +815,194 @@ def machine_accept_mcp_baseline(
     """
     from ccguard.server.services import mcp_baseline_service
     mcp_baseline_service.accept_baseline(session, machine_id, mcp_name)
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+def _resolve_user_id(session: Session, sid: str) -> str:
+    """``require_session`` returns the opaque session id; baseline audit
+    fields want the human-readable user_id. Resolve via WebSession."""
+    from ccguard.server.db.models import WebSession
+    row = session.get(WebSession, sid)
+    return row.user_id if row is not None else "unknown"
+
+
+@router.post("/machines/{machine_id}/hook-baseline/{baseline_id}/accept")
+def machine_accept_hook_baseline(
+    machine_id: str,
+    baseline_id: int,
+    request: Request,
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Принять pending/accepted_drift HookBaseline → active, записать кто."""
+    from ccguard.server.services import hook_baseline_service
+    user_id = _resolve_user_id(session, sid)
+    try:
+        hook_baseline_service.accept_baseline(
+            session, machine_id=machine_id, baseline_id=baseline_id,
+            accepting_user=user_id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/hook-baseline/accept-all-pending")
+def machine_accept_all_pending_hook_baselines(
+    machine_id: str,
+    request: Request,
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Bulk-промоут всех pending hook baselines для машины (bootstrap UX)."""
+    from ccguard.server.services import hook_baseline_service
+    user_id = _resolve_user_id(session, sid)
+    hook_baseline_service.accept_all_pending(
+        session, machine_id=machine_id, accepting_user=user_id,
+    )
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/hook-baseline/{baseline_id}/reject")
+def machine_reject_hook_baseline(
+    machine_id: str,
+    baseline_id: int,
+    request: Request,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Отклонить baseline → status=removed. Сам хук из settings.json не удаляем."""
+    from ccguard.server.services import hook_baseline_service
+    try:
+        hook_baseline_service.reject_and_mark(
+            session, machine_id=machine_id, baseline_id=baseline_id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/skill-baseline/{baseline_id}/accept")
+def machine_accept_skill_baseline(
+    machine_id: str,
+    baseline_id: int,
+    request: Request,
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import skill_baseline_service
+    user_id = _resolve_user_id(session, sid)
+    try:
+        skill_baseline_service.accept_baseline(
+            session, machine_id=machine_id, baseline_id=baseline_id,
+            accepting_user=user_id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/skill-baseline/accept-all-pending")
+def machine_accept_all_pending_skill_baselines(
+    machine_id: str,
+    request: Request,
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import skill_baseline_service
+    user_id = _resolve_user_id(session, sid)
+    skill_baseline_service.accept_all_pending(
+        session, machine_id=machine_id, accepting_user=user_id,
+    )
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/skill-baseline/{baseline_id}/reject")
+def machine_reject_skill_baseline(
+    machine_id: str,
+    baseline_id: int,
+    request: Request,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import skill_baseline_service
+    try:
+        skill_baseline_service.reject_and_mark(
+            session, machine_id=machine_id, baseline_id=baseline_id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/agent-baseline/{baseline_id}/accept")
+def machine_accept_agent_baseline(
+    machine_id: str,
+    baseline_id: int,
+    request: Request,
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import agent_baseline_service
+    user_id = _resolve_user_id(session, sid)
+    try:
+        agent_baseline_service.accept_baseline(
+            session, machine_id=machine_id, baseline_id=baseline_id,
+            accepting_user=user_id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/agent-baseline/accept-all-pending")
+def machine_accept_all_pending_agent_baselines(
+    machine_id: str,
+    request: Request,
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import agent_baseline_service
+    user_id = _resolve_user_id(session, sid)
+    agent_baseline_service.accept_all_pending(
+        session, machine_id=machine_id, accepting_user=user_id,
+    )
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/agent-baseline/{baseline_id}/reject")
+def machine_reject_agent_baseline(
+    machine_id: str,
+    baseline_id: int,
+    request: Request,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import agent_baseline_service
+    try:
+        agent_baseline_service.reject_and_mark(
+            session, machine_id=machine_id, baseline_id=baseline_id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    session.commit()
     return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
 
 
