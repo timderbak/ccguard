@@ -149,7 +149,9 @@ def test_indicators_still_cover_attack_with_control_type(tmp_path) -> None:
     assert "T1552.001" in covered  # credentials-in-files, via indicator (ТЗ-05)
     assert itm  # indicator mappings exist
     assert all(m.control_type for m in itm)  # every mapping carries a control type
-    assert all(m.control_type == "SCOPE" for m in itm)  # default for indicators
+    # ТЗ-09 Step 5: path/host indicators SCOPE, dangerous-command indicators PREV.
+    assert {m.control_type for m in itm} <= {"SCOPE", "PREV"}
+    assert "PREV" in {m.control_type for m in itm}  # dangerous_command → PREV
 
 
 def test_indicator_mapping_control_type_default(tmp_path) -> None:

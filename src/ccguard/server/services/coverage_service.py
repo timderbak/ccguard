@@ -242,6 +242,7 @@ def coverage_detail(session: Session, technique_id: str) -> dict:
         "framework": tech.framework,
         "name": tech.name,
         "tactic": tech.tactic,
+        "tactic_source": tech.tactic_source,
         "in_scope": tech.in_scope,
         "covered": technique_id in effective,
         "covered_directly": technique_id in direct,

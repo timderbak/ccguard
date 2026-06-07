@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
-from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import uvicorn
@@ -30,6 +30,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = make_engine(cfg.db_url)
     init_db(engine)
     from sqlmodel import Session as _Session
+
+    from ccguard.server.services import indicator_seed_service
     from ccguard.server.services.settings_service import (
         seed_enforcement_mode,
         seed_llm_settings,
@@ -37,7 +39,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_sequence_settings,
     )
     from ccguard.server.services.token_service import bootstrap_env_tokens
-    from ccguard.server.services import indicator_seed_service
     with _Session(engine) as _s:
         bootstrap_env_tokens(_s, env_tokens=[t.value for t in cfg.tokens])
         # Plan 03-01 D-04: seed LLM-scanner KV defaults on first startup;
@@ -63,6 +64,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from ccguard.server.services import taxonomy_seed_service
         taxonomy_seed_service.load_crosswalk_seed(_s)
         taxonomy_seed_service.load_detector_seed(_s)
+        # ТЗ-09: load kill-chain scenarios as data (idempotent). The universal
+        # chain_engine executes them in the scheduler tick beside the existing
+        # correlators (sequence_service is untouched).
+        from ccguard.server.services import chain_seed_service
+        chain_seed_service.load_chain_seed(_s)
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)
@@ -111,6 +117,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     # --- Phase 2 / Plan 02-03: anomaly scheduler ---------------------------
+    from sqlmodel import Session as _SessionTick
+
     from ccguard.server.scheduler import (
         build_scheduler,
         is_disabled,
@@ -119,10 +127,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     from ccguard.server.services import discovery_service
     from ccguard.server.services.anomaly_service import tick as anomaly_tick
-    from ccguard.server.services.risk_service import tick as risk_tick
+    from ccguard.server.services.chain_engine import tick as chain_tick
     from ccguard.server.services.drift_service import tick as drift_tick
-    from ccguard.server.services.sequence_service import tick as sequence_tick
+    from ccguard.server.services.risk_service import tick as risk_tick
     from ccguard.server.services.sensor_health_service import tick as sensor_health_tick
+    from ccguard.server.services.sequence_service import tick as sequence_tick
     from ccguard.server.services.source_monitors.atlas import AtlasMonitor
     from ccguard.server.services.source_monitors.atomic_red_team import (
         AtomicRedTeamMonitor,
@@ -136,7 +145,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services.source_monitors.mitre_attack import (
         MitreAttackMonitor,
     )
-    from sqlmodel import Session as _SessionTick
 
     _DISCOVERY_MONITORS = (
         AtomicRedTeamMonitor(),
@@ -157,6 +165,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     summary = anomaly_tick(s)
                     risk_summary = risk_tick(s)
                     sequence_summary = sequence_tick(s)
+                    chain_summary = chain_tick(s)
                     drift_summary = drift_tick(s)
                     sensor_summary = sensor_health_tick(s)
                 logger.info(
@@ -178,6 +187,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     len(sequence_summary["errors"]),
                 )
                 logger.info(
+                    "chain tick: machines=%d scenarios=%d findings=%d errors=%d",
+                    chain_summary["machines_evaluated"],
+                    chain_summary["scenarios_active"],
+                    chain_summary["findings_emitted"],
+                    len(chain_summary["errors"]),
+                )
+                logger.info(
                     "drift tick: machines=%d findings=%d errors=%d",
                     drift_summary["machines_evaluated"],
                     drift_summary["findings_emitted"],
@@ -194,7 +210,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 # (ANTHROPIC_API_KEY at startup); silently skip otherwise.
                 drafter = getattr(app.state, "signal_drafter", None)
                 if drafter is not None:
-                    from datetime import UTC as _UTC, datetime as _dt
+                    from datetime import UTC as _UTC
+                    from datetime import datetime as _dt
                     with _SessionTick(engine) as s2:
                         if discovery_service.should_run(s2, now=_dt.now(_UTC)):
                             disc_summary = discovery_service.tick(

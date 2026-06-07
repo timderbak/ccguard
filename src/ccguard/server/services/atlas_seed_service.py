@@ -33,6 +33,7 @@ _ALLOWED_FIELDS = frozenset(
         "url",
         "in_scope",
         "source",
+        "tactic_source",
     }
 )
 _REQUIRED_FIELDS = ("technique_id", "framework", "name", "tactic")
@@ -81,6 +82,13 @@ def load_atlas_seed(session: Session, seed_path: Path | None = None) -> int:
         if tid in existing:
             continue
         fields = {k: v for k, v in entry.items() if k in _ALLOWED_FIELDS}
+        # ТЗ-09: OWASP ASI is an unordered risk layer, not a kill-chain stage
+        # axis — tag it so the chain engine / UI never treat its tactic as an
+        # ordered stage. attack/atlas are real kill-chain stages.
+        fields.setdefault(
+            "tactic_source",
+            "risk-layer" if fields.get("framework") == "owasp" else "kill-chain",
+        )
         session.add(Technique(**fields))
         existing.add(tid)
         inserted += 1
@@ -115,9 +123,16 @@ def migrate_indicator_techniques(session: Session) -> int:
             continue
         if (ind.id, tid) in existing_pairs:
             continue
+        # ТЗ-09 (ТЗ-08 tail): control_type per OWASP rationale taxonomy. A
+        # dangerous-command indicator backs a blocking enforce rule → PREV;
+        # path/host indicators limit/observe access to an artefact → SCOPE.
+        control_type = "PREV" if ind.indicator_type == "dangerous_command" else "SCOPE"
         session.add(
             IndicatorTechniqueMapping(
-                indicator_id=ind.id, technique_id=tid, mapping_source="seed"
+                indicator_id=ind.id,
+                technique_id=tid,
+                mapping_source="seed",
+                control_type=control_type,
             )
         )
         existing_pairs.add((ind.id, tid))

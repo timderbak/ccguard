@@ -135,6 +135,15 @@ _TAXONOMY_INDEX_DDL: tuple[str, ...] = (
     "ON detectortechniquemapping(detector_key, technique_id)",
 )
 
+# ТЗ-09 chain-scenario engine: unique scenario_key, and the step's composite
+# UNIQUE (scenario_key, step_index). Same idempotent pattern.
+_CHAIN_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_chainscenario_key "
+    "ON chainscenario(scenario_key)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_chainstep_scenario_index "
+    "ON chainstep(scenario_key, step_index)",
+)
+
 
 def make_engine(db_url: str) -> Engine:
     """Создать engine. Для SQLite — включить WAL и foreign_keys."""
@@ -197,6 +206,8 @@ def init_db(engine: Engine) -> None:
             conn.execute(text(ddl))
         for ddl in _TAXONOMY_INDEX_DDL:
             conn.execute(text(ddl))
+        for ddl in _CHAIN_INDEX_DDL:
+            conn.execute(text(ddl))
         # Additive ALTERs for ScanResult. SQLite lacks IF NOT EXISTS on
         # ADD COLUMN — introspect via PRAGMA and skip when already present.
         existing_cols = {
@@ -227,6 +238,14 @@ def init_db(engine: Engine) -> None:
         if "in_scope" not in technique_cols:
             conn.execute(
                 text("ALTER TABLE technique ADD COLUMN in_scope BOOLEAN DEFAULT 1")
+            )
+        # Additive ALTER for Technique.tactic_source (ТЗ-09).
+        if "tactic_source" not in technique_cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE technique ADD COLUMN tactic_source "
+                    "VARCHAR DEFAULT 'kill-chain'"
+                )
             )
         # Additive ALTER for IndicatorTechniqueMapping.control_type (ТЗ-08).
         itm_cols = {

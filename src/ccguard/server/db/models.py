@@ -616,6 +616,11 @@ class Technique(SQLModel, table=True):
     # excluded from coverage gaps so the map shows honest gaps, not noise.
     in_scope: bool = True
     source: str = "techniques-seed"
+    # ТЗ-09: distinguishes ORDERED kill-chain stages (attack/atlas — a real
+    # tactic axis the chain engine correlates over) from OWASP ASI's UNORDERED
+    # risk classes (mapped to a nearest stage only for UI bucketing). Set to
+    # "risk-layer" for owasp, "kill-chain" otherwise (derived in the loader).
+    tactic_source: str = "kill-chain"  # kill-chain | risk-layer
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
@@ -712,3 +717,62 @@ class DetectorTechniqueMapping(SQLModel, table=True):
     confidence: float = 1.0
     mapping_source: str = "seed"
     created_at: datetime = Field(default_factory=_utcnow)
+
+
+class ChainScenario(SQLModel, table=True):
+    """A kill-chain scenario as DATA (ТЗ-09).
+
+    A scenario is an ordered (or unordered) sequence of STAGES — not channels or
+    concrete techniques. The universal :mod:`chain_engine` executor reads any
+    scenario from this table and raises a finding when the stage sequence
+    completes within ``window_seconds`` inside one correlation session. Adding a
+    new attack scenario is a row here (data), NOT code; adding a new exfil
+    channel is a new indicator under the exfiltration stage — the scenario is
+    untouched. Loaded idempotently from ``data/chain_scenarios_seed.yaml``.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    scenario_key: str = Field(index=True)  # "recon_to_exfil"; UNIQUE via DDL
+    name: str
+    description: str | None = None
+    window_seconds: int = 300  # all steps must complete within this span
+    severity: str = "high"  # finding severity when the chain completes
+    enabled: bool = True
+    require_order: bool = True  # steps strictly in order (True) or any order (False)
+    source: str = "seed"
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class ChainStep(SQLModel, table=True):
+    """One step of a :class:`ChainScenario` — references a STAGE, not a technique.
+
+    ``tactic`` is the kill-chain stage (from the ТЗ-08 taxonomy:
+    exfiltration / credential-access / initial-access ...). The engine matches
+    "any event whose derived stage == this step's tactic" — so the step fires on
+    T1567 OR T1048 OR AML.T0024 (different techniques, one exfiltration stage).
+    Composite UNIQUE ``(scenario_key, step_index)`` via DDL.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    scenario_key: str = Field(index=True)  # FK → ChainScenario.scenario_key
+    step_index: int  # order within the scenario (0,1,2,...)
+    tactic: str = Field(index=True)  # STAGE, NOT a technique
+    optional: bool = False  # absence does not break the chain
+    description: str | None = None
+
+
+class ChainMatch(SQLModel, table=True):
+    """Trace of a fired scenario (ТЗ-09) — which real techniques/signals matched.
+
+    Persisted alongside the FindingRecord for auditability: ``matched_steps`` is
+    the JSON list of {step_index, tactic, signal, ts} that actually satisfied the
+    chain, so an analyst can see WHICH channels filled each stage this time.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    scenario_key: str = Field(index=True)
+    machine_id: str = Field(index=True)
+    session_id: str | None = Field(default=None, index=True)
+    matched_at: datetime = Field(default_factory=_utcnow)
+    finding_id: int | None = Field(default=None, index=True)
+    matched_steps_json: str = "[]"  # JSON: [{step_index, tactic, signal, ts}, ...]

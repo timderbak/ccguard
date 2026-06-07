@@ -1,0 +1,61 @@
+# Kill-chain SCENARIOS as data (ТЗ-09).
+#
+# A scenario is a sequence of STAGES (tactic), NOT channels/techniques. The
+# universal chain_engine executes any scenario here; adding one is rows in this
+# file, not code. A step fires on ANY event whose derived stage matches —
+# so a new exfil channel (new indicator/signal under `exfiltration`) is caught
+# with NO change to the scenario.
+#
+# Stages must be backed by a signal the agent emits (see chain_constants
+# _SIGNAL_STAGE_RULES). Stages with no signal yet (impact / defense-evasion /
+# command-and-control) are "armed-waiting": the scenario loads, but the step
+# can only fire once a signal for that stage exists — at which point it fires
+# with zero engine change (the data-driven promise, made visible).
+#
+# Loaded idempotently at startup (insert-or-skip on scenario_key). Severity uses
+# the FindingRecord vocabulary (info|warn|block|critical).
+
+scenarios:
+  - scenario_key: recon_to_exfil
+    name: "Внешний триггер → доступ к секретам → вынос"
+    description: >-
+      IPI / external-content trigger leads to credential access and then
+      exfiltration over ANY channel. The exfiltration step is stage-level, so it
+      catches a never-before-seen channel (e.g. a new paste/bot host) the moment
+      an indicator for it exists — the scenario is untouched.
+    window_seconds: 300
+    severity: critical
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: initial-access, description: "external content / injection trigger"}
+      - {step_index: 1, tactic: credential-access, description: "read any secret"}
+      - {step_index: 2, tactic: collection, optional: true, description: "stage data (optional)"}
+      - {step_index: 3, tactic: exfiltration, description: "ANY egress channel"}
+
+  - scenario_key: recon_stage_persist
+    name: "Внешний триггер → доступ → закрепление"
+    description: >-
+      External trigger leads (optionally via credential access) to persistence —
+      a malicious hook/skill/cron that survives the session.
+    window_seconds: 600
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: initial-access}
+      - {step_index: 1, tactic: credential-access, optional: true}
+      - {step_index: 2, tactic: persistence, description: "rc/cron/agent-settings edit"}
+
+  - scenario_key: poison_to_destructive
+    name: "Компрометация цепочки → выполнение → деструктив"
+    description: >-
+      Supply-chain / rug-pull entry leads to code execution and then a
+      destructive action. NOTE: the `impact` stage is armed-waiting — no agent
+      signal maps to impact yet, so this scenario will start firing only once a
+      destructive-action signal is added (data-driven, no engine change).
+    window_seconds: 300
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: initial-access, description: "supply-chain / pkg.publish entry"}
+      - {step_index: 1, tactic: execution, description: "pipe-to-shell / eval"}
+      - {step_index: 2, tactic: impact, description: "destructive (armed-waiting: no signal yet)"}
