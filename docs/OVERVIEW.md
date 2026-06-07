@@ -1,6 +1,6 @@
 # ccguard — обзор проекта и механик
 
-> Снимок состояния на 2026-06-06. Что есть в проекте и как работают основные механики.
+> Снимок состояния на 2026-06-07. Что есть в проекте и как работают основные механики.
 
 ## Что это
 
@@ -44,7 +44,7 @@ FastAPI + SQLModel + SQLite WAL. Lifespan (`main.py`) поднимает schedul
 
 **API для агента** (`api/`): `POST /inventory`, `POST /audit`, `POST /findings`, `POST /scan-content` (LLM-скан), `GET /policy` (с ETag), `GET /scanner-config`, `GET /health`. Auth — sha256-хеш токена в заголовке `X-CCGuard-Token` (`deps.py require_token`).
 
-**~20 таблиц** (`db/models.py`): Machine, InventorySnapshot, FindingRecord, PolicyVersion, AuditRecord, ToolUseEvent, MachineRiskHistory, MachineUserRiskHistory, ProposedSignal, ScanResult, LLMCallLog, PolicyApplyEvent, SettingsRecord + четыре TOFU-baseline таблицы (MCPServerBaseline, HookBaseline, SkillBaseline, AgentBaseline) + MachineBaseline (anomaly).
+**~30 таблиц** (`db/models.py`): Machine (+ heartbeat-поля ТЗ-07), InventorySnapshot, FindingRecord, PolicyVersion, AuditRecord, ToolUseEvent (+ `session_id`, `signals_json`), MachineRiskHistory, MachineUserRiskHistory, ProposedSignal, ScanResult, LLMCallLog, PolicyApplyEvent, SettingsRecord + четыре TOFU-baseline таблицы (MCPServerBaseline, HookBaseline, SkillBaseline, AgentBaseline) + MachineBaseline (anomaly). Таксономия/детект-склад (ТЗ-05/06/08/09): ThreatIndicator, Technique (atlas/attack/owasp), IndicatorTechniqueMapping, TechniqueCrosswalk, Detector, DetectorTechniqueMapping, ChainScenario, ChainStep, ChainMatch.
 
 ## Ключевые движки детекта (ядро ценности)
 
@@ -58,10 +58,16 @@ FastAPI + SQLModel + SQLite WAL. Lifespan (`main.py`) поднимает schedul
 | **Prompt injection** | Read читает README с «ignore previous instructions» | PostToolUse скан 15-pattern catalog + опц. LlamaGuard; опц. PreToolUse block |
 | **Anomaly (z-score)** | всплеск bash/tool-use относительно baseline | rolling mean+stddev на машину, sigma>2 → finding |
 | **Risk score** | накопление подозрительной активности | decay-weighted сумма findings, daily snapshot, fleet-wide агрегация |
-| **Sequence** | exfil/lateral-movement цепочки | паттерн bash→read→network в окне времени |
+| **Sequence (IOA)** | staging-chain, exfil-sequence, external-trigger цепочки | session-scoped корреляция размеченных событий в окне; additive scoring + allowlist-suppression (ТЗ-01..04) |
+| **Sensor self-protection** | агента тихо отключили / убрали hook | heartbeat раз в 15 мин; сервер: active/stale/silent с grace; детект по ОТСУТСТВИЮ сигнала → `sensor.silent` / `sensor.hooks_removed` (ТЗ-07) |
+| **Chain scenarios** | структуру атаки по СТАДИЯМ kill-chain (ловит вариант до публикации) | универсальный движок-исполнитель: сценарии — ДАННЫЕ, шаг = стадия (любая техника/канал), окно+сессия, optional/order (ТЗ-09) |
 | **Fleet divergence** | один skill с разными хешами по флоту = supply-chain | GROUP BY по денормализованным колонкам, DIVERGENT-бейдж в UI |
 
 LLM-скан (`scan_service` + `llm_client`) — единственная внешняя зависимость (Anthropic API), опциональная, с кешем по `file_hash` и бюджет-лимитом. Source monitors (`source_monitors/`) тянут threat intel: MITRE ATT&CK, Lakera blog, Atlas, Atomic Red Team, CVE AI filter.
+
+### Таксономия и карта покрытия (ТЗ-05/06/08)
+
+Над движками — слой классификации: **три равных фреймворка** как проекции одного пространства угроз — ATLAS (`AML.T*`), ATT&CK (`T*`), OWASP ASI (`ASI01..ASI10`), связанные горизонтальным crosswalk (`ASI04 ≈ AML.T0010 ≈ T1195`). Детект двух типов привязывается к техникам: **индикаторы** (артефакт-правила: путь/команда/хост, тип контроля PREV/SCOPE) и **корреляции** (поведенческие детекторы → DETECT). `coverage_service` считает покрытие как объединение обоих + rollup под-техник; техники про модель/обучение помечены `in_scope=false` и не показываются как дыры. Это закрывает «парадокс»: IPI (`AML.T0051`) покрыт корреляцией `staging_chain`/`external_trigger`, а не индикатором. `coverage_by_control_type()` показывает, где **блокируем** (PREV), где **видим** (DETECT), где **ограничиваем** (SCOPE). Данные — выверенные seed-файлы (`data/*_seed.yaml`), не сетевая автозагрузка.
 
 ## UI (HTMX/Jinja2, `web/routes.py`)
 
@@ -86,9 +92,10 @@ LLM-скан (`scan_service` + `llm_client`) — единственная вне
 ## Текущий статус
 
 - **v0.2** «Behavioral EDR + Compliance» — 5 фаз завершены: tool-use audit, anomaly detection, LLM content scanner, push-install, prompt-injection.
-- Затем **TOFU baseline для hooks** (ветка `feat/hooks-tofu-baseline`) → **skills/agents baseline** (последние коммиты в `master`: scan с source attribution → SkillBaseline → AgentBaseline → machine_detail UI → fleet skills-inventory).
+- Затем **TOFU baseline для hooks** → **skills/agents baseline** → fleet skills-inventory.
+- Затем детект-склад: **threat-indicator catalog** (ТЗ-05) → **карта покрытия** ATLAS/ATT&CK/OWASP ASI с привязкой индикаторов и корреляций к техникам (ТЗ-06/08) → **sensor self-protection** heartbeat (ТЗ-07) → **универсальный chain-движок** цепочек по стадиям как данные (ТЗ-09). sequence_service/enforce/scoring при этом не трогались — только модель данных + надстройка.
 - **Прод**: https://ccguard.swagasecurity.com (Caddy + Cloudflare), 2 машины во флоте.
-- **Тесты**: ~1256 (unit + integration + e2e), полный регресс зелёный.
+- **Тесты**: ~1443 (925 unit / 482 integration / 15 e2e-gated через `CCGUARD_E2E=1`), полный регресс зелёный.
 - Позиционирование сейчас: персональный guardrail для «вайбкодера»; движки детекта — главная ценность, не полноценный SOC.
 
 ## Дальше (roadmap)

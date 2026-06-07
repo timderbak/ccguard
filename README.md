@@ -1,11 +1,13 @@
 # ccguard
 
-**EDR-слой для Claude Code.** Endpoint-агент + центральный сервер для
-инвентаризации, проверки и enforcement'а конфигурации Claude Code в
-организации.
+**EDR-слой для AI-агентов на машинах разработчиков.** Endpoint-агент +
+центральный сервер: инвентаризация, проверка, enforcement **и поведенческий
+детект** конфигурации и активности Claude Code в организации. Классический EDR и
+AI-WAF не видят, что агент делает на эндпоинте через Bash/Write/Edit — ccguard
+закрывает это слепое пятно.
 
-Лицензия: MIT. Статус: **MVP**, не для продакшена без понимания
-[ограничений](#-известные-ограничения-mvp).
+Лицензия: MIT. Статус: **v0.2** (behavioral EDR + compliance), не для
+продакшена без понимания [ограничений](#-известные-ограничения-mvp).
 
 ---
 
@@ -48,9 +50,12 @@ enforce'ит запреты через штатный механизм `PreToolU
 Code. Решения allow/deny идут по
 [hook-протоколу Claude Code](docs/HOOKS_PROTOCOL.md).
 
-**Сервер** принимает inventory + findings + audit, отдаёт актуальную
-policy (с HTTP `ETag` кэшированием), показывает сводку по машинам и
-findings через REST API.
+**Сервер** принимает inventory + findings + audit-события, отдаёт актуальную
+policy (с HTTP `ETag` кэшированием), показывает сводку через REST + HTMX-UI и
+**гоняет фоновые движки детекта** (sequence/staging/exfil-корреляции, TOFU
+rug-pull для MCP/hooks/skills, anomaly/risk, sensor-heartbeat, chain-сценарии),
+мапя findings на карту покрытия ATLAS / ATT&CK / OWASP ASI. Подробнее —
+[docs/OVERVIEW.md](docs/OVERVIEW.md).
 
 ## Быстрый старт
 
@@ -184,6 +189,30 @@ JSON'ом с `permissionDecision: allow|deny`. См.
 работать на закэшированной policy**. Network на критическом пути
 `enforce` отсутствует.
 
+## Поведенческий детект и карта покрытия
+
+Помимо статической policy-проверки, ccguard ведёт **поведенческий детект** на
+сервере. PostToolUse-хук размечает каждое событие приватными **сигналами**
+(`cred.read.aws`, `egress.network_tool`, `content.read.external`, …; сырой ввод
+дропается сразу), а фоновые движки коррелируют их:
+
+- **Sequence/IOA-цепочки** — staging-chain, exfil-sequence, external-trigger в
+  пределах окна и одной сессии (session-scoped), с additive-scoring и
+  allowlist-подавлением шума сборки.
+- **Chain-сценарии (движок-данные)** — сценарий = последовательность **СТАДИЙ**
+  kill-chain, а не каналов. Шаг ловит любую технику стадии, поэтому вывод через
+  новый канал (видели Telegram — поймается WhatsApp) детектится без изменения
+  сценария; новый сценарий = строки в seed, не код.
+- **TOFU rug-pull** — MCP-описания, hook-скрипты, skills/agents: любое тихое
+  изменение baseline → алерт с diff «было/стало».
+- **Sensor self-protection** — агент шлёт heartbeat; сервер ловит, что сенсор
+  тихо отключили или убрали hook (детект по ОТСУТСТВИЮ сигнала).
+- **Anomaly / risk** — z-score всплески и decay-взвешенный риск-скор по машине.
+
+Findings мапятся на **карту покрытия** трёх фреймворков — ATLAS, ATT&CK, OWASP
+ASI — с типом контроля **PREV / DETECT / SCOPE** («блокируем / видим /
+ограничиваем»). Детали и механики — [docs/OVERVIEW.md](docs/OVERVIEW.md).
+
 ## Что НЕ уходит на сервер
 
 `ccguard` соблюдает data minimization:
@@ -228,33 +257,38 @@ JSON'ом с `permissionDecision: allow|deny`. См.
 
 ```
 ccguard/
-├── docs/                # BRAINSTORM, SPEC, PLAN, HOOKS_PROTOCOL, REFLEXION
+├── docs/                # OVERVIEW, SPEC, PLAN, HOOKS_PROTOCOL, TEST_AUDIT, …
 ├── examples/            # policy.example.yaml, config.example.yaml
 ├── src/ccguard/
 │   ├── schemas/         # общие pydantic-модели
-│   ├── agent/           # CLI: scan/check/install/enforce/sync/report
-│   └── server/          # FastAPI + SQLite
+│   ├── agent/           # CLI + хуки: scan/check/install/enforce/sync, audit, findings, daemon, signals
+│   └── server/          # FastAPI + SQLModel: api/, services/ (движки детекта), web/ (HTMX UI), data/ (seed-файлы)
 ├── tests/
-│   ├── unit/            # юнит-тесты (108 шт.)
-│   ├── integration/     # интеграционные (4 + сервер)
-│   └── e2e/             # docker-compose сценарий (6 шт.)
+│   ├── unit/            # юнит-тесты (~925)
+│   ├── integration/     # интеграционные (~482)
+│   └── e2e/             # docker-compose сценарий (15, gated через CCGUARD_E2E=1)
 └── docker/              # Dockerfile.{server,agent,test} + compose
 ```
 
 ## Тестирование
 
-Все тесты — в Docker.
+Локально через `uv`:
+
+```bash
+uv run pytest                # → 1443 passed, 15 skipped (e2e — окруженческие)
+CCGUARD_E2E=1 uv run pytest  # + e2e против живого docker-стека
+```
+
+Или в Docker:
 
 ```bash
 # Юнит + интеграционные
 docker build -f docker/Dockerfile.test -t ccguard-test .
 docker run --rm ccguard-test
-# → 112 passed
 
 # E2E (полный цикл агент ↔ сервер)
 docker compose -f docker/docker-compose.yml up -d server
 docker compose -f docker/docker-compose.yml --profile e2e run --rm agent
-# → 6 passed
 ```
 
 ## Roadmap
