@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 import yaml
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from ccguard.schemas import Policy, PolicyMeta
 from ccguard.schemas.finding import Finding
@@ -31,20 +32,10 @@ _VALID_TOKEN = "test-token-severity"
 # ---- Schema-level tests ----------------------------------------------------
 
 
-def test_finding_accepts_critical_severity() -> None:
-    f = Finding(
-        rule_id="llm.scan.critical",
-        severity="critical",
-        title="critical leak",
-        description="d",
-        source="llm_scanner",
-        recommendation="r",
-    )
-    assert f.severity == "critical"
-
-
-@pytest.mark.parametrize("sev", ["info", "warn", "block"])
-def test_finding_accepts_existing_severities(sev: str) -> None:
+# Consolidated (test-audit §3.3): one parametrized check is the single home for
+# the Finding severity Literal — accept side (info/warn/block + Phase-3 critical).
+@pytest.mark.parametrize("sev", ["info", "warn", "block", "critical"])
+def test_finding_accepts_valid_severity(sev: str) -> None:
     f = Finding(
         rule_id="r",
         severity=sev,  # type: ignore[arg-type]
@@ -57,7 +48,7 @@ def test_finding_accepts_existing_severities(sev: str) -> None:
 
 
 def test_finding_rejects_unknown_severity() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         Finding(
             rule_id="r",
             severity="bogus",  # type: ignore[arg-type]

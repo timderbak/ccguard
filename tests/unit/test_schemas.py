@@ -47,20 +47,11 @@ def test_extra_forbid_rejects_unknown_field() -> None:
         )
 
 
-def test_severity_literal_validation() -> None:
-    # Phase 3 / Plan 03-01 added ``critical`` to the Severity Literal (D-01).
-    # The Literal now rejects only genuinely unknown values (e.g. ``"bogus"``).
-    with pytest.raises(ValidationError):
-        Finding.model_validate(
-            {
-                "rule_id": "test",
-                "severity": "bogus",
-                "title": "t",
-                "description": "d",
-                "source": "s",
-                "recommendation": "r",
-            }
-        )
+# NOTE (test-audit §3.3): the Finding severity Literal (accept info/warn/block/
+# critical + reject unknown) lives in one place now — tests/unit/
+# test_severity_critical.py. The duplicate reject-bogus check formerly here was
+# consolidated there. (PromptInjectionConfig's separate literal is a DIFFERENT
+# model and stays in test_policy_backcompat.py.)
 
 
 def test_policy_unknown_schema_version_rejected() -> None:
