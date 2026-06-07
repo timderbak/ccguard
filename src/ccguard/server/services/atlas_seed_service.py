@@ -15,8 +15,8 @@ import yaml
 from sqlmodel import Session, select
 
 from ccguard.server.db.models import (
-    AtlasTechnique,
     IndicatorTechniqueMapping,
+    Technique,
     ThreatIndicator,
 )
 
@@ -32,13 +32,16 @@ _ALLOWED_FIELDS = frozenset(
         "parent_technique",
         "url",
         "in_scope",
+        "source",
     }
 )
 _REQUIRED_FIELDS = ("technique_id", "framework", "name", "tactic")
 
 
 def default_seed_path() -> Path:
-    return Path(__file__).resolve().parent.parent / "data" / "atlas_techniques_seed.yaml"
+    # ТЗ-08: renamed from atlas_techniques_seed.yaml — now three frameworks
+    # (atlas + attack + owasp), not ATLAS-only.
+    return Path(__file__).resolve().parent.parent / "data" / "techniques_seed.yaml"
 
 
 def _read_seed(seed_path: Path) -> list[dict]:
@@ -68,7 +71,7 @@ def load_atlas_seed(session: Session, seed_path: Path | None = None) -> int:
     if not entries:
         return 0
 
-    existing = {r.technique_id for r in session.exec(select(AtlasTechnique)).all()}
+    existing = {r.technique_id for r in session.exec(select(Technique)).all()}
     inserted = 0
     for entry in entries:
         if not all(entry.get(k) for k in _REQUIRED_FIELDS):
@@ -78,7 +81,7 @@ def load_atlas_seed(session: Session, seed_path: Path | None = None) -> int:
         if tid in existing:
             continue
         fields = {k: v for k, v in entry.items() if k in _ALLOWED_FIELDS}
-        session.add(AtlasTechnique(**fields))
+        session.add(Technique(**fields))
         existing.add(tid)
         inserted += 1
 
@@ -94,7 +97,7 @@ def migrate_indicator_techniques(session: Session) -> int:
     indicator but absent from ``AtlasTechnique`` is logged (seed inconsistency)
     and skipped — never raises. Returns mapping rows created.
     """
-    known_techniques = {r.technique_id for r in session.exec(select(AtlasTechnique)).all()}
+    known_techniques = {r.technique_id for r in session.exec(select(Technique)).all()}
     existing_pairs = {
         (m.indicator_id, m.technique_id)
         for m in session.exec(select(IndicatorTechniqueMapping)).all()

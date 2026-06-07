@@ -1,0 +1,111 @@
+# Detector registry + detector↔technique bindings (ТЗ-08).
+#
+# These detectors ALREADY EXIST in code — this seed does NOT implement detection,
+# it only REGISTERS each existing correlation detector with a stable
+# `detector_key` and binds it to techniques so the coverage map can SEE
+# correlations (not just indicators). This is the fix for the "zero AML coverage"
+# paradox: AML.T0051 (IPI) is detected behaviorally by staging_chain /
+# external_trigger, so it is covered via a DETECT control even though no
+# indicator points at it.
+#
+# `rule_ids` are the literal finding rule_id strings the detector emits, recorded
+# for traceability only (the detector code is NOT touched).
+#
+# control_type uses the OWASP rationale taxonomy. Correlations are DETECT (they
+# observe behavior) vs indicators which SCOPE/PREV (they limit access to an
+# artefact).
+
+detectors:
+  - detector_key: staging_chain
+    name: Staging chain (IOA)
+    kind: correlation
+    rule_ids: ioa.staging_chain
+    description: "sequence_service.detect_staging_chain — trigger→write staging behavior."
+  - detector_key: exfil_sequence
+    name: Exfiltration sequence (IOA)
+    kind: correlation
+    rule_ids: ioa.exfil_sequence
+    description: "sequence_service.detect_exfil_sequence — credential read → egress within window."
+  - detector_key: external_trigger
+    name: External-content trigger
+    kind: correlation
+    rule_ids: ioa.staging_chain
+    description: "sequence_service content.read.external flag — untrusted content drives the staging chain (IPI)."
+  - detector_key: rug_pull_tofu
+    name: Hook rug-pull (TOFU)
+    kind: correlation
+    rule_ids: hook.rug_pull.content,hook.rug_pull.command
+    description: "hook_baseline_service.update_and_detect — trust-on-first-use hook fingerprint drift."
+  - detector_key: heartbeat_silent
+    name: Sensor silence / hooks removed
+    kind: correlation
+    rule_ids: sensor.silent,sensor.hooks_removed
+    description: "sensor_health_service.tick + heartbeat endpoint — silenced or self-disabled sensor."
+
+# detector_key → technique bindings. framework duplicated for query convenience.
+mappings:
+  # staging_chain: goal hijack / prompt injection / data staged.
+  - detector_key: staging_chain
+    technique_id: ASI01
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: staging_chain
+    technique_id: AML.T0051
+    framework: atlas
+    control_type: DETECT
+    relevance: primary
+  - detector_key: staging_chain
+    technique_id: T1074
+    framework: attack
+    control_type: DETECT
+    relevance: secondary
+  # external_trigger: IPI — untrusted content drives the agent.
+  - detector_key: external_trigger
+    technique_id: ASI01
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: external_trigger
+    technique_id: AML.T0051
+    framework: atlas
+    control_type: DETECT
+    relevance: primary
+  # exfil_sequence: agentic supply chain / web-service & alt-protocol exfil.
+  - detector_key: exfil_sequence
+    technique_id: ASI04
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: exfil_sequence
+    technique_id: T1567
+    framework: attack
+    control_type: DETECT
+    relevance: primary
+  - detector_key: exfil_sequence
+    technique_id: T1048
+    framework: attack
+    control_type: DETECT
+    relevance: secondary
+  # rug_pull_tofu: agentic supply chain / ML supply chain compromise.
+  - detector_key: rug_pull_tofu
+    technique_id: ASI04
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: rug_pull_tofu
+    technique_id: AML.T0010
+    framework: atlas
+    control_type: DETECT
+    relevance: primary
+  # heartbeat_silent: rogue agent / impair defenses.
+  - detector_key: heartbeat_silent
+    technique_id: ASI10
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: heartbeat_silent
+    technique_id: T1562
+    framework: attack
+    control_type: DETECT
+    relevance: primary

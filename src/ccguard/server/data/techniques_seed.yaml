@@ -1,0 +1,309 @@
+# Threat-technique taxonomy seed — THREE EQUAL frameworks (ТЗ-08).
+#
+# Version-controlled, code-reviewed vetted slice loaded idempotently at startup
+# into the `technique` table. NOT a network autoload of the full corpora — that
+# is Path-2 (future ТЗ). One table, `framework` discriminator (three EQUAL
+# projections, not a nesting; cross-framework links live in
+# technique_crosswalk_seed.yaml):
+#   - attack : classic MITRE ATT&CK techniques our ThreatIndicator seed (ТЗ-05)
+#              references + the nearest context for our correlation detectors.
+#   - atlas  : MITRE ATLAS AI-specific AML.* techniques.
+#   - owasp  : OWASP Top 10 for Agentic Applications (2026) ASI01..ASI10 — the
+#              agentic layer where our behavioral detectors map.
+#
+# `in_scope: false` marks techniques an endpoint EDR for dev machines
+# structurally CANNOT cover (model/training-internal). They load for a complete
+# picture but are excluded from coverage gaps so the map shows honest holes.
+#
+# Fields: technique_id, framework, name, tactic, description, parent_technique,
+#         in_scope, url, source.
+
+techniques:
+  # ===== ATT&CK (framework=attack) ==========================================
+  # ----- credential-access: referenced by ТЗ-05 indicators ------------------
+  - technique_id: T1552
+    framework: attack
+    name: Unsecured Credentials
+    tactic: credential-access
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1552/
+    source: attack-seed
+    description: "Adversaries search for credentials stored insecurely."
+  - technique_id: T1552.001
+    framework: attack
+    name: Credentials In Files
+    tactic: credential-access
+    parent_technique: T1552
+    url: https://attack.mitre.org/techniques/T1552/001/
+    source: attack-seed
+    description: "Credentials in local files (cloud creds, config, dotfiles)."
+  - technique_id: T1552.004
+    framework: attack
+    name: Private Keys
+    tactic: credential-access
+    parent_technique: T1552
+    url: https://attack.mitre.org/techniques/T1552/004/
+    source: attack-seed
+    description: "Private key material (SSH, PEM)."
+  - technique_id: T1552.005
+    framework: attack
+    name: Cloud Instance Metadata API
+    tactic: credential-access
+    parent_technique: T1552
+    url: https://attack.mitre.org/techniques/T1552/005/
+    source: attack-seed
+    description: "IMDS endpoint abuse to harvest cloud credentials."
+  - technique_id: T1005
+    framework: attack
+    name: Data from Local System
+    tactic: collection
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1005/
+    source: attack-seed
+    description: "Bulk collection of local files."
+  - technique_id: T1074
+    framework: attack
+    name: Data Staged
+    tactic: collection
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1074/
+    source: attack-seed
+    description: "Data collected and staged in one location prior to exfiltration."
+  - technique_id: T1059
+    framework: attack
+    name: Command and Scripting Interpreter
+    tactic: execution
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1059/
+    source: attack-seed
+    description: "Execution via command/script interpreters."
+  - technique_id: T1059.004
+    framework: attack
+    name: Unix Shell
+    tactic: execution
+    parent_technique: T1059
+    url: https://attack.mitre.org/techniques/T1059/004/
+    source: attack-seed
+    description: "Execution via a Unix shell (incl. pipe-to-shell)."
+  - technique_id: T1567
+    framework: attack
+    name: Exfiltration Over Web Service
+    tactic: exfiltration
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1567/
+    source: attack-seed
+    description: "Exfiltration to external web services (paste/upload sites)."
+  - technique_id: T1048
+    framework: attack
+    name: Exfiltration Over Alternative Protocol
+    tactic: exfiltration
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1048/
+    source: attack-seed
+    description: "Exfiltration over a protocol other than the C2 channel."
+  - technique_id: T1102
+    framework: attack
+    name: Web Service
+    tactic: command-and-control
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1102/
+    source: attack-seed
+    description: "Legitimate web services used as C2 / exfil channels."
+  - technique_id: T1195
+    framework: attack
+    name: Supply Chain Compromise
+    tactic: initial-access
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1195/
+    source: attack-seed
+    description: "Compromise of software/dependencies before they reach the target."
+  - technique_id: T1078
+    framework: attack
+    name: Valid Accounts
+    tactic: privilege-escalation
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1078/
+    source: attack-seed
+    description: "Abuse of legitimate credentials/identity for access and privilege."
+  - technique_id: T1485
+    framework: attack
+    name: Data Destruction
+    tactic: impact
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1485/
+    source: attack-seed
+    description: "Destruction of data/files to disrupt availability."
+  - technique_id: T1562
+    framework: attack
+    name: Impair Defenses
+    tactic: defense-evasion
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1562/
+    source: attack-seed
+    description: "Disable or tamper with security controls/monitoring."
+
+  # ===== MITRE ATLAS (framework=atlas) ======================================
+  # ----- in-scope: ccguard's domain (IPI, supply chain, plugin compromise) --
+  - technique_id: AML.T0051
+    framework: atlas
+    name: LLM Prompt Injection
+    tactic: initial-access
+    parent_technique: null
+    url: https://atlas.mitre.org/techniques/AML.T0051
+    source: atlas-seed
+    description: "Crafted input subverts the LLM's instructions (direct/indirect)."
+  - technique_id: AML.T0053
+    framework: atlas
+    name: LLM Plugin Compromise
+    tactic: execution
+    parent_technique: null
+    url: https://atlas.mitre.org/techniques/AML.T0053
+    source: atlas-seed
+    description: "Abuse/compromise of an LLM plugin or tool to take action."
+  - technique_id: AML.T0010
+    framework: atlas
+    name: ML Supply Chain Compromise
+    tactic: initial-access
+    parent_technique: null
+    url: https://atlas.mitre.org/techniques/AML.T0010
+    source: atlas-seed
+    description: "Compromise of the ML/agent supply chain (skills, plugins, MCP servers)."
+  # ----- out-of-scope: model/training-internal, an endpoint EDR can't cover --
+  - technique_id: AML.T0054
+    framework: atlas
+    name: LLM Jailbreak
+    tactic: defense-evasion
+    parent_technique: null
+    in_scope: false
+    url: https://atlas.mitre.org/techniques/AML.T0054
+    source: atlas-seed
+    description: "Bypass model safety guardrails (model-level; not an endpoint control)."
+  - technique_id: AML.T0024
+    framework: atlas
+    name: Exfiltration via ML Inference API
+    tactic: exfiltration
+    parent_technique: null
+    in_scope: false
+    url: https://atlas.mitre.org/techniques/AML.T0024
+    source: atlas-seed
+    description: "Extract data/model via the inference API (deployed-service level)."
+  - technique_id: AML.T0049
+    framework: atlas
+    name: Exploit Public-Facing Application
+    tactic: initial-access
+    parent_technique: null
+    in_scope: false
+    url: https://atlas.mitre.org/techniques/AML.T0049
+    source: atlas-seed
+    description: "Abuse an exposed AI-enabled application (deployed-service level)."
+  - technique_id: AML.T0020
+    framework: atlas
+    name: Poison Training Data
+    tactic: ml-attack-staging
+    parent_technique: null
+    in_scope: false
+    url: https://atlas.mitre.org/techniques/AML.T0020
+    source: atlas-seed
+    description: "Poison training data to corrupt a model (training-time; not an endpoint control)."
+  - technique_id: AML.T0043
+    framework: atlas
+    name: Craft Adversarial Data
+    tactic: ml-attack-staging
+    parent_technique: null
+    in_scope: false
+    url: https://atlas.mitre.org/techniques/AML.T0043
+    source: atlas-seed
+    description: "Craft adversarial inputs that evade/fool a model (model-internal)."
+  - technique_id: AML.T0044
+    framework: atlas
+    name: Full ML Model Access
+    tactic: ml-model-access
+    parent_technique: null
+    in_scope: false
+    url: https://atlas.mitre.org/techniques/AML.T0044
+    source: atlas-seed
+    description: "White-box access to model internals/weights (not an endpoint control)."
+
+  # ===== OWASP Top 10 for Agentic Applications (framework=owasp) =============
+  # ASI01..ASI10 — the agentic layer. All in scope; ASI06/07/08/09 are HONEST
+  # gaps today (no detector/indicator yet) and should show as such on the map.
+  - technique_id: ASI01
+    framework: owasp
+    name: Agent Goal Hijack
+    tactic: initial-access
+    parent_technique: null
+    url: https://genai.owasp.org/
+    source: owasp-seed
+    description: "Adversary redirects the agent's goal/instructions (e.g. via injected content)."
+  - technique_id: ASI02
+    framework: owasp
+    name: Tool Misuse and Exploitation
+    tactic: execution
+    parent_technique: null
+    url: https://genai.owasp.org/
+    source: owasp-seed
+    description: "Abuse or exploitation of the agent's tools/plugins beyond intent."
+  - technique_id: ASI03
+    framework: owasp
+    name: Identity and Privilege Abuse
+    tactic: privilege-escalation
+    parent_technique: null
+    url: https://genai.owasp.org/
+    source: owasp-seed
+    description: "Abuse of the agent's identity, credentials, or excessive privilege."
+  - technique_id: ASI04
+    framework: owasp
+    name: Agentic Supply Chain Vulnerabilities
+    tactic: initial-access
+    parent_technique: null
+    url: https://genai.owasp.org/
+    source: owasp-seed
+    description: "Compromised skills/plugins/MCP servers/models in the agent supply chain."
+  - technique_id: ASI05
+    framework: owasp
+    name: Unexpected Code Execution
+    tactic: execution
+    parent_technique: null
+    url: https://genai.owasp.org/
+    source: owasp-seed
+    description: "Agent induced to execute unintended code/commands."
+  - technique_id: ASI06
+    framework: owasp
+    name: Memory and Context Poisoning
+    tactic: persistence
+    parent_technique: null
+    url: https://genai.owasp.org/
+    source: owasp-seed
+    description: "Persistent poisoning of agent memory/context to influence later actions."
+  - technique_id: ASI07
+    framework: owasp
+    name: Insecure Inter-Agent Communication
+    tactic: lateral-movement
+    parent_technique: null
+    url: https://genai.owasp.org/
+    source: owasp-seed
+    description: "Trust/abuse across agent-to-agent or agent-to-server channels."
+  - technique_id: ASI08
+    framework: owasp
+    name: Cascading Failures
+    tactic: impact
+    parent_technique: null
+    url: https://genai.owasp.org/
+    source: owasp-seed
+    description: "One failure/compromise cascades across dependent agents/systems."
+  - technique_id: ASI09
+    framework: owasp
+    name: Human-Agent Trust Exploitation
+    tactic: initial-access
+    parent_technique: null
+    url: https://genai.owasp.org/
+    source: owasp-seed
+    description: "Exploiting the human's trust in the agent (social engineering via the agent)."
+  - technique_id: ASI10
+    framework: owasp
+    name: Rogue Agents
+    tactic: defense-evasion
+    parent_technique: null
+    url: https://genai.owasp.org/
+    source: owasp-seed
+    description: "An agent acting outside policy/oversight, incl. a disabled/suppressed sensor."

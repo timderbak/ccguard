@@ -114,13 +114,25 @@ _THREAT_INDICATOR_INDEX_DDL: tuple[str, ...] = (
     "ON threatindicator(indicator_type, value, source)",
 )
 
-# ATLAS taxonomy (ТЗ-06): unique technique_id, and the junction's composite
-# UNIQUE (indicator_id, technique_id). Same idempotent pattern as above.
+# Taxonomy (ТЗ-06 → renamed in ТЗ-08): unique technique_id on the `technique`
+# table (was `atlastechnique`), and the indicator junction's composite UNIQUE
+# (indicator_id, technique_id). Same idempotent pattern as above.
 _ATLAS_INDEX_DDL: tuple[str, ...] = (
-    "CREATE UNIQUE INDEX IF NOT EXISTS ux_atlastechnique_technique_id "
-    "ON atlastechnique(technique_id)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_technique_technique_id "
+    "ON technique(technique_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS ux_indicatortechniquemapping_pair "
     "ON indicatortechniquemapping(indicator_id, technique_id)",
+)
+
+# ТЗ-08 taxonomy extensions: crosswalk siblings, detector registry, and the
+# detector↔technique junction. Composite UNIQUEs prevent double-linking.
+_TAXONOMY_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_techniquecrosswalk_pair "
+    "ON techniquecrosswalk(technique_id_a, technique_id_b)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_detector_key "
+    "ON detector(detector_key)",
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_detectortechniquemapping_pair "
+    "ON detectortechniquemapping(detector_key, technique_id)",
 )
 
 
@@ -148,6 +160,21 @@ def init_db(engine: Engine) -> None:
     # explicit import here is the safe, idempotent fix.
     from ccguard.server.db import models  # noqa: F401  (side-effect import)
 
+    # ТЗ-08: the AtlasTechnique model was renamed to Technique, so its table
+    # `atlastechnique` becomes `technique`. Rename the legacy table BEFORE
+    # create_all (which would otherwise create an empty `technique` and orphan
+    # the old data). Guarded + idempotent: only when the old exists and the new
+    # does not. Fresh DBs skip it entirely.
+    with engine.begin() as conn:
+        tables = {
+            row[0]
+            for row in conn.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+        }
+        if "atlastechnique" in tables and "technique" not in tables:
+            conn.execute(text("ALTER TABLE atlastechnique RENAME TO technique"))
+
     SQLModel.metadata.create_all(engine)
     # Composite indexes for ToolUseEvent (TUA-02) and MachineBaseline (02-01).
     # Idempotent — safe to re-run.
@@ -167,6 +194,8 @@ def init_db(engine: Engine) -> None:
         for ddl in _THREAT_INDICATOR_INDEX_DDL:
             conn.execute(text(ddl))
         for ddl in _ATLAS_INDEX_DDL:
+            conn.execute(text(ddl))
+        for ddl in _TAXONOMY_INDEX_DDL:
             conn.execute(text(ddl))
         # Additive ALTERs for ScanResult. SQLite lacks IF NOT EXISTS on
         # ADD COLUMN — introspect via PRAGMA and skip when already present.
@@ -190,13 +219,26 @@ def init_db(engine: Engine) -> None:
         for col_name, ddl in _MACHINE_HEARTBEAT_COLUMNS:
             if col_name not in machine_cols:
                 conn.execute(text(ddl))
-        # Additive ALTER for AtlasTechnique.in_scope (ТЗ-06 coverage fix).
-        atlas_cols = {
-            row[1] for row in conn.execute(text("PRAGMA table_info(atlastechnique)"))
+        # Additive ALTER for Technique.in_scope (ТЗ-06 coverage fix; table
+        # renamed atlastechnique→technique in ТЗ-08).
+        technique_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(technique)"))
         }
-        if "in_scope" not in atlas_cols:
+        if "in_scope" not in technique_cols:
             conn.execute(
-                text("ALTER TABLE atlastechnique ADD COLUMN in_scope BOOLEAN DEFAULT 1")
+                text("ALTER TABLE technique ADD COLUMN in_scope BOOLEAN DEFAULT 1")
+            )
+        # Additive ALTER for IndicatorTechniqueMapping.control_type (ТЗ-08).
+        itm_cols = {
+            row[1]
+            for row in conn.execute(text("PRAGMA table_info(indicatortechniquemapping)"))
+        }
+        if "control_type" not in itm_cols:
+            conn.execute(
+                text(
+                    "ALTER TABLE indicatortechniquemapping "
+                    "ADD COLUMN control_type VARCHAR DEFAULT 'SCOPE'"
+                )
             )
         for ddl in _TOOL_USE_SESSION_INDEX_DDL:
             conn.execute(text(ddl))

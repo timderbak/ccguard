@@ -579,37 +579,51 @@ class ThreatIndicator(SQLModel, table=True):
     # truth for attribution is now the junction table.
 
 
-class AtlasTechnique(SQLModel, table=True):
-    """Catalog of threat techniques — ATLAS (AI) + the ATT&CK techniques our
-    indicators reference (ТЗ-06).
+class Technique(SQLModel, table=True):
+    """Catalog of threat techniques across THREE equal frameworks (ТЗ-08).
 
-    One table with a ``framework`` discriminator (``atlas`` | ``attack``) so an
-    indicator can map to either taxonomy (0.3 decision). Hierarchy
-    (tactic → technique → sub-technique) via the self-referential
-    ``parent_technique`` — relational, no graph DB needed.
+    One table with a ``framework`` discriminator — three *equal* projections,
+    NOT a nesting:
+      - ``atlas``  : MITRE ATLAS AI-specific ``AML.T*`` techniques.
+      - ``attack`` : classic MITRE ATT&CK ``T*`` techniques our indicators hit.
+      - ``owasp``  : OWASP Top 10 for Agentic Applications ``ASI01..ASI10`` —
+                     the agentic layer where our correlation detectors map.
+    Horizontal relationships between frameworks live in
+    :class:`TechniqueCrosswalk` (``ASI04 ≈ AML.T0010 ≈ T1195``), never as
+    parent/child here. Intra-framework hierarchy (technique → sub-technique,
+    e.g. ``T1552 → T1552.001``) uses the self-referential ``parent_technique``.
 
-    Hybrid load like ThreatIndicator: a vetted seed
-    (``data/atlas_techniques_seed.yaml``) loads idempotently at startup.
-    Network autoload of the full ATLAS taxonomy is Path-2 (future ТЗ) — hence
-    the ``source`` column.
+    Renamed from ``AtlasTechnique`` (ТЗ-06) since it is no longer ATLAS-only; a
+    deprecation alias is kept below for backward compatibility. Hybrid load like
+    ThreatIndicator: a vetted seed (``data/techniques_seed.yaml``) loads
+    idempotently at startup. Network autoload of the full corpora is Path-2
+    (future ТЗ) — hence the ``source`` column.
     """
 
+    __tablename__ = "technique"
+
     id: int | None = Field(default=None, primary_key=True)
-    technique_id: str = Field(index=True)  # "AML.T0051" / "T1552.001"; UNIQUE via DDL
-    framework: str = Field(index=True)  # atlas | attack
+    technique_id: str = Field(index=True)  # "AML.T0051" / "T1552.001" / "ASI01"; UNIQUE via DDL
+    framework: str = Field(index=True)  # atlas | attack | owasp
     name: str
     tactic: str = Field(index=True)  # credential-access | exfiltration | ...
     description: str | None = None
     parent_technique: str | None = None  # parent technique_id; NULL at top level
     url: str | None = None
     # ТЗ-06 fix: False for techniques an endpoint EDR structurally cannot cover
-    # (model-internal: inference-API exfil, jailbreak, exploit of the deployed
-    # service). Out-of-scope techniques are excluded from coverage gaps so the
-    # map shows honest gaps, not noise. Additive column (ALTER in init_db).
+    # (model-internal: training-data poisoning, adversarial examples, model
+    # access, inference-API exfil, jailbreak). Out-of-scope techniques are
+    # excluded from coverage gaps so the map shows honest gaps, not noise.
     in_scope: bool = True
-    source: str = "atlas-seed"
+    source: str = "techniques-seed"
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
+
+
+# Deprecated alias (ТЗ-08): the class was ``AtlasTechnique`` through ТЗ-06. Kept
+# so existing imports / ТЗ-05/06 regression keep resolving. New code uses
+# ``Technique``.
+AtlasTechnique = Technique
 
 
 class IndicatorTechniqueMapping(SQLModel, table=True):
@@ -628,8 +642,73 @@ class IndicatorTechniqueMapping(SQLModel, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     indicator_id: int = Field(index=True)  # FK → ThreatIndicator.id
-    technique_id: str = Field(index=True)  # FK → AtlasTechnique.technique_id
+    technique_id: str = Field(index=True)  # FK → Technique.technique_id
     mapping_source: str = "seed"  # seed | manual | auto
     confidence: float = 1.0
+    # ТЗ-08: how this detection protects (OWASP rationale taxonomy). An
+    # indicator is an artefact path/command → it usually SCOPEs (limits access)
+    # or PREVents reach to the artefact. Additive column (ALTER in init_db).
+    control_type: str = "SCOPE"  # PREV | DETECT | SCOPE | GATE | ISOLATE | ...
     created_at: datetime = Field(default_factory=_utcnow)
     created_by: str | None = None
+
+
+class TechniqueCrosswalk(SQLModel, table=True):
+    """Horizontal links BETWEEN frameworks (ТЗ-08).
+
+    The three frameworks are equal projections of the same threat space, so the
+    same threat appears as ``ASI04`` (OWASP) ≈ ``AML.T0010`` (ATLAS) ≈ ``T1195``
+    (ATT&CK). This is a many-to-many *sibling* relation, NOT the parent/child
+    nesting of :attr:`Technique.parent_technique`. Stored once (a→b); queries
+    look in both directions. Composite UNIQUE ``(technique_id_a, technique_id_b)``
+    via DDL.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    technique_id_a: str = Field(index=True)  # FK → Technique.technique_id
+    technique_id_b: str = Field(index=True)  # FK → Technique.technique_id
+    relation: str = "crosswalk"  # the "≈" sibling relation
+    source: str = "owasp-crosswalk"  # owasp-crosswalk | manual
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class Detector(SQLModel, table=True):
+    """Registry of EXISTING correlation detectors (ТЗ-08).
+
+    The behavioral detectors already live in code (``sequence_service``,
+    ``hook_baseline_service``/TOFU, ``sensor_health_service``/heartbeat). This
+    table does NOT implement detection — it gives each existing detector a
+    stable ``detector_key`` so the coverage map can bind it to techniques. The
+    detector code is NOT touched; the emitted finding ``rule_id``\\s are recorded
+    here for traceability only.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    detector_key: str = Field(index=True)  # staging_chain | exfil_sequence | ...; UNIQUE via DDL
+    name: str
+    kind: str = "correlation"  # correlation (room for other kinds later)
+    description: str | None = None
+    # The literal finding rule_id(s) this detector emits, for traceability
+    # (comma-joined). Documentation only — coverage binds via detector_key.
+    rule_ids: str | None = None
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class DetectorTechniqueMapping(SQLModel, table=True):
+    """Junction: Detector ↔ Technique (ТЗ-08) — the fix for the coverage paradox.
+
+    Correlation detectors are NOT indicators, so before ТЗ-08 the map could not
+    see them and AML.T0051 (IPI), detected behaviorally, showed as a hole. This
+    junction makes a technique *covered* when a detector binds to it, exactly as
+    an indicator does. Composite UNIQUE ``(detector_key, technique_id)`` via DDL.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    detector_key: str = Field(index=True)  # FK → Detector.detector_key
+    technique_id: str = Field(index=True)  # FK → Technique.technique_id
+    framework: str = Field(index=True)  # duplicated for convenient queries
+    control_type: str = "DETECT"  # correlations DETECT (vs indicator SCOPE/PREV)
+    relevance: str = "primary"  # primary | secondary
+    confidence: float = 1.0
+    mapping_source: str = "seed"
+    created_at: datetime = Field(default_factory=_utcnow)

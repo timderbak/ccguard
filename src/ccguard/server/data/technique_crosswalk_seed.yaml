@@ -1,0 +1,49 @@
+# Cross-framework crosswalk seed (ТЗ-08) — HORIZONTAL "≈" links.
+#
+# The three frameworks are equal projections of the same threat space, so one
+# threat appears in several. These are SIBLING links (ASI04 ≈ AML.T0010 ≈ T1195),
+# NOT the parent/child nesting of Technique.parent_technique. Stored once (a→b);
+# the coverage service looks in both directions. Loaded idempotently on
+# (technique_id_a, technique_id_b).
+#
+# Fields: technique_id_a, technique_id_b, relation, source.
+
+crosswalks:
+  # Agentic supply chain ≈ ML supply chain ≈ ATT&CK supply chain.
+  - technique_id_a: ASI04
+    technique_id_b: AML.T0010
+    relation: crosswalk
+    source: owasp-crosswalk
+  - technique_id_a: AML.T0010
+    technique_id_b: T1195
+    relation: crosswalk
+    source: owasp-crosswalk
+  - technique_id_a: ASI04
+    technique_id_b: T1195
+    relation: crosswalk
+    source: owasp-crosswalk
+  # Goal hijack ≈ prompt injection.
+  - technique_id_a: ASI01
+    technique_id_b: AML.T0051
+    relation: crosswalk
+    source: owasp-crosswalk
+  # Tool misuse ≈ LLM plugin compromise.
+  - technique_id_a: ASI02
+    technique_id_b: AML.T0053
+    relation: crosswalk
+    source: owasp-crosswalk
+  # Unexpected code execution ≈ command/scripting interpreter.
+  - technique_id_a: ASI05
+    technique_id_b: T1059
+    relation: crosswalk
+    source: owasp-crosswalk
+  # Identity & privilege abuse ≈ valid accounts.
+  - technique_id_a: ASI03
+    technique_id_b: T1078
+    relation: crosswalk
+    source: owasp-crosswalk
+  # Rogue agents ≈ impair defenses (a suppressed/rogue sensor).
+  - technique_id_a: ASI10
+    technique_id_b: T1562
+    relation: crosswalk
+    source: owasp-crosswalk

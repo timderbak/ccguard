@@ -57,6 +57,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from ccguard.server.services import atlas_seed_service
         atlas_seed_service.load_atlas_seed(_s)
         atlas_seed_service.migrate_indicator_techniques(_s)
+        # ТЗ-08: load the cross-framework crosswalk (≈ links) and register the
+        # existing correlation detectors + their technique bindings. Both
+        # idempotent; broken seeds log + load nothing, never block startup.
+        from ccguard.server.services import taxonomy_seed_service
+        taxonomy_seed_service.load_crosswalk_seed(_s)
+        taxonomy_seed_service.load_detector_seed(_s)
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)
