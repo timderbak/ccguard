@@ -227,6 +227,13 @@ techniques:
   # ===== OWASP Top 10 for Agentic Applications (framework=owasp) =============
   # ASI01..ASI10 — the agentic layer. All in scope; ASI06/07/08/09 are HONEST
   # gaps today (no detector/indicator yet) and should show as such on the map.
+  #
+  # IMPORTANT — `tactic` for OWASP is an EDITORIAL mapping, not canon. OWASP ASI
+  # is a risk/loss-class taxonomy (unordered), NOT a kill-chain. Each ASI is
+  # placed at the NEAREST ATT&CK stage purely for UI bucketing in
+  # coverage_by_tactic(); it does NOT affect covered/uncovered, the paradox, or
+  # crosswalks. The weakest calls carry an inline `rationale:` below. A proper
+  # decoupling (e.g. a `tactic_source` discriminator) is deferred to ТЗ-09.
   - technique_id: ASI01
     framework: owasp
     name: Agent Goal Hijack
@@ -270,6 +277,10 @@ techniques:
   - technique_id: ASI06
     framework: owasp
     name: Memory and Context Poisoning
+    # rationale: weak fit. Poisoning agent memory is a preparation/corruption
+    # phase, not ATT&CK persistence (maintaining a foothold). Mapped to
+    # persistence as the nearest stage because the poison PERSISTS in
+    # memory/context and influences later turns; arguable vs initial-access.
     tactic: persistence
     parent_technique: null
     url: https://genai.owasp.org/
@@ -278,6 +289,9 @@ techniques:
   - technique_id: ASI07
     framework: owasp
     name: Insecure Inter-Agent Communication
+    # rationale: weak fit. The real tactic depends on what is exploited
+    # (cred-access / execution / priv-esc). Mapped to lateral-movement as the
+    # nearest stage for the agent→agent trust-crossing shape; not intrinsic.
     tactic: lateral-movement
     parent_technique: null
     url: https://genai.owasp.org/
@@ -294,6 +308,9 @@ techniques:
   - technique_id: ASI09
     framework: owasp
     name: Human-Agent Trust Exploitation
+    # rationale: weak fit. Social engineering VIA the agent; the executed tactic
+    # is whatever the human is tricked into (often execution / priv-esc). Mapped
+    # to initial-access treating the agent as the entry point; contestable.
     tactic: initial-access
     parent_technique: null
     url: https://genai.owasp.org/
