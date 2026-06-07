@@ -84,31 +84,37 @@ techniques:
     parent_technique: null
     url: https://atlas.mitre.org/techniques/AML.T0051
     description: "Crafted input subverts the LLM's instructions (direct/indirect)."
+  # out-of-scope: model-internal / deployed-service techniques an endpoint EDR
+  # for dev machines structurally cannot cover — excluded from coverage gaps.
   - technique_id: AML.T0054
     framework: atlas
     name: LLM Jailbreak
     tactic: defense-evasion
     parent_technique: null
+    in_scope: false
     url: https://atlas.mitre.org/techniques/AML.T0054
-    description: "Bypass model safety guardrails."
+    description: "Bypass model safety guardrails (model-level; not an endpoint control)."
   - technique_id: AML.T0024
     framework: atlas
     name: Exfiltration via ML Inference API
     tactic: exfiltration
     parent_technique: null
+    in_scope: false
     url: https://atlas.mitre.org/techniques/AML.T0024
-    description: "Extract data/model via the inference API."
+    description: "Extract data/model via the inference API (deployed-service level)."
+  - technique_id: AML.T0049
+    framework: atlas
+    name: Exploit Public-Facing Application
+    tactic: initial-access
+    parent_technique: null
+    in_scope: false
+    url: https://atlas.mitre.org/techniques/AML.T0049
+    description: "Abuse an exposed AI-enabled application (deployed-service level)."
+  # in-scope: ccguard's domain (IPI on the dev endpoint; skill/MCP supply chain).
   - technique_id: AML.T0010
     framework: atlas
     name: ML Supply Chain Compromise
     tactic: initial-access
     parent_technique: null
     url: https://atlas.mitre.org/techniques/AML.T0010
-    description: "Compromise of ML supply chain (models, data, plugins)."
-  - technique_id: AML.T0049
-    framework: atlas
-    name: Exploit Public-Facing Application
-    tactic: initial-access
-    parent_technique: null
-    url: https://atlas.mitre.org/techniques/AML.T0049
-    description: "Abuse an exposed AI-enabled application."
+    description: "Compromise of ML/agent supply chain (skills, plugins, MCP servers)."

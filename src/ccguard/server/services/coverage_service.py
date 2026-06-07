@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 _AUTO_CONFIDENCE = 0.3
 
 
-def _covered_technique_ids(session: Session) -> set[str]:
+def _directly_covered_ids(session: Session) -> set[str]:
     """technique_ids with at least one enabled+active indicator (the JOIN)."""
     rows = session.exec(
         select(IndicatorTechniqueMapping.technique_id)
@@ -38,9 +38,25 @@ def _covered_technique_ids(session: Session) -> set[str]:
     return set(rows)
 
 
+def _effective_covered_ids(session: Session) -> set[str]:
+    """Direct coverage PLUS rollup: a parent technique counts as covered when any
+    of its sub-techniques is covered (covering T1552.001 covers T1552). Otherwise
+    a fully-detected parent shows up as a gap purely because indicators attach to
+    its sub-techniques — a false hole.
+    """
+    direct = _directly_covered_ids(session)
+    if not direct:
+        return set()
+    covered = set(direct)
+    for tech in session.exec(select(AtlasTechnique)).all():
+        if tech.parent_technique and tech.technique_id in direct:
+            covered.add(tech.parent_technique)
+    return covered
+
+
 def techniques_covered(session: Session) -> list[AtlasTechnique]:
-    """Techniques we actually detect (≥1 active indicator)."""
-    covered = _covered_technique_ids(session)
+    """Techniques we actually detect (≥1 active indicator, with parent rollup)."""
+    covered = _effective_covered_ids(session)
     if not covered:
         return []
     return list(
@@ -51,19 +67,26 @@ def techniques_covered(session: Session) -> list[AtlasTechnique]:
 
 
 def techniques_uncovered(session: Session) -> list[AtlasTechnique]:
-    """Coverage gaps: techniques with no active indicator (backlog)."""
-    covered = _covered_technique_ids(session)
-    stmt = select(AtlasTechnique)
+    """Coverage gaps: IN-SCOPE techniques with no (effective) coverage.
+
+    Out-of-scope techniques (model-internal, an endpoint EDR can't cover) are
+    excluded — they are not honest gaps, just noise on the map.
+    """
+    covered = _effective_covered_ids(session)
+    stmt = select(AtlasTechnique).where(AtlasTechnique.in_scope == True)  # noqa: E712
     if covered:
         stmt = stmt.where(AtlasTechnique.technique_id.not_in(covered))
     return list(session.exec(stmt).all())
 
 
 def coverage_by_tactic(session: Session) -> dict[str, dict[str, int]]:
-    """Per-tactic summary: {tactic: {"covered": n, "total": m}}."""
-    covered = _covered_technique_ids(session)
+    """Per-tactic summary {tactic: {covered, total}} over IN-SCOPE techniques,
+    counting parent rollup as covered."""
+    covered = _effective_covered_ids(session)
     out: dict[str, dict[str, int]] = {}
     for tech in session.exec(select(AtlasTechnique)).all():
+        if not tech.in_scope:
+            continue  # out-of-scope techniques don't count toward the map
         bucket = out.setdefault(tech.tactic, {"covered": 0, "total": 0})
         bucket["total"] += 1
         if tech.technique_id in covered:

@@ -31,6 +31,7 @@ _ALLOWED_FIELDS = frozenset(
         "description",
         "parent_technique",
         "url",
+        "in_scope",
     }
 )
 _REQUIRED_FIELDS = ("technique_id", "framework", "name", "tactic")

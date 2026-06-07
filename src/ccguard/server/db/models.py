@@ -602,6 +602,11 @@ class AtlasTechnique(SQLModel, table=True):
     description: str | None = None
     parent_technique: str | None = None  # parent technique_id; NULL at top level
     url: str | None = None
+    # ТЗ-06 fix: False for techniques an endpoint EDR structurally cannot cover
+    # (model-internal: inference-API exfil, jailbreak, exploit of the deployed
+    # service). Out-of-scope techniques are excluded from coverage gaps so the
+    # map shows honest gaps, not noise. Additive column (ALTER in init_db).
+    in_scope: bool = True
     source: str = "atlas-seed"
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)

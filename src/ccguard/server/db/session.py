@@ -190,6 +190,14 @@ def init_db(engine: Engine) -> None:
         for col_name, ddl in _MACHINE_HEARTBEAT_COLUMNS:
             if col_name not in machine_cols:
                 conn.execute(text(ddl))
+        # Additive ALTER for AtlasTechnique.in_scope (ТЗ-06 coverage fix).
+        atlas_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(atlastechnique)"))
+        }
+        if "in_scope" not in atlas_cols:
+            conn.execute(
+                text("ALTER TABLE atlastechnique ADD COLUMN in_scope BOOLEAN DEFAULT 1")
+            )
         for ddl in _TOOL_USE_SESSION_INDEX_DDL:
             conn.execute(text(ddl))
 
