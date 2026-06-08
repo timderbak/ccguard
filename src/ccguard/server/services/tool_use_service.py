@@ -117,8 +117,14 @@ def timeline_buckets(
     start = now - timedelta(hours=hours - 1)
 
     # Build the parameterized WHERE clause dynamically.
-    where_parts = ["ts >= :cutoff"]
-    params: dict[str, object] = {"cutoff": start.isoformat()}
+    # Compare the SAME strftime hour-key used in GROUP BY on both sides, so the
+    # cutoff is format-agnostic. (Bug fix: a ``start.isoformat()`` cutoff is
+    # ``T``-separated with a ``+00:00`` offset, but SQLite stores ``ts``
+    # space-separated; the lexicographic ``ts >= cutoff`` then mis-compared
+    # across the date line — space (0x20) < 'T' (0x54) — silently dropping every
+    # event before midnight UTC. Hour-key vs hour-key avoids that entirely.)
+    where_parts = ["strftime('%Y-%m-%d %H', ts) >= :cutoff"]
+    params: dict[str, object] = {"cutoff": start.strftime("%Y-%m-%d %H")}
     if machine_id_like:
         where_parts.append("machine_id LIKE :mid")
         params["mid"] = f"%{machine_id_like}%"
