@@ -18,7 +18,8 @@ Design choices:
 
 This is the ТЗ-08-faithful "event → signal → stage" path, encoded as data: each
 family is grounded in the representative technique whose ``tactic`` it inherits.
-NOTE: there is intentionally NO mapping to ``impact`` / ``defense-evasion`` /
+NOTE: ``impact`` is mapped as of ТЗ-IMPACT (destructive ``impact.*`` signals).
+There is still intentionally NO mapping to ``defense-evasion`` /
 ``command-and-control`` — the agent catalog emits no signal for those stages
 yet, so a scenario step on such a stage is "armed but waiting for a signal"
 (add the signal later → the scenario fires with zero engine change).
@@ -63,6 +64,10 @@ _SIGNAL_STAGE_RULES: tuple[tuple[str, str], ...] = (
     # privilege-escalation: chmod/sudo/hosts/container-escape (T1548.* etc.).
     ("system.", "privilege-escalation"),
     ("container.", "privilege-escalation"),
+    # impact: data destruction (T1485) — ТЗ-IMPACT. Adding this entry alone
+    # revives poison_to_destructive (its impact step now resolves), with NO
+    # chain_engine change — the data-driven promise made concrete.
+    ("impact.", "impact"),
 )
 
 

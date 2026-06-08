@@ -12,9 +12,11 @@ regex without a redeploy). Malformed override regexes are silently dropped.
 from __future__ import annotations
 
 import re
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from ccguard.agent.signals.catalog import ACTION_SIGNAL_IDS, CATALOG, Signal
+from ccguard.agent.signals.destructive import detect_destructive
 
 # Tools whose tool_input carries a filesystem path we want to inspect.
 _PATH_TOOLS = frozenset({"Read", "Write", "Edit", "MultiEdit", "NotebookEdit"})
@@ -145,6 +147,23 @@ def _write_signals(tool_name: str, tool_input: dict[str, Any]) -> list[str]:
     return out
 
 
+def _destructive_signals(tool_name: str, tool_input: dict[str, Any]) -> list[str]:
+    """Tool-gated destructive-action signal (ТЗ-IMPACT).
+
+    Emits ``impact.{delete,db,overwrite}`` when a Bash command destroys a
+    SENSITIVE target (not an allowlisted safe path). Shares ``detect_destructive``
+    with the enforce path so DETECT (this signal) and PREV (enforce block) never
+    diverge. Privacy: only the category reaches the signal — never the command.
+    """
+    if tool_name != "Bash":
+        return []
+    cmd = tool_input.get("command")
+    if not isinstance(cmd, str) or not cmd:
+        return []
+    cat = detect_destructive(cmd)
+    return [f"impact.{cat}"] if cat else []
+
+
 def _normalized_text(tool_name: str, tool_input: dict[str, Any]) -> str:
     """Build a single lowercased text view of the invocation.
 
@@ -220,6 +239,7 @@ def extract_signals(
         # survive even when the normalized text is empty (e.g. WebFetch).
         out = _write_signals(tool_name, tool_input)
         out.extend(_external_content_signals(tool_name, tool_input))
+        out.extend(_destructive_signals(tool_name, tool_input))
         text = _normalized_text(tool_name, tool_input)
         if text.strip():
             active = _build_active_catalog(overrides)

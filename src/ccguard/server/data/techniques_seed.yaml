@@ -133,6 +133,14 @@ techniques:
     url: https://attack.mitre.org/techniques/T1485/
     source: attack-seed
     description: "Destruction of data/files to disrupt availability."
+  - technique_id: T1561
+    framework: attack
+    name: Disk Wipe
+    tactic: impact
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1561/
+    source: attack-seed
+    description: "Wipe/overwrite disk or device contents (e.g. dd to a device)."
   - technique_id: T1562
     framework: attack
     name: Impair Defenses

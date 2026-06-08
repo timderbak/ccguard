@@ -16,13 +16,14 @@ from urllib.parse import urlparse
 
 import yaml
 
+from ccguard.agent import read_pi_scan as read_pi_scan_mod
 from ccguard.agent.audit import make_audit_logger, write_audit
 from ccguard.agent.bash_url_parser import extract_urls_from_command
 from ccguard.agent.findings_hook.buffer import emit_finding
 from ccguard.agent.network_utils import detect_ip_as_host, is_private_ip
 from ccguard.agent.prompt_injection_engine import ScanResult
 from ccguard.agent.prompt_injection_engine import scan as pi_scan
-from ccguard.agent import read_pi_scan as read_pi_scan_mod
+from ccguard.agent.signals.destructive import detect_destructive
 from ccguard.schemas import (
     AuditEntry,
     EnforceDecision,
@@ -158,6 +159,32 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
         # warn — копим, но не возвращаем сразу: пусть остальные правила
         # тоже отработают (включая последующий block в denylist).
         warning_signals.append(rid)
+
+    # P1.5 / Destructive-by-dangerous-target (ТЗ-IMPACT): rm/db/overwrite of a
+    # SENSITIVE target (NOT an allowlisted safe path). Shares
+    # ``detect_destructive`` with the audit-signal path so PREV (this block) and
+    # DETECT (the impact.* signal) never diverge. delete/overwrite → block;
+    # `db` → warn only (SQL target-awareness is imperfect; emit a finding, never
+    # a hard block, to keep false positives off the enforce path). Either way the
+    # rule_id starts with "dangerous." so the existing finding emitter records it
+    # (and observe-mode still emits without blocking → DETECT).
+    destructive_cat = detect_destructive(command)
+    if destructive_cat is not None:
+        rid = f"dangerous.destructive/{destructive_cat}"
+        if destructive_cat == "db":
+            if rid not in warning_signals:
+                warning_signals.append(rid)
+        else:
+            return EnforceDecision(
+                permission="deny",
+                reason=(
+                    f"Деструктивное действие по чувствительной цели ({destructive_cat}); "
+                    "T1485 Data Destruction. Используй безопасную цель из allowlist "
+                    "или выполни вручную."
+                ),
+                rule_id=rid,
+                warning_signals=warning_signals,
+            )
 
     # P1 / Suspicious network calls: если команда вытаскивает URL через
     # curl/wget/http/nc — проверяем хост по тому же каталогу, что и WebFetch.

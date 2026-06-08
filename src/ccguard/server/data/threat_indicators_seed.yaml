@@ -318,3 +318,83 @@ indicators:
     tactic: benign
     weight: 0.0
     description: "VCS internal dir — build noise"
+
+  # --- ТЗ-IMPACT: destructive actions (impact stage; T1485 Data Destruction,
+  # T1561 Disk Wipe). Runtime detection is CODE (agent
+  # destructive.detect_destructive, which applies the safe-target allowlist);
+  # these catalog rows bind the impact stage to its techniques so the coverage
+  # map shows it covered (control_type PREV — dangerous_command, enforce-capable).
+  # `value` regexes are representative/documentary, not the runtime matcher.
+  - indicator_type: dangerous_command
+    value: "\\brm\\s+-\\S*[rf].*(/etc|/usr|/var|\\.(ssh|aws|gnupg|config|kube))"
+    value_kind: regex
+    source: manual
+    source_ref: "T1485"
+    technique: T1485
+    tactic: impact
+    weight: 5.0
+    description: "Recursive force-delete of a sensitive/system target"
+  - indicator_type: dangerous_command
+    value: "\\b(DROP\\s+(TABLE|DATABASE|SCHEMA)|TRUNCATE|DELETE\\s+FROM)\\b"
+    value_kind: regex
+    source: manual
+    source_ref: "T1485"
+    technique: T1485
+    tactic: impact
+    weight: 4.0
+    description: "Destructive DB operation (DROP/TRUNCATE/DELETE) on a non-test object"
+  - indicator_type: dangerous_command
+    value: ">\\s*\\S*\\.(ssh|aws|gnupg)/|\\bch(mod|own)\\s+-\\S*[rR]\\s"
+    value_kind: regex
+    source: manual
+    source_ref: "T1485"
+    technique: T1485
+    tactic: impact
+    weight: 4.0
+    description: "Destructive overwrite of a secret file / recursive perms change"
+  - indicator_type: dangerous_command
+    value: "\\bdd\\b.*\\bof=/dev/"
+    value_kind: regex
+    source: manual
+    source_ref: "T1561"
+    technique: T1561
+    tactic: impact
+    weight: 5.0
+    description: "Disk wipe via dd to a device (T1561 Disk Wipe)"
+  # --- ТЗ-IMPACT: safe destructive targets (build/output dirs). Allowlist for
+  # the map; the runtime allowlist lives in destructive.SAFE_PATH_COMPONENTS.
+  - indicator_type: safe_path
+    value: "dist"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "Build output dir — destructive ops here are normal dev work"
+  - indicator_type: safe_path
+    value: "build"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "Build output dir — normal dev work"
+  - indicator_type: safe_path
+    value: ".next"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "Next.js build cache — normal dev work"
+  - indicator_type: safe_path
+    value: "coverage"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "Coverage output — normal dev work"
+  - indicator_type: safe_path
+    value: ".venv"
+    value_kind: prefix
+    source: manual
+    tactic: benign
+    weight: 0.0
+    description: "Virtualenv — normal dev work"

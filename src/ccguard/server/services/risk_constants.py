@@ -73,4 +73,11 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     # always legitimate build noise → minimal weight.
     "fs.write.cache": 0.5,
     "fs.write.vcs": 0.5,
+    # ТЗ-IMPACT data-destruction signals — top-tier threat (Replit-style prod
+    # wipe). Already target-gated (fire only on a sensitive, non-allowlisted
+    # target via destructive.detect_destructive), so a high weight carries low
+    # false-positive risk.
+    "impact.delete": 5.0,
+    "impact.db": 5.0,
+    "impact.overwrite": 5.0,
 }

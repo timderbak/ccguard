@@ -319,6 +319,29 @@ CATALOG: tuple[Signal, ...] = (
         _p(r"/\.git/"),
         "Write to a VCS internal dir (benign-staging allowlist marker)",
     ),
+    # ТЗ-IMPACT: data-destruction signals. ACTION signals — emission is gated on
+    # a destructive Bash command hitting a SENSITIVE (non-allowlisted) target in
+    # ``extractor._destructive_signals`` (via ``destructive.detect_destructive``),
+    # NOT the regex loop. Documentary patterns. Mapped to T1485 Data Destruction;
+    # these are the ``impact`` kill-chain stage that revives poison_to_destructive.
+    Signal(
+        "impact.delete",
+        "T1485",
+        _p(r"\brm\s+-\S*[rf]|\bshred\b|\bfind\b.*-delete"),
+        "Destructive deletion of a sensitive target (rm -rf / shred / find -delete)",
+    ),
+    Signal(
+        "impact.db",
+        "T1485",
+        _p(r"\b(drop\s+(table|database|schema)|truncate|delete\s+from)\b"),
+        "Destructive DB operation on a non-test object (DROP / TRUNCATE / DELETE)",
+    ),
+    Signal(
+        "impact.overwrite",
+        "T1485",
+        _p(r">\s*\S|\bdd\b.*\bof=|\bch(mod|own)\s+-\S*[rR]"),
+        "Destructive overwrite of a sensitive file (redirect / dd / chmod -R)",
+    ),
 )
 
 # Action signals (see note above): excluded from the generic regex loop in
@@ -331,5 +354,8 @@ ACTION_SIGNAL_IDS: frozenset[str] = frozenset(
         "content.read.external",
         "fs.write.cache",
         "fs.write.vcs",
+        "impact.delete",
+        "impact.db",
+        "impact.overwrite",
     }
 )
