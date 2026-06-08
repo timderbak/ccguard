@@ -151,14 +151,32 @@ def overview_page(
     user: str = Depends(require_session),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
+    from ccguard.server.db.models import FindingRecord, ProposedSignal
     from ccguard.server.services.fleet_risk import compute_fleet_risk
     from ccguard.server.services.machine_service import list_machines_with_status
     from ccguard.server.services.settings_service import get_enforcement_mode
     from ccguard.server.services.dangerous_findings import todays_blocked_count
+    from ccguard.server.services.surface_score_service import compute_surface_score
     machines = list_machines_with_status(session)
     fleet_risk = compute_fleet_risk(session, limit=10)
     enforcement_mode = get_enforcement_mode(session)
     dangerous_today = todays_blocked_count(session)
+    # Дашборд-KPI (read-only): скоринг поверхности + счётчики.
+    surface = compute_surface_score(session)
+    since7 = datetime.now(UTC) - timedelta(days=7)
+    week_detections = len(
+        session.exec(select(FindingRecord.id).where(FindingRecord.discovered_at >= since7)).all()
+    )
+    open_threats = len(
+        session.exec(
+            select(FindingRecord.id)
+            .where(FindingRecord.severity.in_(["block", "critical"]))
+            .where(FindingRecord.discovered_at >= since7)
+        ).all()
+    )
+    pending_feeds = len(
+        session.exec(select(ProposedSignal.id).where(ProposedSignal.status == "pending")).all()
+    )
     return templates.TemplateResponse(
         request,
         "overview.html",
@@ -168,6 +186,10 @@ def overview_page(
             "fleet_risk": fleet_risk,
             "enforcement_mode": enforcement_mode,
             "dangerous_today": dangerous_today,
+            "surface": surface,
+            "week_detections": week_detections,
+            "open_threats": open_threats,
+            "pending_feeds": pending_feeds,
             "csrf_token": _csrf_for(request),
         },
     )

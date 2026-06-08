@@ -192,8 +192,16 @@
             </div>
         </aside>
         <main class="cc-surface flex-1 p-8 min-w-0">
-<div class="flex items-center justify-between mb-6 flex-wrap gap-3">
-    <h2 class="text-2xl font-semibold">Обзор</h2>
+<style>
+  .ov-ring{--p:0;width:108px;height:108px;border-radius:50%;display:grid;place-items:center;flex:none;
+    background:conic-gradient(#c45cff calc(var(--p)*1%), #ffffff10 0)}
+  .ov-ring .hole{width:84px;height:84px;border-radius:50%;background:var(--card);display:grid;place-items:center;text-align:center}
+  .ov-kpi .ic{width:36px;height:36px;border-radius:11px;display:grid;place-items:center}
+  .ov-kpi .ic svg{width:18px;height:18px;stroke:#fff;stroke-width:1.9;fill:none}
+</style>
+
+<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+    <h2 class="text-2xl text-white cc-display">Обзор</h2>
     <div class="flex items-center gap-3" data-testid="overview-mode-badge">
         <span class="cc-sev cc-sev-warn"
               title="Режим enforce блокирует команды; observe только логирует.">
@@ -202,6 +210,49 @@
         
     </div>
 </div>
+
+<!-- Fortexa dashboard header: surface score + KPI strip -->
+<div class="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 mb-4">
+    <div class="cc-card p-5 flex items-center gap-4">
+        <div class="ov-ring" style="--p: 100">
+            <div class="hole">
+                <div>
+                    <div class="cc-num text-2xl text-white">100<span class="text-sm text-slate-400">/100</span></div>
+                    <div class="cc-mono text-[8px] tracking-widest text-slate-500 mt-0.5">MCP-СКОР</div>
+                </div>
+            </div>
+        </div>
+        <div>
+            <div class="cc-eyebrow">Поверхность</div>
+            <div class="text-sm text-slate-300 mt-1">0 уникальных MCP</div>
+            <div class="text-xs text-slate-500 mt-0.5">0 с открытым риском</div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div class="cc-card-2 p-4 ov-kpi">
+            <div class="ic" style="background:#8b5cf6"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></div>
+            <div class="cc-num text-2xl text-white mt-3">0</div>
+            <div class="text-xs text-slate-400">детектов за неделю</div>
+        </div>
+        <div class="cc-card-2 p-4 ov-kpi">
+            <div class="ic" style="background:#ff5470"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div>
+            <div class="cc-num text-2xl mt-3" style="color:#ff8aa0">0</div>
+            <div class="text-xs text-slate-400">пропущено сегодня</div>
+        </div>
+        <div class="cc-card-2 p-4 ov-kpi">
+            <div class="ic" style="background:#f97316"><svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01M10.3 4l-7 12a2 2 0 001.7 3h14a2 2 0 001.7-3l-7-12a2 2 0 00-3.4 0z"/></svg></div>
+            <div class="cc-num text-2xl text-white mt-3">0</div>
+            <div class="text-xs text-slate-400">открытые угрозы</div>
+        </div>
+        <div class="cc-card-2 p-4 ov-kpi">
+            <div class="ic" style="background:#ec4899"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></div>
+            <div class="cc-num text-2xl text-white mt-3">0</div>
+            <div class="text-xs text-slate-400">фида на согласовании</div>
+        </div>
+    </div>
+</div>
+
 <div class="bg-white rounded-lg shadow p-4"
      hx-get="/_partials/overview/fleet-table"
      hx-trigger="every 30s">
