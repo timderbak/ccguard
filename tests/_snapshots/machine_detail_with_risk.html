@@ -8,178 +8,165 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Chivo:wght@600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <script>
       tailwind.config = {
         theme: {
           extend: {
             fontFamily: {
-              sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+              sans: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
               mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
-              display: ['"Chivo"', '"IBM Plex Sans"', 'sans-serif'],
+              display: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'sans-serif'],
             },
             colors: {
-              ink: {
-                900: '#0a0e12',
-                850: '#0d1318',
-                800: '#11181f',
-                700: '#1a242d',
-                600: '#26333d',
-              },
-              signal: '#10b981',
+              ink: { 900: '#0b0810', 850: '#0e0b14', 800: '#16121f', 700: '#1b1626', 600: '#241d31' },
+              signal: '#34d399',
+              accent: { DEFAULT: '#a855f7', 2: '#c45cff', mag: '#e455c8' },
             },
             keyframes: {
-              ccRise: {
-                '0%':   { opacity: '0', transform: 'translateY(10px)' },
-                '100%': { opacity: '1', transform: 'translateY(0)' },
-              },
-              ccPulse: {
-                '0%,100%': { opacity: '1' },
-                '50%':     { opacity: '.35' },
-              },
+              ccRise: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+              ccPulse: { '0%,100%': { opacity: '1' }, '50%': { opacity: '.35' } },
             },
-            animation: {
-              ccRise: 'ccRise .5s cubic-bezier(.22,1,.36,1) both',
-              ccPulse: 'ccPulse 2.4s ease-in-out infinite',
-            },
+            animation: { ccRise: 'ccRise .5s cubic-bezier(.22,1,.36,1) both', ccPulse: 'ccPulse 2.4s ease-in-out infinite' },
           },
         },
       };
     </script>
     <style>
-      :root { color-scheme: light; }
-      body { font-family: "IBM Plex Sans", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+      :root {
+        color-scheme: dark;
+        --bg:#0b0810; --bg2:#0e0b14; --card:#16121f; --card2:#1b1626; --line:#ffffff14;
+        --txt:#f3f0f7; --muted:#8a8394; --mut2:#5f5970;
+        --pur:#a855f7; --pur2:#c45cff; --mag:#e455c8; --grad:linear-gradient(180deg,#c45cff,#7c3aed);
+        --warn:#ff6a1a; --red:#ff5470; --green:#34d399; --blue:#3b9bf0; --orange:#f97316; --pink:#ec4899;
+      }
+      body { font-family: "Plus Jakarta Sans", system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: var(--txt); }
       .font-mono, code, pre, .cc-mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
-      h1, h2, h3, .cc-display { font-family: "Chivo", "IBM Plex Sans", sans-serif; letter-spacing: -0.015em; }
+      h1, h2, h3, .cc-display { font-family: "Plus Jakarta Sans", sans-serif; letter-spacing: -0.02em; font-weight: 800; }
+      .cc-num { font-variant-numeric: tabular-nums; letter-spacing:-.02em; font-weight:800; }
 
-      /* Blueprint atmosphere for the work surface */
+      /* Dark "Fortexa" work surface */
       .cc-surface {
-        background-color: #eef1f5;
+        background-color: var(--bg);
         background-image:
-          radial-gradient(900px 500px at 82% -8%, rgba(16,185,129,.10), transparent 60%),
-          radial-gradient(760px 480px at -6% 108%, rgba(56,89,120,.12), transparent 55%),
-          linear-gradient(to right, rgba(15,23,42,.035) 1px, transparent 1px),
-          linear-gradient(to bottom, rgba(15,23,42,.035) 1px, transparent 1px);
-        background-size: 100% 100%, 100% 100%, 32px 32px, 32px 32px;
-        background-attachment: fixed, fixed, fixed, fixed;
+          radial-gradient(1100px 560px at 78% -12%, rgba(124,58,237,.20), transparent 60%),
+          radial-gradient(760px 480px at -6% 108%, rgba(228,85,200,.08), transparent 55%);
+        background-attachment: fixed, fixed;
       }
 
-      /* Card refinement applied broadly without touching markup */
-      .cc-surface .bg-white {
-        border: 1px solid rgba(15,23,42,.07);
-        box-shadow: 0 1px 2px rgba(13,19,24,.04), 0 12px 28px -18px rgba(13,19,24,.28);
-        transition: box-shadow .25s ease, border-color .25s ease, transform .25s ease;
-      }
-      .cc-surface .bg-white:hover {
-        box-shadow: 0 1px 2px rgba(13,19,24,.05), 0 20px 40px -22px rgba(13,19,24,.36);
-        border-color: rgba(16,185,129,.28);
-      }
+      /* New dark card primitive (used by redesigned pages) */
+      .cc-card { background: var(--card); border: 1px solid var(--line); border-radius: 20px; }
+      .cc-card-2 { background: var(--card2); border: 1px solid var(--line); border-radius: 15px; }
 
-      /* Inputs feel engineered */
-      .cc-surface input:not([type=checkbox]):not([type=radio]),
-      .cc-surface select,
-      .cc-surface textarea {
-        background: #fbfcfd;
+      /* Legacy white cards from not-yet-restyled pages still read fine on dark */
+      .cc-surface .bg-white { box-shadow: 0 18px 40px -22px rgba(0,0,0,.6); }
+
+      /* Inputs */
+      .cc-surface input:not([type=checkbox]):not([type=radio]), .cc-surface select, .cc-surface textarea {
         transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
       }
       .cc-surface input:focus, .cc-surface select:focus, .cc-surface textarea:focus {
-        outline: none;
-        border-color: #10b981 !important;
-        box-shadow: 0 0 0 3px rgba(16,185,129,.18);
-        background: #fff;
+        outline: none; border-color: var(--pur) !important; box-shadow: 0 0 0 3px rgba(168,85,247,.22);
       }
-      .cc-surface textarea { line-height: 1.55; }
 
       /* Sidebar nav */
       .cc-nav-link {
         position: relative; display: flex; align-items: center; gap: .625rem;
-        padding: .5rem .75rem; border-radius: .55rem; color: #9fb0bd;
-        font-size: .875rem; font-weight: 500; transition: all .16s ease; border: 1px solid transparent;
+        padding: .5rem .75rem; border-radius: .6rem; color: #9b94a8;
+        font-size: .8125rem; font-weight: 500; transition: all .16s ease; border: 1px solid transparent;
       }
-      .cc-nav-link svg { width: 16px; height: 16px; flex: none; opacity: .8; }
-      .cc-nav-link:hover { color: #eaf2f6; background: rgba(255,255,255,.05); }
+      .cc-nav-link svg { width: 16px; height: 16px; flex: none; opacity: .85; }
+      .cc-nav-link:hover { color: #ece8f4; background: rgba(255,255,255,.04); }
       .cc-nav-link[aria-current="page"] {
-        color: #d7ffe9; background: rgba(16,185,129,.12);
-        border-color: rgba(16,185,129,.30);
+        color: #fff; background: linear-gradient(90deg, rgba(168,85,247,.14), transparent);
       }
-      .cc-nav-link[aria-current="page"] svg { opacity: 1; color: #34d399; }
+      .cc-nav-link[aria-current="page"] svg { opacity: 1; color: var(--pur2); }
       .cc-nav-link[aria-current="page"]::before {
-        content: ""; position: absolute; left: -4px; top: 18%; bottom: 18%;
-        width: 3px; border-radius: 3px; background: #10b981; box-shadow: 0 0 12px rgba(16,185,129,.8);
+        content: ""; position: absolute; left: -3px; top: 16%; bottom: 16%;
+        width: 3px; border-radius: 3px; background: var(--pur2); box-shadow: 0 0 12px rgba(196,92,255,.8);
       }
-      .cc-nav-group { font-family: "IBM Plex Mono", monospace; font-size: .625rem; letter-spacing: .18em;
-        text-transform: uppercase; color: #5b6b78; padding: .25rem .75rem; margin-top: .5rem; }
+      .cc-nav-group { font-family: "IBM Plex Mono", monospace; font-size: .5625rem; letter-spacing: .18em;
+        text-transform: uppercase; color: var(--mut2); padding: .25rem .75rem; margin-top: .75rem; font-weight:700; }
 
       main > * { animation: ccRise .5s cubic-bezier(.22,1,.36,1) both; }
 
-      /* Tidy scrollbars on the console */
       .cc-surface ::-webkit-scrollbar { height: 10px; width: 10px; }
-      .cc-surface ::-webkit-scrollbar-thumb { background: rgba(15,23,42,.2); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
-      .cc-surface ::-webkit-scrollbar-thumb:hover { background: rgba(15,23,42,.35); background-clip: padding-box; }
+      .cc-surface ::-webkit-scrollbar-thumb { background: rgba(255,255,255,.12); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+      .cc-surface ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.2); background-clip: padding-box; }
 
-      .cc-eyebrow { font-family: "IBM Plex Mono", monospace; font-size: .6875rem; font-weight: 500;
-        letter-spacing: .2em; text-transform: uppercase; color: #10b981; }
+      .cc-eyebrow { font-family: "IBM Plex Mono", monospace; font-size: .625rem; font-weight: 600;
+        letter-spacing: .16em; text-transform: uppercase; color: var(--pur2); }
 
-      /* Accordion sections */
       .cc-surface summary { list-style: none; }
       .cc-surface summary::-webkit-details-marker { display: none; }
       .cc-chevron { transition: transform .2s ease; }
       details[open] > summary .cc-chevron { transform: rotate(90deg); }
 
-      /* Severity tags */
+      /* Severity pills (dark) */
       .cc-sev { display:inline-flex; align-items:center; gap:.35rem; font-family:"IBM Plex Mono",monospace;
-        font-size:.625rem; font-weight:600; letter-spacing:.08em; text-transform:uppercase;
+        font-size:.625rem; font-weight:600; letter-spacing:.06em; text-transform:uppercase;
         border-radius:999px; padding:.2rem .55rem; border:1px solid; }
-      .cc-sev-info  { color:#475569; background:#f1f5f9; border-color:#e2e8f0; }
-      .cc-sev-warn  { color:#d97706; background:#fffbeb; border-color:rgba(217,119,6,.25); }
-      .cc-sev-block { color:#dc2626; background:#fef2f2; border-color:rgba(220,38,38,.25); }
+      .cc-sev-info  { color:#a9b2c0; background:#ffffff0d; border-color:#ffffff1f; }
+      .cc-sev-warn  { color:#fbb86b; background:#f9731618; border-color:rgba(249,115,22,.35); }
+      .cc-sev-block { color:#ff8aa0; background:#ff547018; border-color:rgba(255,84,112,.4); }
+      /* control-type chips */
+      .cc-ct { font-family:"IBM Plex Mono",monospace; font-size:.625rem; font-weight:700; letter-spacing:.06em;
+        border-radius:6px; padding:.1rem .45rem; border:1px solid; }
+      .cc-ct-prev { color:#fbb86b; background:#f9731614; border-color:rgba(249,115,22,.35); }
+      .cc-ct-detect { color:#c9b6ff; background:#a855f714; border-color:rgba(168,85,247,.4); }
+      .cc-ct-scope { color:#7ee9c0; background:#34d39914; border-color:rgba(52,211,153,.35); }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen">
+<body class="bg-ink-900 text-slate-100 min-h-screen">
     
     <div class="flex min-h-screen">
-        <aside class="w-60 shrink-0 bg-ink-900 text-slate-100 flex flex-col border-r border-white/5">
+        <aside class="w-60 shrink-0 bg-ink-850 text-slate-100 flex flex-col border-r border-white/5">
             <div class="px-5 pt-6 pb-5 border-b border-white/5">
                 <div class="flex items-center gap-2.5">
-                    <span class="grid place-items-center w-9 h-9 rounded-lg bg-signal/15 ring-1 ring-signal/30">
-                        <svg viewBox="0 0 24 24" fill="none" class="w-5 h-5 text-signal" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <span class="grid place-items-center w-9 h-9 rounded-xl" style="background:var(--grad)">
+                        <svg viewBox="0 0 24 24" fill="none" class="w-5 h-5 text-white" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/>
                             <path d="m9 12 2 2 4-4"/>
                         </svg>
                     </span>
                     <div>
-                        <h1 class="cc-display text-lg font-extrabold leading-none text-white">ccguard</h1>
+                        <h1 class="cc-display text-lg leading-none text-white">ccguard</h1>
                         <p class="cc-mono text-[9px] tracking-[0.22em] text-slate-500 mt-1">EDR · AI AGENTS</p>
                     </div>
                 </div>
             </div>
-            <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto" aria-label="Навигация">
-                <p class="cc-nav-group">Мониторинг</p>
+            <nav class="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto" aria-label="Навигация">
+                <p class="cc-nav-group">Постура</p>
                 <a href="/" class="cc-nav-link">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
                     Обзор
                 </a>
-                <a href="/machines" class="cc-nav-link">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
-                    Машины
+                <a href="/coverage" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3zM9 3v15M15 6v15"/></svg>
+                    Карта покрытия
                 </a>
+                <p class="cc-nav-group">Детект</p>
                 <a href="/findings" class="cc-nav-link">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/></svg>
                     Находки
                 </a>
-                <a href="/audit" class="cc-nav-link">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 3h9l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M9 13h6M9 17h4"/></svg>
-                    Аудит
-                </a>
                 <a href="/anomalies" class="cc-nav-link">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg>
                     Аномалии
+                </a>
+                <a href="/audit" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M5 3h9l5 5v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M9 13h6M9 17h4"/></svg>
+                    Аудит
                 </a>
                 <a href="/admin/skills-inventory" class="cc-nav-link">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.27 6.96 8.73 5.05 8.73-5.05"/><path d="M12 22.08V12"/></svg>
                     Артефакты
                 </a>
                 <p class="cc-nav-group">Управление</p>
+                <a href="/machines" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                    Машины
+                </a>
                 <a href="/policy" class="cc-nav-link">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/></svg>
                     Политика
@@ -609,10 +596,10 @@
           container.innerHTML = items.length === 0
             ? '<span class="cc-mono text-[10px] text-slate-400 px-1">пусто</span>'
             : items.map(function (item, idx) {
-                return '<span class="inline-flex items-center gap-1 bg-white ring-1 ring-slate-200 rounded-md px-2 py-0.5 cc-mono text-xs text-slate-700">'
+                return '<span class="inline-flex items-center gap-1 bg-white/5 ring-1 ring-white/10 rounded-md px-2 py-0.5 cc-mono text-xs text-slate-200">'
                   + escapeHtml(item)
                   + '<button type="button" data-chip-remove="' + idx
-                  + '" class="text-slate-400 hover:text-red-600 ml-1" aria-label="удалить">×</button>'
+                  + '" class="text-slate-400 hover:text-red-400 ml-1" aria-label="удалить">×</button>'
                   + '</span>';
               }).join('');
           container.querySelectorAll('[data-chip-remove]').forEach(function (btn) {
@@ -632,7 +619,6 @@
           var input = root.querySelector('[data-chip-input]');
           var addBtn = root.querySelector('[data-chip-add]');
           if (!ta || !container || !input || !addBtn || !inputRow) return;
-          // Hide textarea, show chip UI.
           ta.classList.add('hidden');
           container.classList.remove('hidden');
           container.classList.add('flex');

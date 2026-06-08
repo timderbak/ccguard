@@ -173,6 +173,62 @@ def overview_page(
     )
 
 
+@router.get("/coverage", response_class=HTMLResponse)
+def coverage_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Карта покрытия (ТЗ-08): техники трёх фреймворков по стадиям + тип контроля.
+
+    Read-only над coverage_service — детект-движки не трогаем.
+    """
+    from ccguard.server.db.models import Technique
+    from ccguard.server.services import coverage_service
+
+    by_tactic = coverage_service.coverage_by_tactic(session)
+    by_control = coverage_service.coverage_by_control_type(session)
+    covered = coverage_service.techniques_covered(session)
+    uncovered = coverage_service.techniques_uncovered(session)
+    oos = session.exec(select(Technique).where(Technique.in_scope == False)).all()  # noqa: E712
+
+    tactics: list[dict] = []
+    tot_c = tot_t = 0
+    for tac in sorted(by_tactic):
+        c = by_tactic[tac]["covered"]
+        t = by_tactic[tac]["total"]
+        tot_c += c
+        tot_t += t
+        tactics.append({"tactic": tac, "covered": c, "total": t})
+    overall = round(100 * tot_c / tot_t) if tot_t else 0
+
+    control_cards = [
+        {"key": "PREV", "label": "Блокируем", "count": by_control.get("PREV", 0), "cls": "prev"},
+        {"key": "DETECT", "label": "Видим", "count": by_control.get("DETECT", 0), "cls": "detect"},
+        {"key": "SCOPE", "label": "Ограничиваем", "count": by_control.get("SCOPE", 0), "cls": "scope"},
+    ]
+
+    def _v(t: Technique) -> dict:
+        return {"id": t.technique_id, "fw": t.framework, "name": t.name, "tactic": t.tactic}
+
+    return templates.TemplateResponse(
+        request,
+        "coverage_map.html",
+        {
+            "user": user,
+            "csrf_token": _csrf_for(request),
+            "tactics": tactics,
+            "overall": overall,
+            "tot_covered": tot_c,
+            "tot_total": tot_t,
+            "control_cards": control_cards,
+            "covered": [_v(t) for t in covered],
+            "gaps": [_v(t) for t in uncovered],
+            "oos": [_v(t) for t in oos],
+        },
+    )
+
+
 @router.get("/machines", response_class=HTMLResponse)
 def machines_list(
     request: Request,
