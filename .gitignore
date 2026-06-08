@@ -31,3 +31,6 @@ ccguard.db*
 .vscode/
 *.log
 ~/.ccguard/
+
+# superpowers brainstorming visual companion (local mockups)
+.superpowers/
