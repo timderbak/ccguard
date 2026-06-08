@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Индикаторы · ccguard{% endblock %}
+{% block content %}
+<div class="max-w-[1200px] mx-auto">
+  <header class="mb-5">
+    <p class="cc-eyebrow">Детект · индикаторы</p>
+    <h1 class="text-3xl text-white mt-1">Индикаторы <span class="text-slate-500 text-xl">{{ total }}</span></h1>
+    <p class="text-sm text-slate-400 mt-1.5">Артефакт-правила (путь / команда / хост) — вход для детекта, атрибутированы к ATT&amp;CK / ATLAS-техникам.</p>
+  </header>
+
+  <div class="flex gap-3 mb-4 flex-wrap">
+    {% for t, n in by_type.items() %}
+    <div class="cc-card-2 px-4 py-3">
+      <div class="cc-num text-xl text-white">{{ n }}</div>
+      <div class="cc-mono text-[10px] text-slate-400 mt-0.5">{{ t }}</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="cc-card p-5 overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-left cc-mono text-[10px] uppercase tracking-wider text-slate-500">
+          <th class="py-2 pr-3">Тип</th><th class="pr-3">Значение</th><th class="pr-3">Источник</th>
+          <th class="pr-3">Техника</th><th class="pr-3">Стадия</th><th class="text-right">Вес</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for i in indicators %}
+        <tr class="border-t border-white/5">
+          <td class="py-2 pr-3 text-slate-300">{{ i.type }}</td>
+          <td class="pr-3 cc-mono text-xs text-slate-400 max-w-[320px] truncate" title="{{ i.value }}">{{ i.value }}</td>
+          <td class="pr-3 text-slate-400 text-xs">{{ i.source }}</td>
+          <td class="pr-3">{% if i.technique %}<span class="cc-mono text-xs text-slate-300">{{ i.technique }}</span>{% else %}<span class="text-slate-600">—</span>{% endif %}</td>
+          <td class="pr-3 text-slate-400 text-xs">{{ i.tactic or '—' }}</td>
+          <td class="text-right cc-mono text-xs text-slate-400">{{ i.weight }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if not indicators %}<p class="text-sm text-slate-500">Индикаторы не загружены.</p>{% endif %}
+  </div>
+
+  {% if pending %}
+  <div class="cc-card p-5 mt-4">
+    <h2 class="text-lg text-white mb-1">На согласовании <span class="text-slate-500 text-sm">({{ pending|length }})</span></h2>
+    <p class="text-xs text-slate-500 mb-3">предложенные сигнатуры ждут review (Путь-2)</p>
+    {% for i in pending %}
+    <div class="border-t border-white/5 py-2 flex items-center justify-between">
+      <span class="cc-mono text-xs text-slate-300">{{ i.type }} · {{ i.value }}</span>
+      <span class="text-xs text-slate-500">{{ i.source }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

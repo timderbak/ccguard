@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Атаки · ccguard{% endblock %}
+{% block content %}
+<style>
+  .arrow{color:#5f5970;margin:0 1px;font-weight:700}
+  .stepchip{display:inline-flex;align-items:center;gap:5px;background:var(--card2);border:1px solid var(--line);
+    border-radius:8px;padding:4px 9px;font-size:11px;color:#d8d2e4}
+  .stepchip.opt{opacity:.55;border-style:dashed}
+</style>
+<div class="max-w-[1100px] mx-auto">
+  <header class="mb-6">
+    <p class="cc-eyebrow">Детект · цепочки</p>
+    <h1 class="text-3xl text-white mt-1">Атаки по стадиям</h1>
+    <p class="text-sm text-slate-400 mt-1.5">Сценарии — это последовательности СТАДИЙ kill-chain, а не каналов. Шаг ловит любую технику стадии: вынос через новый канал поймается, если он под той же стадией.</p>
+  </header>
+
+  <div class="space-y-3 mb-6">
+  {% for s in scenarios %}
+    <div class="cc-card p-5">
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <h2 class="text-base text-white">{{ s.name }}</h2>
+        <div class="flex items-center gap-2">
+          <span class="cc-sev {% if s.severity in ['critical','block'] %}cc-sev-block{% else %}cc-sev-warn{% endif %}">{{ s.severity }}</span>
+          {% if s.enabled %}<span class="cc-ct cc-ct-detect">активен</span>{% else %}<span class="cc-ct cc-ct-scope" style="opacity:.6">выкл</span>{% endif %}
+        </div>
+      </div>
+      <p class="cc-mono text-[11px] text-slate-500 mt-1">{{ s.scenario_key }} · окно {{ s.window_seconds }}с · {% if s.require_order %}по порядку{% else %}любой порядок{% endif %}</p>
+      <div class="mt-3 flex items-center flex-wrap gap-1">
+        {% for st in s.steps %}{% if not loop.first %}<span class="arrow">→</span>{% endif %}<span class="stepchip {% if st.optional %}opt{% endif %}">{{ st.tactic }}{% if st.optional %} ?{% endif %}</span>{% endfor %}
+      </div>
+    </div>
+  {% endfor %}
+  {% if not scenarios %}<p class="text-sm text-slate-500">Сценарии не загружены.</p>{% endif %}
+  </div>
+
+  <div class="cc-card p-5">
+    <h2 class="text-lg text-white mb-1">Сработавшие цепочки <span class="text-slate-500 text-sm">({{ recent|length }})</span></h2>
+    <p class="text-xs text-slate-500 mb-2">какие реальные сигналы заполнили каждую стадию</p>
+    {% for m in recent %}
+    <div class="border-t border-white/5 py-3">
+      <div class="flex items-center justify-between">
+        <span class="cc-mono text-xs text-white">{{ m.scenario_key }}</span>
+        <span class="text-xs text-slate-500">{{ m.machine_id }}{% if m.matched_at %} · {{ m.matched_at.strftime('%d.%m %H:%M') }}{% endif %}</span>
+      </div>
+      <div class="mt-2 flex items-center flex-wrap gap-1">
+        {% for st in m.steps %}{% if not loop.first %}<span class="arrow">→</span>{% endif %}<span class="stepchip">{{ st.tactic }}{% if st.signal %}<span class="cc-mono text-slate-500 text-[9px]">{{ st.signal }}</span>{% endif %}</span>{% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    {% if not recent %}<p class="text-sm text-slate-500 mt-2">Пока ни одна цепочка не сработала — норма на чистом трафике.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -251,6 +251,92 @@ def coverage_page(
     )
 
 
+@router.get("/correlations", response_class=HTMLResponse)
+def correlations_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Реестр корреляционных детекторов (ТЗ-08) + их привязки к техникам."""
+    from ccguard.server.db.models import Detector, DetectorTechniqueMapping
+
+    detectors = session.exec(select(Detector).order_by(Detector.detector_key)).all()
+    maps = session.exec(select(DetectorTechniqueMapping)).all()
+    by_det: dict[str, list[dict]] = {}
+    for m in maps:
+        by_det.setdefault(m.detector_key, []).append({
+            "technique_id": m.technique_id, "framework": m.framework,
+            "control_type": m.control_type, "relevance": m.relevance,
+        })
+    items = [{
+        "key": d.detector_key, "name": d.name, "kind": d.kind,
+        "rule_ids": [r for r in (d.rule_ids or "").split(",") if r],
+        "description": d.description,
+        "bindings": sorted(by_det.get(d.detector_key, []), key=lambda x: (x["relevance"], x["technique_id"])),
+    } for d in detectors]
+    return templates.TemplateResponse(
+        request, "correlations.html",
+        {"user": user, "csrf_token": _csrf_for(request), "detectors": items},
+    )
+
+
+@router.get("/indicators", response_class=HTMLResponse)
+def indicators_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Каталог индикаторов (ТЗ-05/06): артефакт-правила и их атрибуция к техникам."""
+    from ccguard.server.db.models import ThreatIndicator
+
+    rows = session.exec(
+        select(ThreatIndicator).order_by(ThreatIndicator.indicator_type, ThreatIndicator.value)
+    ).all()
+    active = [r for r in rows if r.status == "active"]
+    pending = [r for r in rows if r.status == "pending"]
+    by_type: dict[str, int] = {}
+    for r in active:
+        by_type[r.indicator_type] = by_type.get(r.indicator_type, 0) + 1
+
+    def _iv(r: object) -> dict:
+        return {"type": r.indicator_type, "value": r.value, "kind": r.value_kind,
+                "source": r.source, "technique": r.technique, "tactic": r.tactic,
+                "weight": r.weight, "status": r.status}
+
+    return templates.TemplateResponse(
+        request, "indicators.html",
+        {"user": user, "csrf_token": _csrf_for(request),
+         "indicators": [_iv(r) for r in active], "pending": [_iv(r) for r in pending],
+         "by_type": by_type, "total": len(active)},
+    )
+
+
+@router.get("/attacks", response_class=HTMLResponse)
+def attacks_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Цепочки-сценарии (ТЗ-09): стадии kill-chain как данные + недавние срабатывания."""
+    from ccguard.server.db.models import ChainMatch
+    from ccguard.server.services import chain_seed_service
+
+    scenarios = chain_seed_service.list_scenarios(session)
+    matches = session.exec(
+        select(ChainMatch).order_by(ChainMatch.matched_at.desc()).limit(20)
+    ).all()
+    recent = [{
+        "scenario_key": m.scenario_key, "machine_id": m.machine_id,
+        "session_id": m.session_id, "matched_at": m.matched_at,
+        "steps": json.loads(m.matched_steps_json or "[]"),
+    } for m in matches]
+    return templates.TemplateResponse(
+        request, "attacks.html",
+        {"user": user, "csrf_token": _csrf_for(request),
+         "scenarios": scenarios, "recent": recent},
+    )
+
+
 @router.get("/machines", response_class=HTMLResponse)
 def machines_list(
     request: Request,

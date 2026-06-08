@@ -115,6 +115,14 @@
       .cc-ct-prev { color:#fbb86b; background:#f9731614; border-color:rgba(249,115,22,.35); }
       .cc-ct-detect { color:#c9b6ff; background:#a855f714; border-color:rgba(168,85,247,.4); }
       .cc-ct-scope { color:#7ee9c0; background:#34d39914; border-color:rgba(52,211,153,.35); }
+      /* framework + technique chips (shared by detect pages) */
+      .fwchip { font-family:"IBM Plex Mono",monospace; font-size:9px; font-weight:700; letter-spacing:.04em;
+        border-radius:5px; padding:1px 5px; border:1px solid; }
+      .fw-atlas  { color:#c9b6ff; background:#a855f714; border-color:#a855f73d; }
+      .fw-attack { color:#9ad0ff; background:#3b9bf014; border-color:#3b9bf03d; }
+      .fw-owasp  { color:#fbb6e0; background:#ec489914; border-color:#ec48993d; }
+      .techchip { display:inline-flex; align-items:center; gap:6px; background:var(--card2);
+        border:1px solid var(--line); border-radius:9px; padding:5px 9px; font-size:11px; color:#d8d2e4; margin:3px 3px 0 0; }
     </style>
 </head>
 <body class="bg-ink-900 text-slate-100 min-h-screen">
@@ -146,9 +154,21 @@
                     Карта покрытия
                 </a>
                 <p class="cc-nav-group">Детект</p>
+                <a href="/attacks" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h4v4H7zM13 13h4v4h-4zM11 9h2v4"/></svg>
+                    Атаки
+                </a>
                 <a href="/findings" class="cc-nav-link">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4M12 17h.01"/></svg>
                     Находки
+                </a>
+                <a href="/indicators" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg>
+                    Индикаторы
+                </a>
+                <a href="/correlations" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 11L15.8 7M8.2 13l7.6 4"/></svg>
+                    Корреляции
                 </a>
                 <a href="/anomalies" class="cc-nav-link">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg>
