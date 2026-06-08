@@ -123,6 +123,31 @@
       .fw-owasp  { color:#fbb6e0; background:#ec489914; border-color:#ec48993d; }
       .techchip { display:inline-flex; align-items:center; gap:6px; background:var(--card2);
         border:1px solid var(--line); border-radius:9px; padding:5px 9px; font-size:11px; color:#d8d2e4; margin:3px 3px 0 0; }
+
+      /* --- Phase 3 dark shim: remap legacy Tailwind-light utilities to dark, so
+         not-yet-restyled pages (machines, findings, audit, policy, settings,
+         anomalies, partials) become cohesively dark with NO per-template edits
+         and NO markup change (content tests untouched). Scoped to .cc-surface. */
+      .cc-surface .bg-white { background: var(--card) !important; border: 1px solid var(--line); }
+      .cc-surface .bg-slate-50, .cc-surface .bg-slate-100, .cc-surface .bg-gray-50,
+      .cc-surface .bg-gray-100, .cc-surface .bg-slate-200 { background: var(--card2) !important; }
+      .cc-surface .text-slate-900, .cc-surface .text-gray-900, .cc-surface .text-black { color: #f3f0f7 !important; }
+      .cc-surface .text-slate-800, .cc-surface .text-slate-700, .cc-surface .text-gray-800,
+      .cc-surface .text-gray-700 { color: #cbc6d6 !important; }
+      .cc-surface .text-slate-600, .cc-surface .text-slate-500, .cc-surface .text-gray-600,
+      .cc-surface .text-gray-500, .cc-surface .text-slate-400, .cc-surface .text-gray-400 { color: #8a8394 !important; }
+      .cc-surface .border-slate-200, .cc-surface .border-slate-100, .cc-surface .border-gray-200,
+      .cc-surface .border-gray-100, .cc-surface .border-slate-300 { border-color: var(--line) !important; }
+      .cc-surface .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+      .cc-surface .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--line) !important; }
+      .cc-surface .ring-slate-200, .cc-surface .ring-gray-200, .cc-surface .ring-slate-100 { --tw-ring-color: var(--line) !important; }
+      .cc-surface .hover\:bg-slate-50:hover, .cc-surface .hover\:bg-gray-50:hover,
+      .cc-surface .hover\:bg-slate-100:hover { background: rgba(255,255,255,.04) !important; }
+      /* soft colored status backgrounds → faint dark tints (keep their accent text) */
+      .cc-surface .bg-emerald-50, .cc-surface .bg-green-50 { background: rgba(52,211,153,.10) !important; }
+      .cc-surface .bg-red-50, .cc-surface .bg-rose-50 { background: rgba(255,84,112,.10) !important; }
+      .cc-surface .bg-amber-50, .cc-surface .bg-yellow-50 { background: rgba(249,115,22,.10) !important; }
+      .cc-surface .bg-blue-50, .cc-surface .bg-indigo-50, .cc-surface .bg-violet-50, .cc-surface .bg-purple-50 { background: rgba(168,85,247,.10) !important; }
     </style>
 </head>
 <body class="bg-ink-900 text-slate-100 min-h-screen">
