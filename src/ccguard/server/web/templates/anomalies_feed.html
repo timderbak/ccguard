@@ -1,11 +1,36 @@
 {% extends "base.html" %}
 {% block title %}ccguard — аномалии{% endblock %}
 {% block content %}
-<h2 class="text-2xl font-semibold mb-6">Аномалии</h2>
-<div class="bg-white rounded-lg shadow p-4 mb-4"
-     hx-get="/_partials/anomalies/matrix"
-     hx-trigger="load, every 60s"
-     hx-target="this">
+<style>
+  .anomwrap{overflow-x:auto}
+  .anomtab{width:100%;border-collapse:collapse}
+  .anomtab th{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;
+    color:#6b6577;text-align:left;padding:14px 16px 10px;border-bottom:1px solid #ffffff12;white-space:nowrap}
+  .anomtab td{padding:12px 16px;border-top:1px solid #ffffff0a;vertical-align:middle}
+  .anomtab tbody tr:hover{background:#ffffff05}
+  .anomcell{display:block;border-radius:9px;padding:7px 9px;transition:background .12s}
+  .anomcell:hover{background:#ffffff08}
+  .spark{display:flex;align-items:flex-end;gap:2px;height:26px;width:92px}
+  .spark > i{flex:1;border-radius:2px 2px 0 0;background:#6b46c1aa;min-height:1px;display:block}
+  .anomcell.out .spark > i:last-child{background:#ff5470;box-shadow:0 0 7px rgba(255,84,112,.7)}
+  .anomcell.out{background:#ff54700d}
+  .anomlast{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#cfc8db;margin-top:5px}
+  .outpill{font-family:"IBM Plex Mono",monospace;font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    color:#ff8aa0;background:#ff547018;border:1px solid #ff547066;border-radius:4px;padding:1px 5px;margin-left:5px}
+  .warmup{font-family:"IBM Plex Mono",monospace;font-size:10px;color:#6b6577}
+  .metdot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+</style>
+<div class="max-w-[1200px] mx-auto">
+  <header class="mb-5">
+    <p class="cc-eyebrow">Детект · поведение</p>
+    <h1 class="text-3xl text-white mt-1">Аномалии</h1>
+    <p class="text-sm text-slate-400 mt-1.5 max-w-3xl">Поведенческие метрики по каждой машине за последние 14 точек — объём Bash, новые MCP-серверы и агенты, изменения каталога skills. <span class="text-slate-200">Выброс</span> считается относительно собственного базлайна машины, не общего порога.</p>
+  </header>
+  <div class="cc-card p-0 overflow-hidden"
+       hx-get="/_partials/anomalies/matrix"
+       hx-trigger="load, every 60s"
+       hx-target="this">
     {% include "components/_anomalies_matrix.html" %}
+  </div>
 </div>
 {% endblock %}

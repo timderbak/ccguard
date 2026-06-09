@@ -1,99 +1,90 @@
 {% extends "base.html" %}
 {% block title %}ccguard — {{ machine_id[:12] }} / {{ metric }}{% endblock %}
 {% block content %}
-<a href="/anomalies" class="text-sm text-slate-500 hover:underline mb-4 inline-block">← Все аномалии</a>
-<h2 class="text-2xl font-semibold mb-2">Аномалия — {{ machine_id[:12] }} / {{ metric }}</h2>
+<style>
+  .adstat{padding-right:28px}
+  .adstat dt{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#6b6577}
+  .adstat dd{font-family:"IBM Plex Mono",monospace;font-size:16px;color:#e7e2f0;margin-top:3px}
+  .adchart{position:relative;height:150px}
+  .adband{position:absolute;left:0;right:0;background:linear-gradient(180deg,#a855f733,#a855f70d);
+    border-top:1px dashed #a855f755;border-bottom:1px dashed #a855f755;border-radius:3px}
+  .adbar{width:100%;border-radius:3px 3px 0 0;background:#6b46c1aa;min-height:2px}
+  .adbar.out{background:#ff5470;box-shadow:0 0 8px rgba(255,84,112,.6)}
+  .addot{position:absolute;top:-5px;left:50%;transform:translateX(-50%);width:7px;height:7px;border-radius:50%;background:#ff5470}
+</style>
+<div class="max-w-[1000px] mx-auto">
+  <a href="/anomalies" class="cc-mono text-xs text-slate-500 hover:text-white mb-3 inline-block">← Все аномалии</a>
+  <header class="mb-5">
+    <p class="cc-eyebrow">Детект · аномалия</p>
+    <h1 class="text-2xl text-white mt-1 cc-mono">{{ machine_id[:12] }} <span class="text-slate-500">/</span> {{ metric }}</h1>
+  </header>
 
-{# 1. Baseline summary strip #}
-<div class="bg-white rounded-lg shadow p-4 mb-4">
-  <h3 class="text-sm font-semibold text-slate-700 mb-3">Baseline</h3>
-  <dl class="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-    <div>
-      <dt class="text-slate-500 inline">median:</dt>
-      <dd class="font-mono inline">{% if baseline %}{{ "%.2f"|format(baseline.mean) }}{% else %}—{% endif %}</dd>
-    </div>
-    <div>
-      <dt class="text-slate-500 inline">σ:</dt>
-      <dd class="font-mono inline">{% if baseline %}{{ "%.2f"|format(baseline.stdev) }}{% else %}—{% endif %}</dd>
-    </div>
-    <div>
-      <dt class="text-slate-500 inline">точек:</dt>
-      <dd class="font-mono inline">{% if baseline %}{{ baseline.sample_count }}{% else %}0{% endif %}</dd>
-    </div>
-    <div>
-      <dt class="text-slate-500 inline">обновлено:</dt>
-      <dd class="font-mono inline">{% if baseline %}{{ baseline.updated_at.isoformat(timespec="seconds") }}{% else %}—{% endif %}</dd>
-    </div>
-    <div>
-      <dt class="text-slate-500 inline">статус:</dt>
-      <dd class="inline">
-        {% if baseline_ready %}готов{% else %}<span class="text-amber-600">накопление</span>{% endif %}
-      </dd>
-    </div>
-  </dl>
-</div>
+  {# 1. Baseline summary strip #}
+  <div class="cc-card p-5 mb-4">
+    <div class="cc-eyebrow mb-3">Baseline машины</div>
+    <dl class="flex flex-wrap">
+      <div class="adstat"><dt>median</dt><dd>{% if baseline %}{{ "%.2f"|format(baseline.mean) }}{% else %}—{% endif %}</dd></div>
+      <div class="adstat"><dt>σ (sigma)</dt><dd>{% if baseline %}{{ "%.2f"|format(baseline.stdev) }}{% else %}—{% endif %}</dd></div>
+      <div class="adstat"><dt>точек</dt><dd>{% if baseline %}{{ baseline.sample_count }}{% else %}0{% endif %}</dd></div>
+      <div class="adstat"><dt>обновлено</dt><dd class="text-xs" style="font-size:12px">{% if baseline %}{{ baseline.updated_at.strftime('%d.%m %H:%M') }}{% else %}—{% endif %}</dd></div>
+      <div class="adstat"><dt>статус</dt><dd>{% if baseline_ready %}<span class="text-signal">готов</span>{% else %}<span class="text-orange-400">накопление</span>{% endif %}</dd></div>
+    </dl>
+  </div>
 
-{# 2. Timeseries chart #}
-<div class="bg-white rounded-lg shadow p-4 mb-4">
-  <h3 class="text-sm font-semibold text-slate-700 mb-3">Динамика 14 дней</h3>
-  {% if not baseline_ready %}
-    <p class="text-sm text-slate-400 py-6 text-center">Недостаточно данных для baseline (нужно ≥7 точек).</p>
-  {% else %}
-    <div class="relative h-32">
-      {% if band_visible %}
-      <div class="absolute left-0 right-0 bg-slate-300 opacity-30 rounded-sm"
-           style="bottom: {{ band_bottom_pct }}%; height: {{ band_height_pct }}%;"
-           aria-hidden="true"></div>
-      {% endif %}
-      <div class="relative flex items-end gap-1 h-full"
-           role="img"
-           aria-label="Таймсериес метрики {{ metric }} с baseline-полосой">
-        {% for p in points %}
-        <div class="flex-1 relative">
-          <div class="{% if p.is_outlier %}bg-red-600{% else %}bg-slate-700{% endif %} rounded-sm w-full"
-               style="height: {{ p.height_pct }}%; min-height: {% if p.value > 0 %}2px{% else %}0{% endif %};"
-               title="{{ p.label }} — {{ p.value }}"></div>
-          {% if p.is_outlier %}
-          <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-red-600 rounded-full"
-               aria-label="выброс"></div>
-          {% endif %}
+  {# 2. Timeseries chart #}
+  <div class="cc-card p-5 mb-4">
+    <div class="cc-eyebrow mb-3">Динамика · 14 точек</div>
+    {% if not baseline_ready %}
+      <p class="text-sm text-slate-500 py-8 text-center">Недостаточно данных для baseline (нужно ≥7 точек) — идёт накопление.</p>
+    {% else %}
+      <div class="adchart">
+        {% if band_visible %}
+        <div class="adband" style="bottom: {{ band_bottom_pct }}%; height: {{ band_height_pct }}%;" aria-hidden="true"></div>
+        {% endif %}
+        <div class="relative flex items-end gap-1.5 h-full" role="img" aria-label="Таймсериес метрики {{ metric }} с baseline-полосой">
+          {% for p in points %}
+          <div class="flex-1 relative">
+            <div class="adbar {% if p.is_outlier %}out{% endif %}" style="height: {{ p.height_pct }}%; {% if p.value > 0 %}min-height:2px;{% endif %}" title="{{ p.label }} — {{ p.value }}"></div>
+            {% if p.is_outlier %}<div class="addot" aria-label="выброс"></div>{% endif %}
+          </div>
+          {% endfor %}
         </div>
-        {% endfor %}
       </div>
-    </div>
-    <div class="flex justify-between text-xs text-slate-400 mt-2">
-      <span>{{ points[0].label }}</span>
-      <span>{{ points[-1].label }}</span>
-    </div>
-  {% endif %}
-</div>
+      <div class="flex justify-between cc-mono text-[10px] text-slate-600 mt-2">
+        <span>{{ points[0].label }}</span>
+        <span class="text-slate-500"><span class="inline-block w-3 h-1.5 align-middle rounded-sm" style="background:#a855f755"></span> базлайн ±σ</span>
+        <span>{{ points[-1].label }}</span>
+      </div>
+    {% endif %}
+  </div>
 
-{# 3. Findings list #}
-<div class="bg-white rounded-lg shadow p-4 mb-4">
-  <h3 class="text-sm font-semibold text-slate-700 mb-3">Недавние находки</h3>
-  {% if not findings %}
-    <p class="text-sm text-slate-400 py-6 text-center">Находок для этой метрики ещё нет.</p>
-  {% else %}
-    <table class="w-full">
-      <thead>
-        <tr class="text-sm text-slate-500">
-          <th class="text-left py-2 px-2">Когда</th>
-          <th class="text-left py-2 px-2">Значение</th>
-          <th class="text-left py-2 px-2">Отклонение</th>
-          <th class="text-left py-2 px-2">rule_id</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for f in findings %}
-        <tr class="border-b last:border-0 text-sm">
-          <td class="py-2 px-2 font-mono text-slate-500">{{ f.discovered_at.isoformat(timespec="seconds") }}</td>
-          <td class="py-2 px-2 font-mono">{{ f.observed_value }}</td>
-          <td class="py-2 px-2 {% if f.is_high_sigma %}text-red-600{% endif %}">{{ f.sigma_distance }}σ</td>
-          <td class="py-2 px-2 font-mono text-slate-500">{{ f.rule_id }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% endif %}
+  {# 3. Findings list #}
+  <div class="cc-card p-5">
+    <div class="cc-eyebrow mb-3">Находки по метрике</div>
+    {% if not findings %}
+      <p class="text-sm text-slate-500 py-8 text-center">Находок для этой метрики ещё нет — поведение в пределах базлайна.</p>
+    {% else %}
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left cc-mono text-[9px] uppercase tracking-wider text-slate-600">
+            <th class="py-2 pr-3 font-normal">Когда</th>
+            <th class="pr-3 font-normal">Значение</th>
+            <th class="pr-3 font-normal">Отклонение</th>
+            <th class="font-normal">rule_id</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in findings %}
+          <tr class="border-t border-white/5">
+            <td class="py-2 pr-3 cc-mono text-xs text-slate-500">{{ f.discovered_at.strftime('%d.%m %H:%M') }}</td>
+            <td class="pr-3 cc-mono text-xs text-slate-300">{{ f.observed_value }}</td>
+            <td class="pr-3 cc-mono text-xs {% if f.is_high_sigma %}text-rose-300{% else %}text-slate-400{% endif %}">{{ f.sigma_distance }}σ</td>
+            <td class="cc-mono text-xs text-slate-500">{{ f.rule_id }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}

@@ -1,53 +1,53 @@
 {# Matrix table: rows = machines, columns = 4 metrics.
-   Each sparkline cell = 14 vertical bars + last value, wrapped in a link to detail. #}
+   Each sparkline cell = 14 vertical bars + last value, wrapped in a link to detail.
+   Test contract: keeps "накопление" (warmup) + "выброс" (outlier) + per-cell links. #}
 {% set ordered_metrics = ['bash_calls_per_day', 'new_mcp_per_week', 'new_agents_per_week', 'skill_dir_hash_changes_per_week'] %}
-<table class="w-full">
-  <thead>
-    <tr class="text-sm text-slate-500">
-      <th class="text-left py-2 px-2">Машина</th>
-      <th class="text-left py-2 px-2">Bash вызовы / день</th>
-      <th class="text-left py-2 px-2">Новые MCP / неделя</th>
-      <th class="text-left py-2 px-2">Новые агенты / неделя</th>
-      <th class="text-left py-2 px-2">Изменения skill_dir_hash / неделя</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% if not machines %}
-    <tr>
-      <td colspan="5" class="py-6 text-center text-slate-400">Машин нет.</td>
-    </tr>
-    {% else %}
-    {% for m in machines %}
-    <tr class="border-b last:border-0">
-      <td class="font-mono py-2 px-2">
-        <a href="/machines/{{ m.id }}" class="hover:underline">{{ m.id[:12] }}</a>
-      </td>
-      {% for metric in ordered_metrics %}
-      {% set cell = m.cells[metric] %}
-      <td class="py-2 px-2">
-        <a href="/anomalies/{{ m.id }}/{{ metric }}"
-           class="block hover:bg-slate-50 rounded p-1">
-          {% if cell.warmup %}
-            <span class="text-xs text-slate-400">накопление…</span>
-          {% else %}
-            <div class="flex items-end gap-px h-6 w-20"
-                 role="img"
-                 aria-label="Динамика {{ metric }} за 14 точек">
-              {% for p in cell.points %}
-              <div class="flex-1 {% if loop.last and cell.is_outlier %}bg-red-600{% else %}bg-slate-700{% endif %} rounded-sm"
-                   style="height: {{ p.height_pct }}%; min-height: {% if p.value > 0 %}1px{% else %}0{% endif %};"
-                   title="{{ p.label }} — {{ p.value }}"></div>
-              {% endfor %}
-            </div>
-            <div class="text-xs font-mono text-slate-700 mt-1">
-              {{ cell.last_value }}{% if cell.is_outlier %} <span class="text-red-600 font-semibold">выброс</span>{% endif %}
-            </div>
-          {% endif %}
-        </a>
-      </td>
+{% set metric_meta = {
+  'bash_calls_per_day': ('Bash / день', '#c45cff'),
+  'new_mcp_per_week': ('Новые MCP / нед', '#5aa9ff'),
+  'new_agents_per_week': ('Новые агенты / нед', '#34d399'),
+  'skill_dir_hash_changes_per_week': ('Skills-hash / нед', '#fbbf24')
+} %}
+<div class="anomwrap">
+  <table class="anomtab">
+    <thead>
+      <tr>
+        <th>Машина</th>
+        {% for metric in ordered_metrics %}
+        {% set mm = metric_meta[metric] %}
+        <th><span class="metdot" style="background:{{ mm[1] }}"></span>{{ mm[0] }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% if not machines %}
+      <tr><td colspan="5" class="py-10 text-center text-slate-500">Машин нет.</td></tr>
+      {% else %}
+      {% for m in machines %}
+      <tr>
+        <td>
+          <a href="/machines/{{ m.id }}" class="cc-mono text-xs text-slate-300 hover:text-white hover:underline">{{ m.id[:12] }}</a>
+        </td>
+        {% for metric in ordered_metrics %}
+        {% set cell = m.cells[metric] %}
+        <td>
+          <a href="/anomalies/{{ m.id }}/{{ metric }}" class="anomcell {% if not cell.warmup and cell.is_outlier %}out{% endif %}">
+            {% if cell.warmup %}
+              <span class="warmup">накопление…</span>
+            {% else %}
+              <div class="spark" role="img" aria-label="Динамика {{ metric }} за 14 точек">
+                {% for p in cell.points %}
+                <i style="height: {{ p.height_pct }}%; {% if p.value > 0 %}min-height:1px;{% endif %}" title="{{ p.label }} — {{ p.value }}"></i>
+                {% endfor %}
+              </div>
+              <div class="anomlast">{{ cell.last_value }}{% if cell.is_outlier %}<span class="outpill">выброс</span>{% endif %}</div>
+            {% endif %}
+          </a>
+        </td>
+        {% endfor %}
+      </tr>
       {% endfor %}
-    </tr>
-    {% endfor %}
-    {% endif %}
-  </tbody>
-</table>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
