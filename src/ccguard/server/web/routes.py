@@ -201,37 +201,124 @@ def coverage_page(
     user: str = Depends(require_session),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
-    """Карта покрытия (ТЗ-08): техники трёх фреймворков по стадиям + тип контроля.
+    """Карта покрытия (ТЗ-08): техники трёх фреймворков по стадиям kill-chain.
 
-    Read-only над coverage_service — детект-движки не трогаем.
+    Каждая техника несёт ЧЕМ она покрыта (детектор-ключи + артефакт-индикаторы +
+    тип контроля), сгруппирована по стадии в порядке kill-chain — чтобы было видно
+    конкретно ЧТО и КАК мы ловим, а не безымянные точки. Read-only над
+    coverage_service, детект-движки/БД не трогаем.
     """
-    from ccguard.server.db.models import Technique
+    from ccguard.server.db.models import (
+        Detector,
+        DetectorTechniqueMapping,
+        IndicatorTechniqueMapping,
+        Technique,
+        ThreatIndicator,
+    )
     from ccguard.server.services import coverage_service
+    from ccguard.server.services.chain_constants import stage_rank
 
-    by_tactic = coverage_service.coverage_by_tactic(session)
+    techs = session.exec(select(Technique)).all()
+    covered_ids = {t.technique_id for t in coverage_service.techniques_covered(session)}
     by_control = coverage_service.coverage_by_control_type(session)
-    covered = coverage_service.techniques_covered(session)
-    uncovered = coverage_service.techniques_uncovered(session)
-    oos = session.exec(select(Technique).where(Technique.in_scope == False)).all()  # noqa: E712
 
-    tactics: list[dict] = []
-    tot_c = tot_t = 0
-    for tac in sorted(by_tactic):
-        c = by_tactic[tac]["covered"]
-        t = by_tactic[tac]["total"]
-        tot_c += c
-        tot_t += t
-        tactics.append({"tactic": tac, "covered": c, "total": t})
+    # mechanism index: technique_id -> {detectors, indicators, controls}
+    mech: dict[str, dict] = {}
+
+    def _slot(tid: str) -> dict:
+        return mech.setdefault(tid, {"detectors": set(), "indicators": 0, "controls": set()})
+
+    for tid, dkey, ct in session.exec(
+        select(
+            DetectorTechniqueMapping.technique_id,
+            Detector.detector_key,
+            DetectorTechniqueMapping.control_type,
+        ).join(Detector, Detector.detector_key == DetectorTechniqueMapping.detector_key)
+    ).all():
+        slot = _slot(tid)
+        slot["detectors"].add(dkey)
+        slot["controls"].add(ct)
+    for tid, ct in session.exec(
+        select(IndicatorTechniqueMapping.technique_id, IndicatorTechniqueMapping.control_type)
+        .join(ThreatIndicator, ThreatIndicator.id == IndicatorTechniqueMapping.indicator_id)
+        .where(ThreatIndicator.enabled == True)  # noqa: E712
+        .where(ThreatIndicator.status == "active")
+    ).all():
+        slot = _slot(tid)
+        slot["indicators"] += 1
+        slot["controls"].add(ct)
+
+    # parent rollup: a covered sub-technique makes its parent covered "← child".
+    direct_ids = set(mech.keys())
+    rollup: dict[str, set] = {}
+    for t in techs:
+        if t.parent_technique and t.technique_id in direct_ids:
+            rollup.setdefault(t.parent_technique, set()).add(t.technique_id)
+
+    def _klass(controls: list[str]) -> str:
+        for key in ("PREV", "DETECT", "SCOPE", "GATE", "ISOLATE"):
+            if key in controls:
+                return {"PREV": "c-prev", "DETECT": "c-detect"}.get(key, "c-scope")
+        return "c-detect"
+
+    def _tv(t: Technique) -> dict:
+        slot = mech.get(t.technique_id, {"detectors": set(), "indicators": 0, "controls": set()})
+        via = sorted(rollup.get(t.technique_id, set()))
+        parts = sorted(slot["detectors"])
+        if slot["indicators"]:
+            parts.append(f"артефакт ×{slot['indicators']}")
+        if not parts and via:
+            parts = ["← " + ", ".join(via)]
+        controls = sorted(slot["controls"])
+        return {
+            "id": t.technique_id,
+            "fw": t.framework,
+            "name": t.name,
+            "tactic": t.tactic,
+            "covered": t.technique_id in covered_ids,
+            "mech": " · ".join(parts),
+            "controls": controls,
+            "klass": _klass(controls),
+        }
+
+    # group in-scope techniques into kill-chain stages
+    stage_map: dict[str, list[Technique]] = {}
+    for t in techs:
+        if t.in_scope:
+            stage_map.setdefault(t.tactic, []).append(t)
+
+    stages: list[dict] = []
+    for tac in sorted(stage_map, key=lambda s: (stage_rank(s), s)):
+        tvs = sorted(
+            (_tv(t) for t in stage_map[tac]),
+            key=lambda x: (not x["covered"], x["id"]),
+        )
+        c = sum(1 for x in tvs if x["covered"])
+        stages.append(
+            {
+                "tactic": tac,
+                "covered": c,
+                "total": len(tvs),
+                "pct": round(100 * c / len(tvs)) if tvs else 0,
+                "source": stage_map[tac][0].tactic_source,
+                "techniques": tvs,
+            }
+        )
+
+    oos = sorted(
+        (_tv(t) for t in techs if not t.in_scope),
+        key=lambda x: (stage_rank(x["tactic"]), x["id"]),
+    )
+
+    tot_c = sum(s["covered"] for s in stages)
+    tot_t = sum(s["total"] for s in stages)
     overall = round(100 * tot_c / tot_t) if tot_t else 0
 
     control_cards = [
-        {"key": "PREV", "label": "Блокируем", "count": by_control.get("PREV", 0), "cls": "prev"},
-        {"key": "DETECT", "label": "Видим", "count": by_control.get("DETECT", 0), "cls": "detect"},
-        {"key": "SCOPE", "label": "Ограничиваем", "count": by_control.get("SCOPE", 0), "cls": "scope"},
+        {"key": "PREV", "label": "Блокируем до запуска", "count": by_control.get("PREV", 0), "cls": "prev"},
+        {"key": "DETECT", "label": "Видим поведенчески", "count": by_control.get("DETECT", 0), "cls": "detect"},
+        {"key": "SCOPE", "label": "Ограничиваем доступ", "count": by_control.get("SCOPE", 0), "cls": "scope"},
     ]
-
-    def _v(t: Technique) -> dict:
-        return {"id": t.technique_id, "fw": t.framework, "name": t.name, "tactic": t.tactic}
 
     return templates.TemplateResponse(
         request,
@@ -239,14 +326,13 @@ def coverage_page(
         {
             "user": user,
             "csrf_token": _csrf_for(request),
-            "tactics": tactics,
+            "stages": stages,
+            "oos": oos,
             "overall": overall,
             "tot_covered": tot_c,
             "tot_total": tot_t,
+            "gaps_count": tot_t - tot_c,
             "control_cards": control_cards,
-            "covered": [_v(t) for t in covered],
-            "gaps": [_v(t) for t in uncovered],
-            "oos": [_v(t) for t in oos],
         },
     )
 

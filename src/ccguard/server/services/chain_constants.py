@@ -71,6 +71,38 @@ _SIGNAL_STAGE_RULES: tuple[tuple[str, str], ...] = (
 )
 
 
+# Canonical kill-chain stage progression (MITRE ATT&CK tactic order) for stable,
+# legible UI ordering — alphabetical stage lists read as noise. OWASP risk-layer
+# stages slot into their nearest kill-chain stage; ATLAS ML-internal stages (which
+# an endpoint EDR can't reach) trail the endpoint chain. Stages absent here fall
+# back to alphabetical after the known ones, so an unmapped stage never crashes.
+KILL_CHAIN_ORDER: tuple[str, ...] = (
+    "initial-access",
+    "execution",
+    "persistence",
+    "privilege-escalation",
+    "defense-evasion",
+    "credential-access",
+    "discovery",
+    "lateral-movement",
+    "collection",
+    "command-and-control",
+    "exfiltration",
+    "impact",
+    # ATLAS model-internal stages — structurally out-of-scope, shown last.
+    "ml-model-access",
+    "ml-attack-staging",
+)
+
+
+def stage_rank(tactic: str) -> int:
+    """Sort key for a stage in kill-chain order; unknown stages sort last."""
+    try:
+        return KILL_CHAIN_ORDER.index(tactic)
+    except ValueError:
+        return len(KILL_CHAIN_ORDER)
+
+
 def stage_for_signal(signal: str) -> str | None:
     """Resolve one signal ID to its kill-chain stage, or None if unmapped."""
     for prefix, stage in _SIGNAL_STAGE_RULES:

@@ -2,26 +2,40 @@
 {% block title %}Карта покрытия · ccguard{% endblock %}
 {% block content %}
 <style>
-  .cov-dot{display:inline-block;width:13px;height:13px;border-radius:50%;margin:2px;background:#ffffff12;vertical-align:middle}
-  .cov-dot.on{background:linear-gradient(180deg,#c45cff,#7c3aed);box-shadow:0 0 6px rgba(168,85,247,.5)}
-  .cov-dot.part{background:#f97316;box-shadow:0 0 6px rgba(249,115,22,.4)}
   .fwchip{font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:700;letter-spacing:.04em;
-    border-radius:5px;padding:1px 5px;border:1px solid}
+    border-radius:5px;padding:1px 5px;border:1px solid;flex:none}
   .fw-atlas{color:#c9b6ff;background:#a855f714;border-color:#a855f73d}
   .fw-attack{color:#9ad0ff;background:#3b9bf014;border-color:#3b9bf03d}
   .fw-owasp{color:#fbb6e0;background:#ec489914;border-color:#ec48993d}
-  .techchip{display:inline-flex;align-items:center;gap:6px;background:var(--card2);border:1px solid var(--line);
-    border-radius:9px;padding:5px 9px;font-size:11px;color:#d8d2e4;margin:3px 3px 0 0}
-  .ring{--p:0;width:118px;height:118px;border-radius:50%;display:grid;place-items:center;
+  /* technique tile — the unit that answers "what is covered & by what" */
+  .cvt{width:236px;border-radius:12px;padding:10px 12px;border:1px solid var(--line);
+    background:var(--card2);border-left-width:3px;border-left-color:#ffffff14}
+  .cvt.c-prev{border-left-color:#34d399}
+  .cvt.c-detect{border-left-color:#c45cff}
+  .cvt.c-scope{border-left-color:#5aa9ff}
+  .cvt.gap{border-style:dashed;border-left-color:#ff547066;opacity:.72}
+  .cvt-name{font-size:12px;color:#e7e2f0;line-height:1.3;margin-top:5px}
+  .cvt-mech{font-family:"IBM Plex Mono",monospace;font-size:10px;color:#8f88a0;margin-top:7px;
+    word-break:break-word}
+  .cvt.gap .cvt-mech{color:#ff8aa0aa}
+  .ctag{font-family:"IBM Plex Mono",monospace;font-size:8px;font-weight:700;letter-spacing:.05em;
+    border-radius:4px;padding:1px 5px}
+  .ct-prev{color:#6ee7b7;background:#34d39917}
+  .ct-detect{color:#d8b4fe;background:#a855f717}
+  .ct-scope{color:#9cc8ff;background:#5aa9ff17}
+  .ct-gate,.ct-isolate{color:#fbbf24;background:#f59e0b17}
+  .pbar{height:5px;border-radius:99px;background:#ffffff10;overflow:hidden}
+  .pbar>span{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#7c3aed,#e455c8)}
+  .ring{--p:0;width:120px;height:120px;border-radius:50%;display:grid;place-items:center;
     background:conic-gradient(#c45cff calc(var(--p)*1%), #ffffff10 0)}
-  .ring .hole{width:92px;height:92px;border-radius:50%;background:var(--card);display:grid;place-items:center;text-align:center}
+  .ring .hole{width:94px;height:94px;border-radius:50%;background:var(--card);display:grid;place-items:center;text-align:center}
 </style>
 
 <div class="max-w-[1240px] mx-auto">
   <header class="mb-6">
     <p class="cc-eyebrow">Постура · таксономия</p>
     <h1 class="text-3xl text-white mt-1">Карта покрытия</h1>
-    <p class="text-sm text-slate-400 mt-1.5">Что и как мы покрываем по стадиям kill-chain — три равных фреймворка ATLAS · ATT&amp;CK · OWASP ASI. Вне-скоупа (модель/обучение) не считается дырами.</p>
+    <p class="text-sm text-slate-400 mt-1.5 max-w-3xl">Каждая клетка — конкретная техника атаки. Подсвечена = мы её ловим (видно <span class="text-slate-200">чем</span>: детектор или артефакт-индикатор и как именно — блок / детект / ограничение). Пунктир = честная дыра. Три равных фреймворка ATLAS · ATT&amp;CK · OWASP ASI; модель/обучение — вне скоупа endpoint-агента.</p>
   </header>
 
   <!-- hero: overall ring + control-type breakdown -->
@@ -38,7 +52,10 @@
       <div>
         <div class="cc-eyebrow">In-scope техники</div>
         <div class="cc-num text-2xl text-white mt-1">{{ tot_covered }} <span class="text-base text-slate-500">/ {{ tot_total }}</span></div>
-        <div class="text-xs text-slate-400 mt-1">{{ gaps|length }} честных {{ 'дыра' if gaps|length == 1 else 'дыр(ы)' }} · {{ oos|length }} вне-скоупа</div>
+        <div class="text-xs mt-1.5 flex items-center gap-1.5">
+          <span class="inline-block w-2 h-2 rounded-full" style="background:#ff5470"></span>
+          <span class="text-slate-400">{{ gaps_count }} {{ 'дыра' if gaps_count == 1 else 'дыр' }} без детекта</span>
+        </div>
       </div>
     </div>
 
@@ -48,67 +65,74 @@
         <div class="cc-ct cc-ct-{{ c.cls }}">{{ c.key }}</div>
         <div class="cc-num text-4xl text-white mt-3">{{ c.count }}</div>
         <div class="text-xs text-slate-400 mt-1">{{ c.label }}</div>
-        <div class="cc-mono text-[10px] text-slate-500 mt-2">
-          {% if c.key == 'PREV' %}блокируем до выполнения{% elif c.key == 'DETECT' %}видим поведенчески{% else %}ограничиваем доступ{% endif %}
-        </div>
       </div>
       {% endfor %}
     </div>
   </div>
 
-  <!-- tactic dot-grid -->
-  <div class="cc-card p-6 mb-4">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-lg text-white">Покрытие по стадиям</h2>
-      <span class="cc-mono text-[11px] text-slate-500">covered / total · in-scope</span>
-    </div>
-    <div class="space-y-3">
-      {% for t in tactics %}
-      <div class="flex items-center gap-4">
-        <div class="w-44 shrink-0 text-sm text-slate-300">{{ t.tactic }}</div>
-        <div class="flex-1 leading-none">
-          {% for i in range(t.total) %}<span class="cov-dot {% if i < t.covered %}on{% endif %}"></span>{% endfor %}
-        </div>
-        <div class="cc-mono text-xs w-14 text-right {% if t.covered == t.total %}text-signal{% elif t.covered == 0 %}text-slate-500{% else %}text-orange-400{% endif %}">{{ t.covered }}/{{ t.total }}</div>
-      </div>
-      {% endfor %}
-      {% if not tactics %}<p class="text-sm text-slate-500">Нет техник в каталоге.</p>{% endif %}
+  <!-- kill-chain stages: named technique tiles, covered-first -->
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg text-white">Покрытие по стадиям</h2>
+    <div class="flex items-center gap-3 cc-mono text-[10px] text-slate-500">
+      <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#34d399"></span>блок</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#c45cff"></span>детект</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#5aa9ff"></span>ограничение</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm border border-dashed" style="border-color:#ff5470"></span>дыра</span>
     </div>
   </div>
 
-  <!-- covered + gaps -->
-  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-    <div class="cc-card p-6">
-      <h2 class="text-lg text-white mb-1">Покрыто <span class="text-slate-500 text-sm">({{ covered|length }})</span></h2>
-      <p class="text-xs text-slate-500 mb-3">есть индикатор или корреляция</p>
-      <div>
-        {% for t in covered %}
-        <span class="techchip"><span class="fwchip fw-{{ t.fw }}">{{ t.fw }}</span>{{ t.id }} · {{ t.name }}</span>
-        {% endfor %}
-        {% if not covered %}<p class="text-sm text-slate-500">Пока ничего не покрыто.</p>{% endif %}
+  <div class="space-y-3 mb-4">
+    {% for s in stages %}
+    <div class="cc-card p-5">
+      <div class="flex flex-col md:flex-row md:items-start gap-5">
+        <div class="md:w-52 shrink-0">
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm text-white">{{ s.tactic }}</h3>
+            {% if s.source == 'risk-layer' %}<span class="cc-mono text-[8px] text-slate-500 border border-white/10 rounded px-1 py-px">risk-class</span>{% endif %}
+          </div>
+          <div class="cc-mono text-xs mt-1.5 {% if s.covered == s.total %}text-signal{% elif s.covered == 0 %}text-rose-300/80{% else %}text-orange-400{% endif %}">{{ s.covered }}/{{ s.total }} покрыто</div>
+          <div class="pbar mt-2"><span style="width: {{ s.pct }}%"></span></div>
+        </div>
+        <div class="flex-1 flex flex-wrap gap-2.5">
+          {% for t in s.techniques %}
+          <div class="cvt {% if t.covered %}{{ t.klass }}{% else %}gap{% endif %}">
+            <div class="flex items-center gap-1.5">
+              <span class="fwchip fw-{{ t.fw }}">{{ t.fw }}</span>
+              <span class="cc-mono text-[11px] text-white truncate">{{ t.id }}</span>
+            </div>
+            <div class="cvt-name">{{ t.name }}</div>
+            {% if t.covered %}
+            <div class="cvt-mech">{{ t.mech }}</div>
+            <div class="mt-1.5 flex flex-wrap gap-1">
+              {% for c in t.controls %}<span class="ctag ct-{{ c|lower }}">{{ c }}</span>{% endfor %}
+            </div>
+            {% else %}
+            <div class="cvt-mech">нет детекта</div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
       </div>
     </div>
-
-    <div class="cc-card p-6">
-      <h2 class="text-lg text-white mb-1">Честные дыры <span class="text-slate-500 text-sm">({{ gaps|length }})</span></h2>
-      <p class="text-xs text-slate-500 mb-3">in-scope техники без покрытия</p>
-      <div>
-        {% for t in gaps %}
-        <span class="techchip" style="border-color:rgba(255,84,112,.3)"><span class="fwchip fw-{{ t.fw }}">{{ t.fw }}</span>{{ t.id }} · {{ t.name }}</span>
-        {% endfor %}
-        {% if not gaps %}<p class="text-sm text-signal">Дыр нет — всё in-scope покрыто.</p>{% endif %}
-      </div>
-    </div>
+    {% endfor %}
+    {% if not stages %}<p class="text-sm text-slate-500">Каталог техник пуст.</p>{% endif %}
   </div>
 
   <!-- out of scope (muted) -->
   {% if oos %}
-  <div class="cc-card p-6 opacity-60">
+  <div class="cc-card p-5 opacity-70">
     <h2 class="text-base text-slate-300 mb-1">Вне скоупа <span class="text-slate-500 text-sm">({{ oos|length }})</span></h2>
-    <p class="text-xs text-slate-500 mb-3">модель/обучение — endpoint-агент структурно не покрывает; не считается дырами</p>
-    <div>
+    <p class="text-xs text-slate-500 mb-3">модель / обучение — endpoint-агент структурно не видит этот слой; не считаем дырами</p>
+    <div class="flex flex-wrap gap-2.5">
       {% for t in oos %}
-      <span class="techchip"><span class="fwchip fw-{{ t.fw }}">{{ t.fw }}</span>{{ t.id }} · {{ t.name }}</span>
+      <div class="cvt" style="border-left-color:#ffffff14;opacity:.85">
+        <div class="flex items-center gap-1.5">
+          <span class="fwchip fw-{{ t.fw }}">{{ t.fw }}</span>
+          <span class="cc-mono text-[11px] text-slate-300 truncate">{{ t.id }}</span>
+        </div>
+        <div class="cvt-name text-slate-400">{{ t.name }}</div>
+        <div class="cvt-mech">{{ t.tactic }}</div>
+      </div>
       {% endfor %}
     </div>
   </div>
