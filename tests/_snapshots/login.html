@@ -124,30 +124,69 @@
       .techchip { display:inline-flex; align-items:center; gap:6px; background:var(--card2);
         border:1px solid var(--line); border-radius:9px; padding:5px 9px; font-size:11px; color:#d8d2e4; margin:3px 3px 0 0; }
 
-      /* --- Phase 3 dark shim: remap legacy Tailwind-light utilities to dark, so
-         not-yet-restyled pages (machines, findings, audit, policy, settings,
-         anomalies, partials) become cohesively dark with NO per-template edits
-         and NO markup change (content tests untouched). Scoped to .cc-surface. */
+      /* ===== Dark-theme remap for legacy Tailwind-light pages (scoped to
+         .cc-surface). Comprehensive — covers every colour utility actually used
+         across templates/partials so nothing leaks white. No markup change →
+         content tests intact. Already-dark tokens (text-white, *-white/N,
+         text-slate-100/200/300) are deliberately left untouched. ===== */
+      /* surfaces */
       .cc-surface .bg-white { background: var(--card) !important; border: 1px solid var(--line); }
-      .cc-surface .bg-slate-50, .cc-surface .bg-slate-100, .cc-surface .bg-gray-50,
-      .cc-surface .bg-gray-100, .cc-surface .bg-slate-200 { background: var(--card2) !important; }
-      .cc-surface .text-slate-900, .cc-surface .text-gray-900, .cc-surface .text-black { color: #f3f0f7 !important; }
-      .cc-surface .text-slate-800, .cc-surface .text-slate-700, .cc-surface .text-gray-800,
-      .cc-surface .text-gray-700 { color: #cbc6d6 !important; }
-      .cc-surface .text-slate-600, .cc-surface .text-slate-500, .cc-surface .text-gray-600,
-      .cc-surface .text-gray-500, .cc-surface .text-slate-400, .cc-surface .text-gray-400 { color: #8a8394 !important; }
-      .cc-surface .border-slate-200, .cc-surface .border-slate-100, .cc-surface .border-gray-200,
-      .cc-surface .border-gray-100, .cc-surface .border-slate-300 { border-color: var(--line) !important; }
+      .cc-surface .bg-slate-50, .cc-surface .bg-gray-50, .cc-surface .bg-slate-100, .cc-surface .bg-gray-100 { background: var(--card2) !important; }
+      .cc-surface .bg-slate-200, .cc-surface .bg-slate-300, .cc-surface .bg-slate-700 { background: #241d31 !important; }
+      .cc-surface .bg-slate-800, .cc-surface .bg-slate-900 { background: #120f1a !important; }
+      /* dark-on-light text → light-on-dark */
+      .cc-surface .text-black, .cc-surface .text-slate-900, .cc-surface .text-gray-900,
+      .cc-surface .text-slate-800, .cc-surface .text-gray-800 { color: #f1eef7 !important; }
+      .cc-surface .text-slate-700, .cc-surface .text-gray-700, .cc-surface .text-slate-600, .cc-surface .text-gray-600 { color: #c5c0d2 !important; }
+      .cc-surface .text-slate-500, .cc-surface .text-gray-500, .cc-surface .text-slate-400, .cc-surface .text-gray-400 { color: #8f8a9c !important; }
+      /* semantic coloured text → brighter for dark contrast */
+      .cc-surface .text-emerald-600, .cc-surface .text-emerald-700,
+      .cc-surface .hover\:text-emerald-700:hover, .cc-surface .hover\:text-emerald-600:hover,
+      .cc-surface .group-hover\:text-emerald-700 { color: #45dca5 !important; }
+      .cc-surface .text-red-500, .cc-surface .text-red-600, .cc-surface .text-red-700, .cc-surface .text-red-800, .cc-surface .text-red-900,
+      .cc-surface .hover\:text-red-700:hover, .cc-surface .hover\:text-red-400:hover { color: #ff8aa0 !important; }
+      .cc-surface .text-amber-500, .cc-surface .text-amber-600, .cc-surface .text-amber-700, .cc-surface .text-amber-800, .cc-surface .text-amber-900,
+      .cc-surface .hover\:text-amber-600:hover { color: #fbb86b !important; }
+      .cc-surface .text-sky-700, .cc-surface .text-blue-600 { color: #8fd0ff !important; }
+      /* soft coloured backgrounds → faint tints */
+      .cc-surface .bg-emerald-50, .cc-surface .bg-green-50, .cc-surface .bg-emerald-100,
+      .cc-surface [class*="bg-emerald-50/"], .cc-surface .hover\:bg-emerald-50:hover { background: rgba(52,211,153,.12) !important; }
+      .cc-surface .bg-red-50, .cc-surface .bg-rose-50, .cc-surface .hover\:bg-red-50:hover { background: rgba(255,84,112,.12) !important; }
+      .cc-surface .bg-amber-50, .cc-surface .bg-yellow-50 { background: rgba(249,115,22,.12) !important; }
+      .cc-surface .bg-sky-50, .cc-surface .bg-blue-50, .cc-surface .bg-indigo-50, .cc-surface .bg-violet-50, .cc-surface .bg-purple-50 { background: rgba(168,85,247,.12) !important; }
+      /* saturated action buttons (bg-emerald/red/amber-500..700) keep their vivid
+         Tailwind defaults — they read fine on dark; not remapped here so tests
+         asserting absence of a pill colour stay valid. */
+      /* borders */
+      .cc-surface .border-slate-100, .cc-surface .border-slate-200, .cc-surface .border-slate-300,
+      .cc-surface .border-gray-100, .cc-surface .border-gray-200, .cc-surface .border-slate-900,
+      .cc-surface [class*="border-slate-200/"] { border-color: var(--line) !important; }
+      .cc-surface .border-emerald-600\/30, .cc-surface .hover\:border-emerald-600\/50:hover { border-color: rgba(52,211,153,.4) !important; }
+      .cc-surface .border-red-200 { border-color: rgba(255,84,112,.3) !important; }
+      .cc-surface .hover\:border-slate-300:hover { border-color: rgba(255,255,255,.18) !important; }
+      /* rings */
+      .cc-surface .ring-slate-100, .cc-surface .ring-slate-200, .cc-surface .ring-slate-300, .cc-surface .ring-gray-200 { --tw-ring-color: var(--line) !important; }
+      .cc-surface .ring-emerald-200, .cc-surface .ring-emerald-300, .cc-surface [class*="ring-emerald-600/"] { --tw-ring-color: rgba(52,211,153,.32) !important; }
+      .cc-surface .ring-red-200, .cc-surface .ring-red-300, .cc-surface [class*="ring-red-600/"] { --tw-ring-color: rgba(255,84,112,.32) !important; }
+      .cc-surface .ring-amber-200, .cc-surface .ring-amber-300, .cc-surface [class*="ring-amber-600/"] { --tw-ring-color: rgba(249,115,22,.32) !important; }
+      .cc-surface .ring-sky-200 { --tw-ring-color: rgba(143,208,255,.32) !important; }
+      /* divides */
+      .cc-surface .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
       .cc-surface .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
       .cc-surface .divide-gray-200 > :not([hidden]) ~ :not([hidden]) { border-color: var(--line) !important; }
-      .cc-surface .ring-slate-200, .cc-surface .ring-gray-200, .cc-surface .ring-slate-100 { --tw-ring-color: var(--line) !important; }
-      .cc-surface .hover\:bg-slate-50:hover, .cc-surface .hover\:bg-gray-50:hover,
-      .cc-surface .hover\:bg-slate-100:hover { background: rgba(255,255,255,.04) !important; }
-      /* soft colored status backgrounds → faint dark tints (keep their accent text) */
-      .cc-surface .bg-emerald-50, .cc-surface .bg-green-50 { background: rgba(52,211,153,.10) !important; }
-      .cc-surface .bg-red-50, .cc-surface .bg-rose-50 { background: rgba(255,84,112,.10) !important; }
-      .cc-surface .bg-amber-50, .cc-surface .bg-yellow-50 { background: rgba(249,115,22,.10) !important; }
-      .cc-surface .bg-blue-50, .cc-surface .bg-indigo-50, .cc-surface .bg-violet-50, .cc-surface .bg-purple-50 { background: rgba(168,85,247,.10) !important; }
+      /* focus → purple accent */
+      .cc-surface .focus\:ring-slate-400:focus, .cc-surface .focus\:ring-slate-500:focus { --tw-ring-color: rgba(168,85,247,.32) !important; }
+      .cc-surface .focus\:border-slate-500:focus { border-color: var(--pur) !important; }
+      /* hover surfaces */
+      .cc-surface .hover\:bg-slate-50:hover, .cc-surface .hover\:bg-slate-100:hover, .cc-surface .hover\:bg-gray-50:hover,
+      .cc-surface [class*="hover:bg-slate-50/"]:hover { background: rgba(255,255,255,.05) !important; }
+      .cc-surface .hover\:bg-slate-300:hover, .cc-surface .hover\:bg-slate-800:hover { background: #2a2440 !important; }
+      .cc-surface .hover\:text-slate-700:hover, .cc-surface .hover\:text-slate-900:hover { color: #e8e4f0 !important; }
+      /* svg fills (sparklines) */
+      .cc-surface .fill-slate-200 { fill: #2a2433 !important; }
+      .cc-surface .fill-emerald-500 { fill: #34d399 !important; }
+      .cc-surface .fill-red-500 { fill: #ff5470 !important; }
+      .cc-surface .fill-amber-500 { fill: #f97316 !important; }
     </style>
 </head>
 <body class="bg-ink-900 text-slate-100 min-h-screen">
