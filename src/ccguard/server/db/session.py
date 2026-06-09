@@ -83,14 +83,19 @@ _SCAN_RESULT_RATIONALE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("quoted_snippet", "ALTER TABLE scanresult ADD COLUMN quoted_snippet TEXT"),
 )
 
-# Additive column for ToolUseEvent (ТЗ-01: session-scoped correlation). Same
-# PRAGMA-guarded ADD COLUMN pattern as the ScanResult rationale columns —
-# ``create_all`` is a no-op on existing tables, so pre-feature DBs need this
-# explicit ALTER to gain ``session_id``. The matching index is created
-# separately below via CREATE INDEX IF NOT EXISTS (create_all only emits the
-# model's ``index=True`` index on a freshly-created table).
+# Additive columns for ToolUseEvent. Same PRAGMA-guarded ADD COLUMN pattern as
+# the ScanResult rationale columns — ``create_all`` is a no-op on existing
+# tables, so pre-feature DBs need these explicit ALTERs.
+#   * ``session_id`` (ТЗ-01: session-scoped correlation). Index created below.
+#   * ``signals_json`` (ТЗ-09: per-event signal tags feeding the chain engine).
+#     NOT NULL DEFAULT '[]' so existing rows backfill — without this ALTER the
+#     audit page 500s on any DB created before ТЗ-09 (no such column).
+#   * ``actor_user`` (per-user attribution): nullable, same gap — its absence
+#     also 500s the audit page / list_events on pre-feature DBs.
 _TOOL_USE_SESSION_COLUMNS: tuple[tuple[str, str], ...] = (
     ("session_id", "ALTER TABLE tooluseevent ADD COLUMN session_id TEXT"),
+    ("signals_json", "ALTER TABLE tooluseevent ADD COLUMN signals_json TEXT NOT NULL DEFAULT '[]'"),
+    ("actor_user", "ALTER TABLE tooluseevent ADD COLUMN actor_user TEXT"),
 )
 
 # Additive columns for Machine (ТЗ-07 sensor self-protection). create_all is a
