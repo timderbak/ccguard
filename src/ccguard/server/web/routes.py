@@ -372,28 +372,51 @@ def indicators_page(
     user: str = Depends(require_session),
     session: Session = Depends(get_session),
 ) -> HTMLResponse:
-    """Каталог индикаторов (ТЗ-05/06): артефакт-правила и их атрибуция к техникам."""
+    """Каталог индикаторов (ТЗ-05/06): артефакт-правила, сгруппированные по типу
+    и атрибутированные к техникам — вместо одного плоского списка."""
     from ccguard.server.db.models import ThreatIndicator
+
+    # Humanized type metadata; raw key kept in output for filter + tests.
+    type_meta = {
+        "sensitive_path": ("Чувствительные пути", "секреты, ключи и креды на диске — чтение = credential-access", "key"),
+        "dangerous_command": ("Опасные команды", "деструктивные и эксфильтрационные команды оболочки", "terminal"),
+        "suspicious_host": ("Подозрительные хосты", "known-bad и exfil-эндпоинты в сетевых вызовах", "globe"),
+        "safe_path": ("Безопасные пути", "whitelist — гасит ложные срабатывания", "check"),
+    }
+    type_order = {"sensitive_path": 0, "dangerous_command": 1, "suspicious_host": 2, "safe_path": 9}
 
     rows = session.exec(
         select(ThreatIndicator).order_by(ThreatIndicator.indicator_type, ThreatIndicator.value)
     ).all()
     active = [r for r in rows if r.status == "active"]
     pending = [r for r in rows if r.status == "pending"]
-    by_type: dict[str, int] = {}
-    for r in active:
-        by_type[r.indicator_type] = by_type.get(r.indicator_type, 0) + 1
 
     def _iv(r: object) -> dict:
         return {"type": r.indicator_type, "value": r.value, "kind": r.value_kind,
-                "source": r.source, "technique": r.technique, "tactic": r.tactic,
-                "weight": r.weight, "status": r.status}
+                "source": r.source, "source_ref": r.source_ref, "technique": r.technique,
+                "tactic": r.tactic, "weight": r.weight, "status": r.status,
+                "description": r.description}
+
+    grouped: dict[str, list[dict]] = {}
+    for r in active:
+        grouped.setdefault(r.indicator_type, []).append(_iv(r))
+
+    groups: list[dict] = []
+    for tkey in sorted(grouped, key=lambda k: (type_order.get(k, 5), k)):
+        label, desc, icon = type_meta.get(tkey, (tkey.replace("_", " ").title(), "", "dot"))
+        items = grouped[tkey]
+        attributed = sum(1 for i in items if i["technique"])
+        groups.append({
+            "key": tkey, "label": label, "desc": desc, "icon": icon,
+            "count": len(items), "attributed": attributed,
+            "rows": sorted(items, key=lambda i: (-i["weight"], i["value"])),
+        })
 
     return templates.TemplateResponse(
         request, "indicators.html",
         {"user": user, "csrf_token": _csrf_for(request),
-         "indicators": [_iv(r) for r in active], "pending": [_iv(r) for r in pending],
-         "by_type": by_type, "total": len(active)},
+         "groups": groups, "pending": [_iv(r) for r in pending],
+         "total": len(active), "type_count": len(groups)},
     )
 
 

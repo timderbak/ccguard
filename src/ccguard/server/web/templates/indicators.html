@@ -1,52 +1,111 @@
 {% extends "base.html" %}
 {% block title %}Индикаторы · ccguard{% endblock %}
 {% block content %}
-<div class="max-w-[1200px] mx-auto">
+<style>
+  .indfilter{display:inline-flex;align-items:center;gap:7px;border-radius:10px;padding:7px 12px;cursor:pointer;
+    border:1px solid var(--line);background:var(--card2);color:#b9b2c7;font-size:12px;transition:all .12s}
+  .indfilter:hover{border-color:#ffffff2e;color:#e7e2f0}
+  .indfilter.active{border-color:#a855f7;background:#a855f71f;color:#e9d8ff}
+  .indfilter .n{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#8f88a0}
+  .indfilter.active .n{color:#c9b6ff}
+  .kindbadge{font-family:"IBM Plex Mono",monospace;font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    border-radius:4px;padding:1px 5px;color:#9cc8ff;background:#5aa9ff14;border:1px solid #5aa9ff33}
+  .kindbadge.k-regex{color:#fbb6e0;background:#ec489914;border-color:#ec489933}
+  .kindbadge.k-glob{color:#fcd34d;background:#f59e0b14;border-color:#f59e0b33}
+  .kindbadge.k-prefix{color:#6ee7b7;background:#34d39914;border-color:#34d39933}
+  .techpill{font-family:"IBM Plex Mono",monospace;font-size:10px;color:#c9b6ff;background:#a855f714;
+    border:1px solid #a855f733;border-radius:6px;padding:1px 6px}
+  .grpicon{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;
+    background:#a855f714;border:1px solid #a855f72e;color:#c9b6ff}
+  .indrow{border-top:1px solid #ffffff0d}
+  .indrow:hover{background:#ffffff05}
+  .wbar{width:46px;height:4px;border-radius:99px;background:#ffffff10;overflow:hidden;display:inline-block;vertical-align:middle}
+  .wbar>span{display:block;height:100%;background:linear-gradient(90deg,#7c3aed,#e455c8)}
+</style>
+
+<div class="max-w-[1200px] mx-auto" id="indroot">
   <header class="mb-5">
     <p class="cc-eyebrow">Детект · индикаторы</p>
     <h1 class="text-3xl text-white mt-1">Индикаторы <span class="text-slate-500 text-xl">{{ total }}</span></h1>
-    <p class="text-sm text-slate-400 mt-1.5">Артефакт-правила (путь / команда / хост) — вход для детекта, атрибутированы к ATT&amp;CK / ATLAS-техникам.</p>
+    <p class="text-sm text-slate-400 mt-1.5 max-w-3xl">Артефакт-правила (путь / команда / хост) — вход для детекта. Сгруппированы по типу и атрибутированы к ATT&amp;CK / ATLAS-техникам. {{ type_count }} {{ 'тип' if type_count == 1 else 'типа' }}.</p>
   </header>
 
-  <div class="flex gap-3 mb-4 flex-wrap">
-    {% for t, n in by_type.items() %}
-    <div class="cc-card-2 px-4 py-3">
-      <div class="cc-num text-xl text-white">{{ n }}</div>
-      <div class="cc-mono text-[10px] text-slate-400 mt-0.5">{{ t }}</div>
-    </div>
+  <!-- filter chips -->
+  <div class="flex flex-wrap gap-2 mb-5">
+    <span class="indfilter active" data-filter="all" onclick="indFilter('all', this)">Все <span class="n">{{ total }}</span></span>
+    {% for g in groups %}
+    <span class="indfilter" data-filter="{{ g.key }}" onclick="indFilter('{{ g.key }}', this)">{{ g.label }} <span class="n">{{ g.count }}</span></span>
     {% endfor %}
   </div>
 
-  <div class="cc-card p-5 overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead>
-        <tr class="text-left cc-mono text-[10px] uppercase tracking-wider text-slate-500">
-          <th class="py-2 pr-3">Тип</th><th class="pr-3">Значение</th><th class="pr-3">Источник</th>
-          <th class="pr-3">Техника</th><th class="pr-3">Стадия</th><th class="text-right">Вес</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for i in indicators %}
-        <tr class="border-t border-white/5">
-          <td class="py-2 pr-3 text-slate-300">{{ i.type }}</td>
-          <td class="pr-3 cc-mono text-xs text-slate-400 max-w-[320px] truncate" title="{{ i.value }}">{{ i.value }}</td>
-          <td class="pr-3 text-slate-400 text-xs">{{ i.source }}</td>
-          <td class="pr-3">{% if i.technique %}<span class="cc-mono text-xs text-slate-300">{{ i.technique }}</span>{% else %}<span class="text-slate-600">—</span>{% endif %}</td>
-          <td class="pr-3 text-slate-400 text-xs">{{ i.tactic or '—' }}</td>
-          <td class="text-right cc-mono text-xs text-slate-400">{{ i.weight }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-    {% if not indicators %}<p class="text-sm text-slate-500">Индикаторы не загружены.</p>{% endif %}
+  <!-- grouped sections -->
+  <div class="space-y-4">
+    {% for g in groups %}
+    <section class="cc-card p-5" data-group="{{ g.key }}">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="grpicon">
+          {% if g.icon == 'key' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.5 12.5 7-7"/><path d="m16 7 2 2"/><path d="m19 4 1.5 1.5"/></svg>
+          {% elif g.icon == 'terminal' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 4 4-4 4"/><path d="M12 16h7"/></svg>
+          {% elif g.icon == 'globe' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>
+          {% elif g.icon == 'check' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          {% else %}<svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>{% endif %}
+        </span>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h2 class="text-base text-white">{{ g.label }}</h2>
+            <span class="cc-mono text-[10px] text-slate-500">{{ g.key }}</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-0.5">{{ g.desc }}</p>
+        </div>
+        <div class="ml-auto text-right shrink-0">
+          <div class="cc-num text-xl text-white">{{ g.count }}</div>
+          <div class="cc-mono text-[10px] text-slate-500">{{ g.attributed }} с техникой</div>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left cc-mono text-[9px] uppercase tracking-wider text-slate-600">
+              <th class="py-1.5 pr-3 font-normal">Значение</th>
+              <th class="pr-3 font-normal">Техника</th>
+              <th class="pr-3 font-normal">Стадия</th>
+              <th class="pr-3 font-normal">Источник</th>
+              <th class="text-right font-normal">Вес</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for i in g.rows %}
+            <tr class="indrow">
+              <td class="py-2 pr-3">
+                <div class="flex items-center gap-2">
+                  <span class="kindbadge k-{{ i.kind }}">{{ i.kind }}</span>
+                  <span class="cc-mono text-xs text-slate-300 max-w-[380px] truncate" title="{{ i.value }}">{{ i.value }}</span>
+                </div>
+              </td>
+              <td class="pr-3">{% if i.technique %}<span class="techpill">{{ i.technique }}</span>{% else %}<span class="text-slate-600">—</span>{% endif %}</td>
+              <td class="pr-3 text-slate-400 text-xs">{{ i.tactic or '—' }}</td>
+              <td class="pr-3 text-slate-500 text-xs" title="{{ i.source_ref or '' }}">{{ i.source }}</td>
+              <td class="text-right whitespace-nowrap">
+                <span class="wbar"><span style="width: {{ (i.weight * 100)|round|int if i.weight <= 1 else 100 }}%"></span></span>
+                <span class="cc-mono text-[10px] text-slate-500 ml-1.5">{{ '%.1f'|format(i.weight) }}</span>
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endfor %}
+    {% if not groups %}<p class="text-sm text-slate-500">Индикаторы не загружены.</p>{% endif %}
   </div>
 
   {% if pending %}
-  <div class="cc-card p-5 mt-4">
+  <div class="cc-card p-5 mt-4" data-group="__pending">
     <h2 class="text-lg text-white mb-1">На согласовании <span class="text-slate-500 text-sm">({{ pending|length }})</span></h2>
     <p class="text-xs text-slate-500 mb-3">предложенные сигнатуры ждут review (Путь-2)</p>
     {% for i in pending %}
-    <div class="border-t border-white/5 py-2 flex items-center justify-between">
+    <div class="indrow py-2 flex items-center justify-between">
       <span class="cc-mono text-xs text-slate-300">{{ i.type }} · {{ i.value }}</span>
       <span class="text-xs text-slate-500">{{ i.source }}</span>
     </div>
@@ -54,4 +113,13 @@
   </div>
   {% endif %}
 </div>
+
+<script>
+  function indFilter(key, el){
+    document.querySelectorAll('#indroot .indfilter').forEach(c => c.classList.toggle('active', c === el));
+    document.querySelectorAll('#indroot section[data-group]').forEach(s => {
+      s.style.display = (key === 'all' || s.dataset.group === key) ? '' : 'none';
+    });
+  }
+</script>
 {% endblock %}

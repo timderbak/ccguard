@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ccguard",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "export CCGUARD_ADMIN_USER=admin CCGUARD_SESSION_SECRET=dev-secret; export CCGUARD_ADMIN_PASSWORD_HASH='$2b$12$tboZqAwLhfzP1OHEk3FRf.8O41fVNVnURVTxAm8MhZblLU7pzluke'; CCGUARD_PORT=$PORT exec uv run ccguard-server"
+      ],
+      "port": 8080
+    }
+  ]
+}
