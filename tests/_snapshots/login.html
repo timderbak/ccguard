@@ -61,13 +61,18 @@
       /* Legacy white cards from not-yet-restyled pages still read fine on dark */
       .cc-surface .bg-white { box-shadow: 0 18px 40px -22px rgba(0,0,0,.6); }
 
-      /* Inputs */
+      /* Inputs — dark form controls so legacy forms (policy/settings) stop
+         rendering as white browser-default boxes on the dark surface. */
       .cc-surface input:not([type=checkbox]):not([type=radio]), .cc-surface select, .cc-surface textarea {
+        background: #0e0b14 !important; color: #f3f0f7 !important;
+        border-color: #ffffff24 !important;
         transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
       }
+      .cc-surface input::placeholder, .cc-surface textarea::placeholder { color: #6b6577; }
       .cc-surface input:focus, .cc-surface select:focus, .cc-surface textarea:focus {
         outline: none; border-color: var(--pur) !important; box-shadow: 0 0 0 3px rgba(168,85,247,.22);
       }
+      .cc-surface input[type=checkbox], .cc-surface input[type=radio] { accent-color: var(--pur); }
 
       /* Sidebar nav */
       .cc-nav-link {
