@@ -3,27 +3,37 @@
 
    Inputs:
      finding — view-model with .discovered_at, .machine_id, .rule_id, .severity,
-               .details (dict with optional risk_score, category, file_hash)
+               .details (dict with optional risk_score, category, file_hash,
+               rationale)
      rescan_notice — optional inline notice string ("бюджет исчерпан" |
                      "сканер выключен") rendered after risk badge.
+   Styling note: pill/kind classes (.fnd-*) live in findings_feed.html <style>,
+   already loaded on the page so HTMX row swaps inherit them.
 #}
-<tr class="border-b last:border-0">
-    <td class="py-2">{{ finding.discovered_at.isoformat(timespec="seconds") }}</td>
-    <td>
+{% set kind = (finding.rule_id.split('.')[0]) if finding.rule_id else '' %}
+<tr class="fnd-row">
+    <td class="py-2.5 pr-3">
+        <span class="fnd-sev fnd-sev-{% if finding.severity in ('block','critical') %}block{% elif finding.severity == 'warn' %}warn{% else %}info{% endif %}">{{ finding.severity }}</span>
+    </td>
+    <td class="pr-3 whitespace-nowrap">
+        <span class="cc-mono text-xs text-slate-400" title="{{ finding.discovered_at.isoformat(timespec='seconds') }}">{{ finding.discovered_at.strftime('%d.%m %H:%M') }}</span>
+    </td>
+    <td class="pr-3">
         {% if finding.machine_id == '_server' %}
-        <span class="text-slate-500" title="LLM-сканер (серверная находка)">
-            {{ finding.machine_id[:12] }}
-        </span>
+        <span class="cc-mono text-xs text-slate-500" title="LLM-сканер (серверная находка)">сервер</span>
         {% else %}
-        <a href="/machines/{{ finding.machine_id }}" class="hover:underline">
-            {{ finding.machine_id[:12] }}
-        </a>
+        <a href="/machines/{{ finding.machine_id }}" class="cc-mono text-xs text-slate-300 hover:text-white hover:underline">{{ finding.machine_id[:12] }}</a>
         {% endif %}
     </td>
-    <td class="{% if finding.severity in ('block', 'critical') %}text-red-600 font-semibold
-               {% elif finding.severity == 'warn' %}text-amber-600
-               {% else %}text-slate-500{% endif %}">{{ finding.severity }}</td>
-    <td class="text-center">
+    <td class="pr-3 max-w-[420px]">
+        <div class="flex items-center gap-2">
+            {% if kind %}<span class="fnd-kind">{{ kind }}</span>{% endif %}
+            <span class="cc-mono text-xs text-slate-200 truncate">{{ finding.rule_id }}</span>
+        </div>
+        {% set rationale = finding.details.get('rationale', '') if finding.details else '' %}
+        {% if rationale %}<div class="text-[11px] text-slate-500 mt-0.5 truncate" title="{{ rationale }}">{{ rationale }}</div>{% endif %}
+    </td>
+    <td class="pr-3 whitespace-nowrap">
         {% include "components/_risk_badge.html" %}
         {% if rescan_notice in ('budget_exhausted', 'budget_zero') %}
           <span class="text-xs text-amber-600 ml-2">бюджет исчерпан</span>
@@ -31,9 +41,7 @@
           <span class="text-xs text-slate-500 ml-2">сканер выключен</span>
         {% endif %}
     </td>
-    <td class="font-mono">{{ finding.rule_id }}</td>
-    <td class="text-slate-600">{{ finding.details.get('rationale', '') if finding.details else '' }}</td>
-    <td class="text-right">
+    <td class="text-right whitespace-nowrap">
         {% if finding.rule_id.startswith('llm.scan.') and finding.details.get('file_hash') %}
         <form hx-post="/admin/scan/{{ finding.details.get('file_hash') | urlencode }}/rescan"
               hx-target="closest tr"
@@ -41,13 +49,10 @@
               hx-confirm="Пересканировать этот файл? Списание из дневного бюджета."
               class="inline">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
-            <button type="submit"
-                    class="text-sm text-slate-700 hover:text-slate-900 hover:underline">
-                Пересканировать
-            </button>
+            <button type="submit" class="cc-mono text-[11px] text-slate-400 hover:text-white hover:underline">пересканировать</button>
         </form>
         {% else %}
-        <span class="text-slate-400">—</span>
+        <span class="text-slate-600">—</span>
         {% endif %}
     </td>
 </tr>

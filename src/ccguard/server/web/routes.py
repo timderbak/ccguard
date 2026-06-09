@@ -1358,12 +1358,27 @@ def findings_page(
     stmt = stmt.order_by(FindingRecord.discovered_at.desc()).limit(200)  # type: ignore[attr-defined]
     rows = list(session.exec(stmt))
     findings = [_finding_view_model(r) for r in rows]
+
+    # Severity summary across ALL findings (unfiltered) — drives the filter pills.
+    from sqlalchemy import func as _func
+    sev_counts = dict(
+        session.exec(select(FindingRecord.severity, _func.count()).group_by(FindingRecord.severity)).all()
+    )
+    sev_pills = [
+        {"key": k, "label": lbl, "count": sev_counts.get(k, 0)}
+        for k, lbl in (("critical", "критич."), ("block", "блок"), ("warn", "warn"), ("info", "info"))
+    ]
+    total_findings = sum(sev_counts.values())
+
     return templates.TemplateResponse(
         request,
         "findings_feed.html",
         {
             "user": user,
             "findings": findings,
+            "sev_pills": sev_pills,
+            "total_findings": total_findings,
+            "shown": len(findings),
             "filters": {
                 "severity": severity,
                 "rule_id": rule_id,

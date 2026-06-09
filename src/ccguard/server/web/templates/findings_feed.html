@@ -1,42 +1,100 @@
 {% extends "base.html" %}
 {% block title %}ccguard — находки{% endblock %}
 {% block content %}
-<h2 class="text-2xl font-semibold mb-6">Находки</h2>
-<form method="GET" action="/findings" class="bg-white rounded-lg shadow p-4 mb-4 flex gap-4">
-    <select name="severity" class="rounded border border-slate-300 text-sm">
-        <option value="">все уровни</option>
-        <option value="critical" {% if filters.severity == "critical" %}selected{% endif %}>critical</option>
-        <option value="block" {% if filters.severity == "block" %}selected{% endif %}>block</option>
-        <option value="warn"  {% if filters.severity == "warn"  %}selected{% endif %}>warn</option>
-        <option value="info"  {% if filters.severity == "info"  %}selected{% endif %}>info</option>
-    </select>
+<style>
+  /* severity pill (also used by _finding_row.html via HTMX swap) */
+  .fnd-sev{display:inline-flex;align-items:center;font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:700;
+    letter-spacing:.04em;border-radius:6px;padding:2px 8px;border:1px solid}
+  .fnd-sev-block{color:#ff8aa0;background:#ff547018;border-color:#ff547066}
+  .fnd-sev-warn{color:#fbb86b;background:#f9731618;border-color:#f9731659}
+  .fnd-sev-info{color:#a9b2c0;background:#ffffff0d;border-color:#ffffff24}
+  .fnd-kind{font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+    color:#c9b6ff;background:#a855f714;border:1px solid #a855f733;border-radius:5px;padding:1px 5px;flex:none}
+  .fnd-row{border-top:1px solid #ffffff0d}
+  .fnd-row:hover{background:#ffffff05}
+  /* summary / filter pills */
+  .sevpill{display:inline-flex;align-items:center;gap:8px;border-radius:11px;padding:9px 14px;border:1px solid var(--line);
+    background:var(--card2);text-decoration:none;transition:all .12s}
+  .sevpill:hover{border-color:#ffffff2e}
+  .sevpill .lab{font-size:12px;color:#b9b2c7}
+  .sevpill .cnt{font-family:"IBM Plex Mono",monospace;font-size:15px;font-weight:700;color:#fff}
+  .sevpill.active{border-color:#a855f7;background:#a855f71a}
+  .sevpill .dot{width:8px;height:8px;border-radius:50%}
+  .fin-in{border-radius:9px;padding:7px 11px;color:#e7e2f0;background:#0e0b14;border:1px solid #ffffff1f;
+    outline:none;font-size:13px}
+  .fin-in:focus{border-color:#a855f7;box-shadow:0 0 0 3px rgba(168,85,247,.18)}
+</style>
+
+<div class="max-w-[1200px] mx-auto">
+  <header class="mb-5">
+    <p class="cc-eyebrow">Детект · события</p>
+    <h1 class="text-3xl text-white mt-1">Находки <span class="text-slate-500 text-xl">{{ total_findings }}</span></h1>
+    <p class="text-sm text-slate-400 mt-1.5">События детекта — это <span class="text-slate-200">выходы</span> движков (в отличие от индикаторов-входов). Каждое привязано к машине, правилу и серьёзности.</p>
+  </header>
+
+  <!-- severity summary = filter pills -->
+  {% set cur_scope = filters.scope if filters.scope and filters.scope != 'all' else '' %}
+  <div class="flex flex-wrap gap-2.5 mb-4">
+    <a href="/findings{% if cur_scope %}?scope={{ cur_scope }}{% endif %}" class="sevpill {% if not filters.severity %}active{% endif %}">
+      <span class="lab">Все</span><span class="cnt">{{ total_findings }}</span>
+    </a>
+    {% for p in sev_pills %}
+    <a href="/findings?severity={{ p.key }}{% if cur_scope %}&scope={{ cur_scope }}{% endif %}" class="sevpill {% if filters.severity == p.key %}active{% endif %}">
+      <span class="dot" style="background:{% if p.key in ('critical','block') %}#ff5470{% elif p.key == 'warn' %}#ff8a3d{% else %}#7c8597{% endif %}"></span>
+      <span class="lab">{{ p.label }}</span><span class="cnt">{{ p.count }}</span>
+    </a>
+    {% endfor %}
+  </div>
+
+  <!-- secondary filters -->
+  <form method="GET" action="/findings" class="cc-card p-3 mb-4 flex flex-wrap items-center gap-2.5">
+    {% if filters.severity %}<input type="hidden" name="severity" value="{{ filters.severity }}" />{% endif %}
     <label class="sr-only" for="f-scope">Тип</label>
-    <select id="f-scope" name="scope"
-            class="rounded border-slate-300 px-2 py-1 text-sm
-                   focus:ring-2 focus:ring-slate-400 focus:border-slate-500">
+    <select id="f-scope" name="scope" class="fin-in">
         <option value="all" {% if filters.scope == 'all' or not filters.scope %}selected{% endif %}>все типы</option>
         <option value="llm" {% if filters.scope == 'llm' %}selected{% endif %}>только LLM-сканер</option>
         <option value="non_llm" {% if filters.scope == 'non_llm' %}selected{% endif %}>кроме LLM-сканера</option>
     </select>
-    <input type="text" name="rule_id" placeholder="rule_id"
-           value="{{ filters.rule_id or '' }}" class="rounded border border-slate-300 text-sm" />
-    <input type="text" name="machine_id" placeholder="machine_id"
-           value="{{ filters.machine_id or '' }}" class="rounded border border-slate-300 text-sm" />
-    <button class="bg-slate-900 text-white text-sm rounded px-4">Фильтр</button>
-</form>
+    <input type="text" name="rule_id" placeholder="rule_id" value="{{ filters.rule_id or '' }}" class="fin-in" />
+    <input type="text" name="machine_id" placeholder="machine_id" value="{{ filters.machine_id or '' }}" class="fin-in" />
+    <button class="cc-mono text-xs rounded-lg px-4 py-2 text-white" style="background:linear-gradient(180deg,#c45cff,#7c3aed)">Фильтр</button>
+    {% if filters.rule_id or filters.machine_id or filters.scope not in ('all', none) %}
+    <a href="/findings{% if filters.severity %}?severity={{ filters.severity }}{% endif %}" class="cc-mono text-xs text-slate-500 hover:text-white">сброс</a>
+    {% endif %}
+  </form>
 
-<div class="bg-white rounded-lg shadow p-4">
-    <table class="w-full text-sm">
-        <thead><tr class="text-left text-slate-500 border-b">
-            <th>Когда</th><th>Машина</th><th>Серьёзность</th><th>Риск</th><th>Правило</th><th>Подробности</th><th class="text-right">Действия</th>
-        </tr></thead>
+  <div class="cc-card p-0 overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-left cc-mono text-[9px] uppercase tracking-wider text-slate-600 border-b border-white/10">
+            <th class="py-2.5 px-4 font-normal">Серьёзность</th>
+            <th class="font-normal">Время</th>
+            <th class="font-normal">Машина</th>
+            <th class="font-normal">Правило</th>
+            <th class="font-normal">Риск</th>
+            <th class="text-right pr-4 font-normal">Действия</th>
+          </tr>
+        </thead>
         <tbody>
         {% for finding in findings %}
         {% include "components/_finding_row.html" %}
-        {% else %}
-        <tr><td colspan="7" class="py-6 text-center text-slate-400">Находок нет.</td></tr>
         {% endfor %}
+        {% if not findings %}
+        <tr><td colspan="6">
+          <div class="py-16 text-center">
+            <span class="inline-grid place-items-center w-12 h-12 rounded-xl mx-auto mb-3" style="background:#34d39914;border:1px solid #34d39933">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#34d399" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+            </span>
+            <p class="text-slate-300">{% if filters.severity or filters.rule_id or filters.machine_id or cur_scope %}Под фильтр ничего не попало{% else %}Находок нет{% endif %}</p>
+            <p class="text-xs text-slate-500 mt-1">{% if filters.severity or filters.rule_id or filters.machine_id or cur_scope %}Сбросьте фильтры, чтобы увидеть все события.{% else %}Чисто — движки детекта не подняли ни одного события на текущем трафике.{% endif %}</p>
+          </div>
+        </td></tr>
+        {% endif %}
         </tbody>
-    </table>
+      </table>
+    </div>
+    {% if findings %}<div class="px-4 py-2.5 border-t border-white/5 cc-mono text-[10px] text-slate-600">показано {{ shown }}{% if shown >= 200 %} (лимит 200, уточните фильтр){% endif %}</div>{% endif %}
+  </div>
 </div>
 {% endblock %}
