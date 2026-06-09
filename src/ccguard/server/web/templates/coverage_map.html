@@ -8,8 +8,9 @@
   .fw-attack{color:#9ad0ff;background:#3b9bf014;border-color:#3b9bf03d}
   .fw-owasp{color:#fbb6e0;background:#ec489914;border-color:#ec48993d}
   /* technique tile — the unit that answers "what is covered & by what" */
-  .cvt{width:236px;border-radius:12px;padding:10px 12px;border:1px solid var(--line);
-    background:var(--card2);border-left-width:3px;border-left-color:#ffffff14}
+  .cvt{display:block;text-decoration:none;cursor:pointer;width:236px;border-radius:12px;padding:10px 12px;border:1px solid var(--line);
+    background:var(--card2);border-left-width:3px;border-left-color:#ffffff14;transition:background .12s,transform .08s}
+  .cvt:hover{background:#ffffff0a;transform:translateY(-1px)}
   .cvt.c-prev{border-left-color:#34d399}
   .cvt.c-detect{border-left-color:#c45cff}
   .cvt.c-scope{border-left-color:#5aa9ff}
@@ -95,7 +96,7 @@
         </div>
         <div class="flex-1 flex flex-wrap gap-2.5">
           {% for t in s.techniques %}
-          <div class="cvt {% if t.covered %}{{ t.klass }}{% else %}gap{% endif %}">
+          <a href="/coverage/{{ t.id }}" class="cvt {% if t.covered %}{{ t.klass }}{% else %}gap{% endif %}">
             <div class="flex items-center gap-1.5">
               <span class="fwchip fw-{{ t.fw }}">{{ t.fw }}</span>
               <span class="cc-mono text-[11px] text-white truncate">{{ t.id }}</span>
@@ -109,7 +110,7 @@
             {% else %}
             <div class="cvt-mech">нет детекта</div>
             {% endif %}
-          </div>
+          </a>
           {% endfor %}
         </div>
       </div>
@@ -125,14 +126,14 @@
     <p class="text-xs text-slate-500 mb-3">модель / обучение — endpoint-агент структурно не видит этот слой; не считаем дырами</p>
     <div class="flex flex-wrap gap-2.5">
       {% for t in oos %}
-      <div class="cvt" style="border-left-color:#ffffff14;opacity:.85">
+      <a href="/coverage/{{ t.id }}" class="cvt" style="border-left-color:#ffffff14;opacity:.85">
         <div class="flex items-center gap-1.5">
           <span class="fwchip fw-{{ t.fw }}">{{ t.fw }}</span>
           <span class="cc-mono text-[11px] text-slate-300 truncate">{{ t.id }}</span>
         </div>
         <div class="cvt-name text-slate-400">{{ t.name }}</div>
         <div class="cvt-mech">{{ t.tactic }}</div>
-      </div>
+      </a>
       {% endfor %}
     </div>
   </div>

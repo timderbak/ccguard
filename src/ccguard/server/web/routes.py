@@ -337,6 +337,116 @@ def coverage_page(
     )
 
 
+@router.get("/coverage/{technique_id}", response_class=HTMLResponse)
+def technique_detail_page(
+    request: Request,
+    technique_id: str,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Детальная страница техники (drill-down с /coverage): описание +
+    первоисточник, ЧЕМ и КАК ловим (детекторы/индикаторы + тип контроля),
+    связанные техники (crosswalk), примеры атак (сценарии по стадии) и реальные
+    публичные инциденты. Read-only над coverage_service."""
+    from ccguard.server.db.models import Technique
+    from ccguard.server.services import chain_seed_service, coverage_service
+    from ccguard.server.services.transparency_content import incidents_for
+
+    detail = coverage_service.coverage_detail(session, technique_id)
+    if not detail.get("found"):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown technique")
+    tech = session.exec(
+        select(Technique).where(Technique.technique_id == technique_id)
+    ).first()
+
+    cross: list[dict] = []
+    if detail.get("crosswalk"):
+        for rel in session.exec(
+            select(Technique).where(Technique.technique_id.in_(detail["crosswalk"]))
+        ).all():
+            cross.append({"id": rel.technique_id, "fw": rel.framework,
+                          "name": rel.name, "tactic": rel.tactic})
+        cross.sort(key=lambda x: x["id"])
+
+    scenarios = chain_seed_service.list_scenarios(session)
+    example_scenarios = [
+        s for s in scenarios if any(st["tactic"] == tech.tactic for st in s["steps"])
+    ]
+
+    return templates.TemplateResponse(
+        request,
+        "technique_detail.html",
+        {
+            "user": user,
+            "csrf_token": _csrf_for(request),
+            "t": {
+                "id": tech.technique_id, "fw": tech.framework, "name": tech.name,
+                "tactic": tech.tactic, "tactic_source": tech.tactic_source,
+                "description": tech.description, "url": tech.url,
+                "in_scope": tech.in_scope, "covered": detail["covered"],
+                "control_types": detail["control_types"],
+            },
+            "detectors": detail["detectors"],
+            "indicators": detail["indicators"],
+            "covered_via_rollup": detail.get("covered_via_rollup"),
+            "covered_by_children": detail.get("covered_by_children", []),
+            "crosswalk": cross,
+            "example_scenarios": example_scenarios,
+            "incidents": incidents_for(technique_id),
+        },
+    )
+
+
+@router.get("/detectors/{detector_key}", response_class=HTMLResponse)
+def detector_detail_page(
+    request: Request,
+    detector_key: str,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Детальная страница детектора/корреляции: что наблюдает, какие сигналы,
+    окно корреляции, что считается срабатыванием, какие техники покрывает."""
+    from ccguard.server.db.models import Detector, DetectorTechniqueMapping, Technique
+    from ccguard.server.services.transparency_content import detector_detail
+
+    det = session.exec(
+        select(Detector).where(Detector.detector_key == detector_key)
+    ).first()
+    if det is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="unknown detector")
+
+    maps = session.exec(
+        select(DetectorTechniqueMapping).where(
+            DetectorTechniqueMapping.detector_key == detector_key
+        )
+    ).all()
+    by_ct = {m.technique_id: m.control_type for m in maps}
+    techs: list[dict] = []
+    if by_ct:
+        for t in session.exec(
+            select(Technique).where(Technique.technique_id.in_(list(by_ct)))
+        ).all():
+            techs.append({"id": t.technique_id, "fw": t.framework, "name": t.name,
+                          "tactic": t.tactic, "control_type": by_ct.get(t.technique_id)})
+        techs.sort(key=lambda x: x["id"])
+
+    return templates.TemplateResponse(
+        request,
+        "detector_detail.html",
+        {
+            "user": user,
+            "csrf_token": _csrf_for(request),
+            "d": {
+                "key": det.detector_key, "name": det.name, "kind": det.kind,
+                "description": det.description,
+                "rule_ids": [r for r in (det.rule_ids or "").split(",") if r],
+            },
+            "explain": detector_detail(detector_key),
+            "techniques": techs,
+        },
+    )
+
+
 @router.get("/correlations", response_class=HTMLResponse)
 def correlations_page(
     request: Request,

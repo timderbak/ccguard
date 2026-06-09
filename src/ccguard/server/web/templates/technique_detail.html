@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}{{ t.id }} · {{ t.name }} · ccguard{% endblock %}
+{% block content %}
+<style>
+  .fwchip{font-family:"IBM Plex Mono",monospace;font-size:10px;font-weight:700;letter-spacing:.04em;
+    border-radius:6px;padding:2px 7px;border:1px solid}
+  .fw-atlas{color:#c9b6ff;background:#a855f714;border-color:#a855f73d}
+  .fw-attack{color:#9ad0ff;background:#3b9bf014;border-color:#3b9bf03d}
+  .fw-owasp{color:#fbb6e0;background:#ec489914;border-color:#ec48993d}
+  .ctag{font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:700;letter-spacing:.05em;border-radius:4px;padding:1px 6px}
+  .ct-prev{color:#6ee7b7;background:#34d39917}.ct-detect{color:#d8b4fe;background:#a855f717}.ct-scope{color:#9cc8ff;background:#5aa9ff17}
+  .ct-gate,.ct-isolate{color:#fbbf24;background:#f59e0b17}
+  .mech{display:block;border-radius:12px;padding:13px 15px;border:1px solid var(--line);background:var(--card2);
+    border-left-width:3px;text-decoration:none;transition:border-color .12s,background .12s}
+  .mech:hover{background:#ffffff07;border-left-color:#c45cff}
+  .mech.m-prev{border-left-color:#34d399}.mech.m-detect{border-left-color:#c45cff}.mech.m-scope{border-left-color:#5aa9ff}
+  .relchip{display:inline-flex;align-items:center;gap:6px;border-radius:9px;padding:5px 10px;border:1px solid var(--line);
+    background:var(--card2);text-decoration:none;font-size:12px;color:#d8d2e4;transition:border-color .12s}
+  .relchip:hover{border-color:#a855f766;color:#fff}
+  .srclink{display:inline-flex;align-items:center;gap:7px;border-radius:9px;padding:7px 12px;border:1px solid var(--line);
+    background:var(--card2);text-decoration:none;font-size:13px;color:#cfc8db;transition:all .12s}
+  .srclink:hover{border-color:#a855f766;color:#fff}
+  .scen{border:1px solid var(--line);border-radius:11px;padding:12px 14px;background:var(--card2)}
+  .stchip{display:inline-flex;align-items:center;border-radius:7px;padding:3px 8px;font-size:11px;border:1px solid var(--line);background:#0e0b14;color:#b9b2c7}
+  .stchip.hit{border-color:#a855f7;background:#a855f71f;color:#e9d8ff}
+  .arrow{color:#5f5970;margin:0 2px}
+  .inc{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:var(--card2)}
+</style>
+
+<div class="max-w-[1000px] mx-auto">
+  <a href="/coverage" class="cc-mono text-xs text-slate-500 hover:text-white mb-3 inline-block">← Карта покрытия</a>
+
+  <header class="mb-5">
+    <div class="flex items-center gap-2.5 flex-wrap">
+      <span class="fwchip fw-{{ t.fw }}">{{ t.fw }}</span>
+      <span class="cc-mono text-sm text-white">{{ t.id }}</span>
+      {% if t.covered %}<span class="cc-sev" style="color:#6ee7b7;background:#34d39915;border:1px solid #34d39940">покрыто</span>
+      {% elif t.in_scope %}<span class="cc-sev cc-sev-block">дыра — не ловим</span>
+      {% else %}<span class="cc-sev" style="color:#8a8394;background:#ffffff0d;border:1px solid #ffffff1f">вне скоупа</span>{% endif %}
+    </div>
+    <h1 class="text-3xl text-white mt-2">{{ t.name }}</h1>
+    <p class="cc-mono text-[11px] text-slate-500 mt-1.5">стадия: {{ t.tactic }}{% if t.tactic_source == 'risk-layer' %} · risk-class{% endif %}</p>
+  </header>
+
+  <!-- description + source -->
+  <div class="cc-card p-5 mb-4">
+    <p class="text-sm text-slate-300 leading-relaxed">{{ t.description or 'Описание отсутствует в каталоге.' }}</p>
+    {% if t.url %}
+    <a href="{{ t.url }}" target="_blank" rel="noopener noreferrer" class="srclink mt-4">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+      Первоисточник
+      <span class="cc-mono text-[11px] text-slate-500 truncate max-w-[420px]">{{ t.url }}</span>
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- how we catch it -->
+  <div class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-1">Как мы это ловим</h2>
+    {% if t.covered %}
+    <p class="text-xs text-slate-500 mb-3">Механики, которые покрывают технику, и каким контролем (блок / детект / ограничение).</p>
+    <div class="space-y-2.5">
+      {% for d in detectors %}
+      <a href="/detectors/{{ d.detector_key }}" class="mech m-{{ 'prev' if 'PREV' in d.control_type else 'detect' if 'DETECT' in d.control_type else 'scope' }}">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="cc-mono text-xs text-slate-500">корреляция</span>
+          <span class="text-sm text-white">{{ d.name }}</span>
+          <span class="ctag ct-{{ d.control_type|lower }} ml-auto">{{ d.control_type }}</span>
+        </div>
+        <div class="cc-mono text-[10px] text-slate-500 mt-1">{{ d.detector_key }} · подробнее →</div>
+      </a>
+      {% endfor %}
+      {% for i in indicators %}
+      <div class="mech m-{{ 'prev' if 'PREV' in i.control_type else 'detect' if 'DETECT' in i.control_type else 'scope' }}">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="cc-mono text-xs text-slate-500">индикатор · {{ i.indicator_type }}</span>
+          <span class="cc-mono text-xs text-slate-200 truncate max-w-[420px]">{{ i.value }}</span>
+          <span class="ctag ct-{{ i.control_type|lower }} ml-auto">{{ i.control_type }}</span>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% if covered_via_rollup and covered_by_children %}
+    <p class="text-xs text-slate-400 mt-3">Покрыто через под-техники: {% for c in covered_by_children %}<a href="/coverage/{{ c }}" class="cc-mono text-[11px] techlink" style="color:#c9b6ff">{{ c }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</p>
+    {% endif %}
+    {% elif t.in_scope %}
+    <p class="text-sm text-rose-300/90 mt-1">Честная дыра — поведенческого детекта пока нет.</p>
+    <p class="text-xs text-slate-400 mt-2">Чтобы закрыть: нужен индикатор (артефакт-правило) или корреляционный сценарий, чья стадия совпадает с <span class="cc-mono">{{ t.tactic }}</span>. Появится сигнал на этой стадии — техника начнёт ловиться без изменения движка.</p>
+    {% else %}
+    <p class="text-sm text-slate-400 mt-1">Вне скоупа endpoint-агента: это слой модели/обучения (адверсариальные примеры, доступ к модели, отравление обучающих данных). Структурно не виден на эндпоинте — не считается дырой.</p>
+    {% endif %}
+  </div>
+
+  <!-- crosswalk -->
+  {% if crosswalk %}
+  <div class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-1">Связанные техники</h2>
+    <p class="text-xs text-slate-500 mb-3">Та же угроза в других фреймворках (≈ crosswalk).</p>
+    <div class="flex flex-wrap gap-2">
+      {% for r in crosswalk %}
+      <a href="/coverage/{{ r.id }}" class="relchip"><span class="fwchip fw-{{ r.fw }}">{{ r.fw }}</span>{{ r.id }} · {{ r.name }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- example attacks -->
+  {% if example_scenarios or incidents %}
+  <div class="cc-card p-5">
+    <h2 class="text-lg text-white mb-1">Примеры атак</h2>
+    <p class="text-xs text-slate-500 mb-3">Где эта стадия участвует — наши сценарии-цепочки и реальные публичные инциденты.</p>
+
+    {% if example_scenarios %}
+    <div class="space-y-2.5 mb-4">
+      {% for s in example_scenarios %}
+      <div class="scen">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="cc-sev {% if s.severity in ['critical','block'] %}cc-sev-block{% else %}cc-sev-warn{% endif %}">{{ s.severity }}</span>
+          <span class="text-sm text-white">{{ s.name }}</span>
+          <span class="cc-mono text-[10px] text-slate-600 ml-auto">{{ s.scenario_key }}</span>
+        </div>
+        <div class="flex items-center flex-wrap gap-1">
+          {% for st in s.steps %}{% if not loop.first %}<span class="arrow">→</span>{% endif %}<span class="stchip {% if st.tactic == t.tactic %}hit{% endif %}">{{ st.tactic }}{% if st.optional %} ?{% endif %}</span>{% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if incidents %}
+    <div class="space-y-2.5">
+      {% for inc in incidents %}
+      <div class="inc">
+        <div class="flex items-baseline gap-2 flex-wrap">
+          <span class="text-sm text-white">{{ inc.title }}</span>
+          <span class="cc-mono text-[10px] text-slate-500">{{ inc.year }}</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">{{ inc.summary }}</p>
+        <a href="{{ inc.url }}" target="_blank" rel="noopener noreferrer" class="cc-mono text-[11px] mt-2 inline-flex items-center gap-1.5" style="color:#9ad0ff">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M9 7h8v8"/></svg>
+          {{ inc.source_name }}
+        </a>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

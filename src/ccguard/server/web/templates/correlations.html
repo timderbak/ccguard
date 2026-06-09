@@ -12,8 +12,8 @@
     <div class="cc-card p-5">
       <div class="flex items-start justify-between gap-4">
         <div>
-          <h2 class="text-lg text-white">{{ d.name }}</h2>
-          <p class="cc-mono text-xs text-slate-500 mt-0.5">{{ d.key }} · {{ d.kind }}</p>
+          <h2 class="text-lg"><a href="/detectors/{{ d.key }}" class="text-white hover:text-[#c45cff] transition-colors">{{ d.name }}</a></h2>
+          <p class="cc-mono text-xs text-slate-500 mt-0.5">{{ d.key }} · {{ d.kind }} · <a href="/detectors/{{ d.key }}" class="text-slate-400 hover:text-white">подробнее →</a></p>
         </div>
         <div class="flex gap-1.5 flex-wrap justify-end">
           {% for r in d.rule_ids %}<span class="cc-mono text-[10px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-300">{{ r }}</span>{% endfor %}
@@ -23,7 +23,7 @@
       <div class="mt-3 pt-3 border-t border-white/5">
         <p class="cc-eyebrow mb-2">Техники</p>
         {% for b in d.bindings %}
-        <span class="techchip"><span class="fwchip fw-{{ b.framework }}">{{ b.framework }}</span>{{ b.technique_id }}<span class="cc-ct cc-ct-{{ b.control_type|lower }}">{{ b.control_type }}</span></span>
+        <a href="/coverage/{{ b.technique_id }}" class="techchip" style="text-decoration:none"><span class="fwchip fw-{{ b.framework }}">{{ b.framework }}</span>{{ b.technique_id }}<span class="cc-ct cc-ct-{{ b.control_type|lower }}">{{ b.control_type }}</span></a>
         {% endfor %}
       </div>
     </div>
