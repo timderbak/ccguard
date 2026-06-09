@@ -34,3 +34,6 @@ ccguard.db*
 
 # superpowers brainstorming visual companion (local mockups)
 .superpowers/
+
+# local dev-server launch config (contains a local admin hash)
+.claude/launch.json
