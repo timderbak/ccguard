@@ -1,21 +1,21 @@
 {# HTMX drill-down partial: список (machine_id, hash, status) для одного слота. #}
-<div class="ml-4 py-2">
-    <p class="text-[10px] uppercase tracking-wide text-slate-400 cc-mono mb-1">{{ kind }} «{{ name }}» — на машинах</p>
+<div class="mt-1 mb-1 pl-3 border-l border-white/10">
+    <p class="text-[9px] uppercase tracking-wide text-slate-500 cc-mono mb-1.5">{{ kind }} «{{ name }}» — на машинах</p>
     {% if rows %}
-    <ul class="cc-mono text-[11px] space-y-0.5">
+    <ul class="cc-mono text-[11px] space-y-1">
         {% for machine_id, h, status in rows %}
         <li class="flex items-center gap-2">
-            <a href="/machines/{{ machine_id }}" class="text-emerald-700 hover:underline">{{ machine_id }}</a>
-            <span class="text-slate-500 truncate" style="max-width: 14rem;" title="{{ h }}">{{ h[:12] }}…</span>
-            <span class="rounded px-1 py-0.5 ring-1
-                {% if status == 'active' %}bg-emerald-50 text-emerald-700 ring-emerald-200
-                {% elif status == 'pending' %}bg-amber-50 text-amber-700 ring-amber-200
-                {% elif status == 'accepted_drift' %}bg-sky-50 text-sky-700 ring-sky-200
-                {% else %}bg-slate-100 text-slate-500 ring-slate-200{% endif %}">{{ status }}</span>
+            <a href="/machines/{{ machine_id }}" class="text-slate-300 hover:text-white hover:underline">{{ machine_id }}</a>
+            <span class="text-slate-600 truncate" style="max-width: 14rem;" title="{{ h }}">#{{ h[:12] }}…</span>
+            <span class="rounded px-1.5 py-0.5 text-[9px] font-semibold
+                {% if status == 'active' %}text-emerald-300 bg-emerald-500/10 ring-1 ring-emerald-500/30
+                {% elif status == 'pending' %}text-amber-300 bg-amber-500/10 ring-1 ring-amber-500/30
+                {% elif status == 'accepted_drift' %}text-sky-300 bg-sky-500/10 ring-1 ring-sky-500/30
+                {% else %}text-slate-400 bg-white/5 ring-1 ring-white/10{% endif %}">{{ status }}</span>
         </li>
         {% endfor %}
     </ul>
     {% else %}
-    <p class="text-slate-400 text-[11px]">Ничего не найдено.</p>
+    <p class="text-slate-500 text-[11px]">Ничего не найдено.</p>
     {% endif %}
 </div>

@@ -1,118 +1,64 @@
 {% extends "base.html" %}
 {% block title %}ccguard — артефакты флита{% endblock %}
 {% block content %}
-<header class="mb-7">
-    <h2 class="text-2xl font-semibold mb-2">Артефакты флита</h2>
-    <p class="text-slate-500 text-sm cc-mono">
-        Skills + custom subagents по всем машинам. Расхождение версий (одна и та же
-        запись на разных машинах с разным hash) подсвечено — это сильный signal
-        supply chain compromise или локального тампера.
-    </p>
-    <div class="mt-3 flex items-center gap-3 text-xs cc-mono">
-        <span class="rounded px-2 py-0.5 ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200">
-            skills: {{ skills|length }}
-        </span>
-        {% if skills_divergent_count > 0 %}
-        <span class="rounded px-2 py-0.5 ring-1 bg-red-50 text-red-700 ring-red-200">
-            расхождения skills: {{ skills_divergent_count }}
-        </span>
-        {% endif %}
-        <span class="rounded px-2 py-0.5 ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200">
-            agents: {{ agents|length }}
-        </span>
-        {% if agents_divergent_count > 0 %}
-        <span class="rounded px-2 py-0.5 ring-1 bg-red-50 text-red-700 ring-red-200">
-            расхождения agents: {{ agents_divergent_count }}
-        </span>
-        {% endif %}
+<style>
+  .srcchip{display:inline-flex;align-items:center;gap:7px;font-family:"IBM Plex Mono",monospace;font-size:12px;
+    color:#c9b6ff;background:#a855f714;border:1px solid #a855f733;border-radius:8px;padding:4px 10px;text-decoration:none}
+  .srcchip:hover{border-color:#a855f766}
+  .verchip{font-family:"IBM Plex Mono",monospace;font-size:10px;color:#9cc8ff;background:#5aa9ff12;
+    border:1px solid #5aa9ff2e;border-radius:5px;padding:1px 6px}
+  .verchip.div{color:#ff8aa0;background:#ff547012;border-color:#ff547047}
+  .divbadge{font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    color:#fff;background:#e11d48;border-radius:5px;padding:1px 6px}
+  .artrow{border-top:1px solid #ffffff0a}
+  .artrow:hover{background:#ffffff05}
+  .artname{color:#e7e2f0;font-size:13px}
+  .artname:hover{color:#fff;text-decoration:underline}
+  .sumchip{display:inline-flex;align-items:center;gap:7px;border-radius:9px;padding:5px 11px;border:1px solid var(--line);
+    background:var(--card2);font-size:12px;color:#b9b2c7}
+  .sumchip .n{font-family:"IBM Plex Mono",monospace;font-weight:700;color:#fff}
+</style>
+<div class="max-w-[1200px] mx-auto">
+  <header class="mb-5">
+    <p class="cc-eyebrow">Детект · supply chain</p>
+    <h1 class="text-3xl text-white mt-1">Артефакты флита</h1>
+    <p class="text-sm text-slate-400 mt-1.5 max-w-3xl">Skills и custom subagents по всем машинам, сгруппированные по <span class="text-slate-200">источнику</span> (плагин @ маркетплейс — откуда артефакт пришёл). Несколько версий одной записи (разный hash) = <span class="text-rose-300">расхождение</span>: сигнал supply-chain-компрометации или локального тампера.</p>
+    <div class="mt-4 flex items-center gap-2.5 flex-wrap">
+      <span class="sumchip"><span class="n">{{ skills_total }}</span> skills</span>
+      <span class="sumchip"><span class="n">{{ agents_total }}</span> subagents</span>
+      {% if skills_divergent_count > 0 %}<span class="sumchip" style="border-color:#ff547047;color:#ff8aa0"><span class="n" style="color:#ff8aa0">{{ skills_divergent_count }}</span> расхождения skills: {{ skills_divergent_count }}</span>{% endif %}
+      {% if agents_divergent_count > 0 %}<span class="sumchip" style="border-color:#ff547047;color:#ff8aa0"><span class="n" style="color:#ff8aa0">{{ agents_divergent_count }}</span> расхождения agents: {{ agents_divergent_count }}</span>{% endif %}
     </div>
-</header>
+  </header>
 
-<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
-    {# --- Skills column --- #}
-    <section class="bg-white rounded-xl shadow p-5">
-        <h3 class="font-semibold mb-4 text-slate-800">Skills</h3>
-        {% if skills %}
-        <table class="w-full text-sm">
-            <thead class="text-left text-[11px] uppercase tracking-wide text-slate-500 cc-mono">
-                <tr class="border-b">
-                    <th class="py-1.5 pr-2">Скилл</th>
-                    <th class="py-1.5 pr-2">Источник</th>
-                    <th class="py-1.5 pr-2 text-right">Машины</th>
-                    <th class="py-1.5 pr-2 text-right">Версии</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for s in skills %}
-                <tr class="border-b last:border-0 {% if s.is_divergent %}bg-red-50{% endif %}">
-                    <td class="py-1.5 pr-2">
-                        <button
-                            class="text-left text-emerald-700 hover:underline cc-mono text-xs"
-                            hx-get="/_partials/skills-inventory/drill?kind=skill&name={{ s.name|urlencode }}&origin={{ s.origin }}{% if s.parent_plugin %}&parent_plugin={{ s.parent_plugin|urlencode }}{% endif %}"
-                            hx-target="next .cc-drill"
-                            hx-swap="innerHTML">
-                            {{ s.name }}
-                        </button>
-                        {% if s.is_divergent %}
-                        <span class="ml-1 cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-red-700 text-white">divergent</span>
-                        {% endif %}
-                    </td>
-                    <td class="py-1.5 pr-2 cc-mono text-[11px] text-slate-600">
-                        {% if s.parent_plugin %}{{ s.parent_plugin }}@{{ s.source_marketplace or "unknown" }}{% else %}<span class="text-slate-400">local</span>{% endif %}
-                    </td>
-                    <td class="py-1.5 pr-2 text-right cc-mono">{{ s.machines_total }}</td>
-                    <td class="py-1.5 pr-2 text-right cc-mono">{{ s.versions|length }}</td>
-                </tr>
-                <tr><td colspan="4" class="cc-drill text-[11px]"></td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p class="text-slate-400 text-sm">Пока ни одного skill baseline. Сделай <span class="cc-mono">ccguard sync</span> с агента.</p>
-        {% endif %}
-    </section>
+  {# ---------- SKILLS ---------- #}
+  <h2 class="text-lg text-white mb-3">Skills <span class="text-slate-500 text-sm">{{ skills_total }}</span></h2>
+  {% if skill_groups %}
+  {% set kind = 'skill' %}
+  <div class="space-y-3 mb-8">
+    {% for g in skill_groups %}
+    {% include "components/_artifact_group.html" with context %}
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="cc-card p-6 mb-8">
+    <p class="text-slate-400 text-sm">Пока ни одного skill baseline. Сделай <span class="cc-mono text-slate-300">ccguard sync</span> с агента.</p>
+  </div>
+  {% endif %}
 
-    {# --- Agents column --- #}
-    <section class="bg-white rounded-xl shadow p-5">
-        <h3 class="font-semibold mb-4 text-slate-800">Custom subagents</h3>
-        {% if agents %}
-        <table class="w-full text-sm">
-            <thead class="text-left text-[11px] uppercase tracking-wide text-slate-500 cc-mono">
-                <tr class="border-b">
-                    <th class="py-1.5 pr-2">Агент</th>
-                    <th class="py-1.5 pr-2">Источник</th>
-                    <th class="py-1.5 pr-2 text-right">Машины</th>
-                    <th class="py-1.5 pr-2 text-right">Версии</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for a in agents %}
-                <tr class="border-b last:border-0 {% if a.is_divergent %}bg-red-50{% endif %}">
-                    <td class="py-1.5 pr-2">
-                        <button
-                            class="text-left text-emerald-700 hover:underline cc-mono text-xs"
-                            hx-get="/_partials/skills-inventory/drill?kind=agent&name={{ a.name|urlencode }}&origin={{ a.origin }}{% if a.parent_plugin %}&parent_plugin={{ a.parent_plugin|urlencode }}{% endif %}"
-                            hx-target="next .cc-drill"
-                            hx-swap="innerHTML">
-                            {{ a.name }}
-                        </button>
-                        {% if a.is_divergent %}
-                        <span class="ml-1 cc-mono text-[10px] uppercase rounded px-1 py-0.5 ring-1 bg-red-700 text-white">divergent</span>
-                        {% endif %}
-                    </td>
-                    <td class="py-1.5 pr-2 cc-mono text-[11px] text-slate-600">
-                        {% if a.parent_plugin %}{{ a.parent_plugin }}@{{ a.source_marketplace or "unknown" }}{% else %}<span class="text-slate-400">local</span>{% endif %}
-                    </td>
-                    <td class="py-1.5 pr-2 text-right cc-mono">{{ a.machines_total }}</td>
-                    <td class="py-1.5 pr-2 text-right cc-mono">{{ a.versions|length }}</td>
-                </tr>
-                <tr><td colspan="4" class="cc-drill text-[11px]"></td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p class="text-slate-400 text-sm">Пока ни одного agent baseline.</p>
-        {% endif %}
-    </section>
+  {# ---------- AGENTS ---------- #}
+  <h2 class="text-lg text-white mb-3">Custom subagents <span class="text-slate-500 text-sm">{{ agents_total }}</span></h2>
+  {% if agent_groups %}
+  {% set kind = 'agent' %}
+  <div class="space-y-3">
+    {% for g in agent_groups %}
+    {% include "components/_artifact_group.html" with context %}
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="cc-card p-6">
+    <p class="text-slate-400 text-sm">Пока ни одного agent baseline.</p>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

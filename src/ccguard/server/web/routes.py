@@ -840,13 +840,58 @@ def skills_inventory_page(
     )
     skills = aggregate_skills(session)
     agents = aggregate_agents(session)
+
+    def _source_url(marketplace: str | None) -> str | None:
+        """Best-effort repo link from the marketplace id (no fabricated hosts)."""
+        if not marketplace:
+            return None
+        if marketplace.startswith(("http://", "https://")):
+            return marketplace
+        # owner/repo slug → GitHub. Anything else stays a plain provenance label.
+        if marketplace.count("/") == 1 and " " not in marketplace:
+            return f"https://github.com/{marketplace}"
+        return None
+
+    def _group(summaries: list) -> list[dict]:
+        groups: dict[tuple, dict] = {}
+        for s in summaries:
+            if s.parent_plugin:
+                key = (s.parent_plugin, s.source_marketplace)
+                label = f"{s.parent_plugin}@{s.source_marketplace or 'unknown'}"
+                g = groups.get(key)
+                if g is None:
+                    g = groups[key] = {
+                        "label": label, "plugin": s.parent_plugin,
+                        "marketplace": s.source_marketplace,
+                        "url": _source_url(s.source_marketplace),
+                        "is_local": False, "items": [], "divergent": 0,
+                    }
+            else:
+                key = ("__local__", None)
+                g = groups.get(key)
+                if g is None:
+                    g = groups[key] = {
+                        "label": "локальные (вне маркетплейса)", "plugin": None,
+                        "marketplace": None, "url": None,
+                        "is_local": True, "items": [], "divergent": 0,
+                    }
+            g["items"].append(s)
+            if s.is_divergent:
+                g["divergent"] += 1
+        out = sorted(groups.values(), key=lambda g: (g["is_local"], -len(g["items"]), g["label"]))
+        for g in out:
+            g["count"] = len(g["items"])
+        return out
+
     return templates.TemplateResponse(
         request,
         "skills_inventory.html",
         {
             "user": user,
-            "skills": skills,
-            "agents": agents,
+            "skill_groups": _group(skills),
+            "agent_groups": _group(agents),
+            "skills_total": len(skills),
+            "agents_total": len(agents),
             "skills_divergent_count": sum(1 for s in skills if s.is_divergent),
             "agents_divergent_count": sum(1 for a in agents if a.is_divergent),
             "csrf_token": _csrf_for(request),

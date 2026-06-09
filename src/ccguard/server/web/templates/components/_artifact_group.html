@@ -1,0 +1,48 @@
+{# One source group of fleet artifacts (skills or agents).
+   Inputs: g (dict: label, url, is_local, count, divergent, items[ArtifactSummary]),
+           kind ('skill'|'agent') for the drill hx-get.
+   Bracket access on g[...] avoids Jinja's dict-method collision (g.items). #}
+<section class="cc-card p-0 overflow-hidden">
+  <div class="flex items-center gap-3 px-5 py-3.5 border-b border-white/10">
+    {% if g['is_local'] %}
+      <span class="srcchip" style="color:#a9b2c0;background:#ffffff0d;border-color:#ffffff24">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+        {{ g['label'] }}
+      </span>
+    {% elif g['url'] %}
+      <a href="{{ g['url'] }}" target="_blank" rel="noopener noreferrer" class="srcchip">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.9 18.3 5.2 18.3 5.2c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5Z"/></svg>
+        {{ g['label'] }}
+        <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.6"><path d="M7 17 17 7M9 7h8v8"/></svg>
+      </a>
+    {% else %}
+      <span class="srcchip">
+        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>
+        {{ g['label'] }}
+      </span>
+    {% endif %}
+    <span class="cc-mono text-[11px] text-slate-500">{{ g['count'] }} арт.</span>
+    {% if g['divergent'] %}<span class="divbadge ml-auto">{{ g['divergent'] }} divergent</span>{% endif %}
+  </div>
+
+  <div>
+    {% for s in g['items'] %}
+    <div class="artrow px-5 py-3">
+      <div class="flex items-center gap-2 flex-wrap">
+        <button class="artname cc-mono text-left"
+                hx-get="/_partials/skills-inventory/drill?kind={{ kind }}&name={{ s.name|urlencode }}&origin={{ s.origin }}{% if s.parent_plugin %}&parent_plugin={{ s.parent_plugin|urlencode }}{% endif %}"
+                hx-target="next .cc-drill" hx-swap="innerHTML">{{ s.name }}</button>
+        {% if s.is_divergent %}<span class="divbadge">divergent</span>{% endif %}
+        <span class="ml-auto cc-mono text-[10px] text-slate-500">{{ s.machines_total }} маш</span>
+      </div>
+      <div class="mt-2 flex flex-wrap gap-1.5 items-center">
+        <span class="cc-mono text-[9px] uppercase tracking-wide text-slate-600">версии</span>
+        {% for h, n in s.versions.items() %}
+        <span class="verchip {% if s.is_divergent %}div{% endif %}" title="hash {{ h }} · {{ n }} маш.">#{{ h[:8] }} · {{ n }}</span>
+        {% endfor %}
+      </div>
+      <div class="cc-drill text-[11px] mt-2"></div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
