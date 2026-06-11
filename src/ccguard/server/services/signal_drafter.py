@@ -28,6 +28,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+import httpx
 from sqlalchemy import func
 from sqlmodel import Session, select
 
@@ -228,3 +229,100 @@ class AnthropicSignalDrafter:
             if getattr(block, "type", None) == "text":
                 return block.text  # type: ignore[no-any-return]
         return ""
+
+
+# --- Self-hosted Ollama implementation (P3.1 — the on-prem default) --------
+
+_OLLAMA_DEFAULT_ENDPOINT = "http://localhost:11434"
+_OLLAMA_DEFAULT_MODEL = "qwen2.5:7b-instruct"
+
+
+class OllamaSignalDrafter:
+    """Self-hosted Ollama drafter — the DEFAULT on-prem backend (P3.1).
+
+    Implements :class:`SignalDrafterProtocol` against Ollama's ``/api/generate``,
+    mirroring the proven agent-side LlamaGuard client
+    (``prompt_injection_engine._llama_guard_scan``): a reused
+    :class:`httpx.Client`, ``stream=false``, ``temperature=0``, and explicit
+    model-missing detection (404 OR a 200 ``{"error": "...not found"}`` body).
+    Reuses the shared ``_SYSTEM_PROMPT`` + few-shot so drafts match the catalog
+    schema regardless of which backend produced them.
+
+    Unlike the agent PI path (fail-open → ``None``), the drafter fails LOUD:
+    any unreachable/empty/model-missing condition raises :class:`DrafterError`,
+    so ``draft_signal_from_text`` skips the item (discovery isolates per-item
+    errors) instead of persisting a junk proposal.
+    """
+
+    def __init__(
+        self,
+        endpoint: str = _OLLAMA_DEFAULT_ENDPOINT,
+        model: str = _OLLAMA_DEFAULT_MODEL,
+        max_tokens: int = 512,
+        timeout: float = 60.0,
+    ) -> None:
+        self._endpoint = endpoint.rstrip("/")
+        self._model = model
+        self._max_tokens = max_tokens
+        self._timeout = timeout
+        self._client: httpx.Client | None = None
+
+    def draft(self, threat_text: str) -> str:
+        user_msg = (
+            f"{_few_shot_examples()}\n\n"
+            f"Draft ONE signal as strict JSON for this threat-intel text:\n"
+            f'"""\n{threat_text}\n"""'
+        )
+        payload = {
+            "model": self._model,
+            "system": _SYSTEM_PROMPT,
+            "prompt": user_msg,
+            "stream": False,
+            "options": {"temperature": 0.0, "num_predict": self._max_tokens},
+        }
+        if self._client is None:
+            self._client = httpx.Client(timeout=self._timeout)
+        try:
+            resp = self._client.post(
+                f"{self._endpoint}/api/generate", json=payload, timeout=self._timeout
+            )
+        except (httpx.HTTPError, httpx.TimeoutException) as exc:
+            raise DrafterError(f"Ollama unreachable at {self._endpoint}: {exc}") from exc
+
+        if resp.status_code == 404:
+            raise DrafterError(f"Ollama model '{self._model}' not loaded (404)")
+        if resp.status_code != 200:
+            raise DrafterError(f"Ollama returned HTTP {resp.status_code}")
+
+        try:
+            body = resp.json()
+        except (ValueError, TypeError) as exc:
+            raise DrafterError(f"Ollama response is not JSON: {exc}") from exc
+        if not isinstance(body, dict):
+            raise DrafterError("Ollama response is not a JSON object")
+
+        err = body.get("error")
+        if isinstance(err, str) and (
+            "not found" in err.lower() or ("model" in err.lower() and "not" in err.lower())
+        ):
+            raise DrafterError(f"Ollama model '{self._model}' not loaded: {err}")
+
+        text = body.get("response")
+        if not isinstance(text, str) or not text.strip():
+            raise DrafterError("Ollama returned an empty response")
+        return text
+
+    def preflight(self) -> bool:
+        """Best-effort reachability + model-loaded check (used at startup, P3.2).
+
+        Returns True only if a trivial generate succeeds; any unreachable or
+        model-missing condition returns False (never raises) so the caller can
+        fall back / surface a banner.
+        """
+        try:
+            self.draft("preflight")
+        except DrafterError:
+            return False
+        except Exception:  # noqa: BLE001 — preflight must never raise
+            return False
+        return True
