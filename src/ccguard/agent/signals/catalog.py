@@ -59,6 +59,40 @@ CATALOG: tuple[Signal, ...] = (
         _p(r"\b(curl|wget|nc|ncat|scp|sftp)\b"),
         "Outbound transfer tool invoked",
     ),
+    # --- P1: egress as ACTION-category (host-agnostic) -----------------------
+    # Exfil detection must not depend on a host allowlist. These fire on the
+    # outbound PRIMITIVE regardless of destination; severity comes from the
+    # cred->egress correlation, so a bare tag is informational, not a finding.
+    # All resolve to the exfiltration stage via the existing ``egress.`` prefix
+    # rule in chain_constants — correlation is untouched.
+    Signal(
+        "egress.http_client",
+        "T1041",
+        _p(
+            r"\b(requests\.(get|post|put|patch|delete|request)"
+            r"|httpx\.(get|post|put|patch|delete)|urllib\.request|urllib2\."
+            r"|http\.client|aiohttp|socket\.(socket|connect)"
+            r"|net::http|net/http"
+            r"|invoke-webrequest|invoke-restmethod|\bhttpie\b|\bxh\b|axios|fetch\("
+            r"|\bhttp\s+(?:get|post|put|patch|delete|head|options)\b)"
+        ),
+        "Ad-hoc HTTP client egress (python/node/ruby/powershell/httpie) — host-agnostic",
+    ),
+    Signal(
+        "egress.file_transfer",
+        "T1048",
+        _p(
+            r"\b(rclone\s+(copy|sync|move)|rsync\s+\S+.*\s\S+:"
+            r"|\blftp\b|\btftp\b|\bftp\s+-?\w*\s)"
+        ),
+        "Bulk file-transfer egress (rclone/rsync-remote/ftp)",
+    ),
+    Signal(
+        "egress.cloud_cli",
+        "T1567.002",
+        _p(r"\b(gh\s+gist\s+create|gh\s+release\s+upload|b2\s+upload-file|doctl\s+\S+\s+upload)\b"),
+        "Cloud-CLI upload egress (gh gist/release, b2)",
+    ),
     Signal(
         "exec.pipe_to_shell",
         "T1059.004",
