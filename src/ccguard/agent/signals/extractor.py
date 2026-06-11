@@ -108,6 +108,20 @@ def _external_content_signals(tool_name: str, tool_input: dict[str, Any]) -> lis
     return []
 
 
+# P1: tools that make an outbound request (data can leave via URL/query/body).
+_NET_TOOLS = frozenset({"WebFetch"})
+
+
+def _tool_gated_egress(tool_name: str, tool_input: dict[str, Any]) -> list[str]:
+    """WebFetch is an outbound request — tag egress so the cred->egress
+    correlation sees it. WebSearch is excluded (no caller-controlled
+    destination). Host-agnostic, like the catalog egress.* signals.
+    """
+    if tool_name in _NET_TOOLS:
+        return ["egress.http_client"]
+    return []
+
+
 def _is_hidden_path(file_path: str) -> bool:
     """True if the write target is a hidden or temp/unusual location.
 
@@ -239,6 +253,7 @@ def extract_signals(
         # survive even when the normalized text is empty (e.g. WebFetch).
         out = _write_signals(tool_name, tool_input)
         out.extend(_external_content_signals(tool_name, tool_input))
+        out.extend(_tool_gated_egress(tool_name, tool_input))
         out.extend(_destructive_signals(tool_name, tool_input))
         text = _normalized_text(tool_name, tool_input)
         if text.strip():

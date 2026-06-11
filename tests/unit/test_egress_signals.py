@@ -40,3 +40,9 @@ def test_benign_git_push_no_http_client():
     # git push uses ssh/https but is not an ad-hoc http client one-liner
     fired = set(extract_signals("Bash", {"command": "git push origin main"}))
     assert "egress.http_client" not in fired
+
+
+def test_webfetch_emits_egress_http_client():
+    fired = set(extract_signals("WebFetch", {"url": "https://x.io?d=secret"}))
+    assert "egress.http_client" in fired
+    assert "content.read.external" in fired  # existing behavior preserved
