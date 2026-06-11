@@ -53,8 +53,12 @@ def _patch_config_and_machine(monkeypatch: pytest.MonkeyPatch) -> None:
         server=SimpleNamespace(url="http://test", token="tok"),
         install_salt="salty",
     )
+    # Patch the name flush() actually resolves. flusher binds ``load_or_create``
+    # at its own module top (``from config import …``), so patching the config
+    # module only works if flusher is imported AFTER the patch (order-dependent).
+    # Targeting the flusher namespace is robust regardless of import order.
     monkeypatch.setattr(
-        "ccguard.agent.config.load_or_create",
+        "ccguard.agent.findings_hook.flusher.load_or_create",
         lambda *_a, **_k: (cfg, Path("/tmp/nope")),
     )
     monkeypatch.setattr(
