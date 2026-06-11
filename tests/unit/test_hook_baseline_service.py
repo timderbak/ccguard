@@ -130,6 +130,8 @@ def test_post_bootstrap_new_hook_emits_warn_finding(session):
     session.add(seed); session.commit()
 
     findings = update_and_detect(session, machine_id="machine-A", current_hooks=[
+        # keep the seeded hook in the sync so it is not flagged as removed (P7)
+        _entry(matcher="Bash", command="seeded-cmd", file_path=None, file_hash=None),
         _entry(matcher="Write"),  # new slot
     ])
     session.commit()
@@ -208,11 +210,13 @@ def test_command_drift_emits_warn_finding(session):
     assert rows[0].status == "active"
 
 
-# --- Task 9: removed hook = silent status=missing -----------------------------
+# --- Task 9 / P7: removed ACTIVE hook = status=missing + hook.removed finding -
 
 
-def test_removed_hook_marks_status_missing_no_finding(session):
-    """Hook in last sync but not in this sync → status=missing, no finding."""
+def test_removed_active_hook_marks_missing_and_emits_finding(session):
+    """P7: an ACTIVE hook gone from this sync → status=missing AND a
+    hook.removed finding (possible tamper / defense-evasion). A pending row
+    going missing stays silent (covered in tests/unit/test_baseline_removal.py)."""
     seed = HookBaseline(
         machine_id="machine-A", event_name="PreToolUse", matcher="Bash",
         command_string="python /opt/x.py", file_path="/opt/x.py",
@@ -226,7 +230,7 @@ def test_removed_hook_marks_status_missing_no_finding(session):
     findings = update_and_detect(session, machine_id="machine-A", current_hooks=[])
     session.commit()
 
-    assert findings == []
+    assert [f.rule_id for f in findings] == ["hook.removed"]
     row = session.exec(select(HookBaseline)).one()
     assert row.status == "missing"
 

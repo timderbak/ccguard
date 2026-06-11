@@ -216,13 +216,29 @@ def update_and_detect(
         existing.last_seen_at = now
         session.add(existing)
 
-    # Mark unseen rows as missing (silent v1).
+    # Mark unseen rows as missing. P7: a CONFIRMED skill disappearing is a
+    # supply-chain removal worth surfacing; a pending row stays silent.
     all_rows = session.exec(
         select(SkillBaseline).where(SkillBaseline.machine_id == machine_id)
     ).all()
     for r in all_rows:
         slot = (r.name, r.origin, r.parent_plugin or "")
         if slot not in seen_slots and r.status not in ("missing", "removed"):
+            if r.status in ("active", "accepted_drift"):
+                findings.append(
+                    _make_finding(
+                        machine_id=machine_id,
+                        inventory_id=inventory_id,
+                        rule_id="skill.removed",
+                        severity="warn",
+                        title="Принятый skill удалён",
+                        description=(
+                            f"Skill `{r.name}` был принят в baseline, но исчез из "
+                            "конфигурации. Removal зафиксирован (supply-chain артефакт удалён)."
+                        ),
+                        payload={"name": r.name, "origin": r.origin},
+                    )
+                )
             r.status = "missing"
             session.add(r)
 

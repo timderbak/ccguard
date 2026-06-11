@@ -285,13 +285,33 @@ def update_and_detect(
         continue
 
     # Mark any baseline rows that were NOT seen in this sync as "missing".
-    # (Removal is silent in v1; we keep the row so admin can see history.)
+    # We keep the row so admin can see history. P7: if a CONFIRMED
+    # (active/accepted_drift) hook disappears, that is a tamper signal — a
+    # security/EDR hook may have been removed to go dark — so emit a finding.
+    # A pending row (never confirmed) going missing stays silent.
     all_rows = session.exec(
         select(HookBaseline).where(HookBaseline.machine_id == machine_id)
     ).all()
     for r in all_rows:
         slot_key = (r.event_name, r.matcher, r.command_string)
         if slot_key not in seen_slot_keys and r.status != "missing" and r.status != "removed":
+            if r.status in ("active", "accepted_drift"):
+                findings.append(
+                    _make_finding(
+                        machine_id=machine_id,
+                        inventory_id=inventory_id,
+                        rule_id="hook.removed",
+                        severity="warn",
+                        title="Принятый hook удалён",
+                        description=(
+                            f"Hook `{r.event_name}`/`{r.matcher or '*'}` был принят в "
+                            "baseline, но исчез из конфигурации — возможно отключение "
+                            "защитного хука (tamper / defense-evasion). Если ты удалял "
+                            "сам — приём не требуется."
+                        ),
+                        payload={"event": r.event_name, "matcher": r.matcher},
+                    )
+                )
             r.status = "missing"
             session.add(r)
 

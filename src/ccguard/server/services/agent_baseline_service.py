@@ -6,7 +6,8 @@ file_hash. Severity matrix:
 
   * new (after bootstrap)                            → warn  (agent.new)
   * bootstrap (no active rows on machine)            → silent
-  * removed                                          → silent (missing)
+  * removed, was pending (never accepted)            → silent (missing)
+  * removed, was active/accepted_drift (P7)          → warn  (agent.removed)
   * drift, tools contain Bash/Write/Edit/NotebookEdit → block (agent.rug_pull.dangerous)
   * drift, only safe tools (or no tools)             → warn  (agent.drift.text)
 
@@ -240,6 +241,23 @@ def update_and_detect(
     for r in all_rows:
         slot = (r.name, r.origin, r.parent_plugin or "")
         if slot not in seen_slots and r.status not in ("missing", "removed"):
+            # P7: a CONFIRMED subagent disappearing is a supply-chain removal —
+            # emit a finding for visibility. Pending (never accepted) → silent.
+            if r.status in ("active", "accepted_drift"):
+                findings.append(
+                    _make_finding(
+                        machine_id=machine_id,
+                        inventory_id=inventory_id,
+                        rule_id="agent.removed",
+                        severity="warn",
+                        title="Принятый subagent удалён",
+                        description=(
+                            f"Subagent `{r.name}` был принят в baseline, но исчез из "
+                            "конфигурации. Removal зафиксирован (supply-chain артефакт удалён)."
+                        ),
+                        payload={"name": r.name, "origin": r.origin},
+                    )
+                )
             r.status = "missing"
             session.add(r)
 
