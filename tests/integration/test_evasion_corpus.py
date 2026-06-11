@@ -80,9 +80,9 @@ def test_password_manager_cli_cred_read_perceived():
     assert any(s.startswith("cred.") for s in fired)
 
 
-@pytest.mark.xfail(reason="P4: MCP tool-result is not tagged as external content", strict=True)
 def test_mcp_tool_result_is_external_content():
-    # MCP tool calls arrive as mcp__<server>__<tool>; their results are not
-    # observable as external content from the hook payload yet.
+    # P4: MCP tool calls arrive as mcp__<server>__<tool>; their result is
+    # untrusted external content (the indirect-injection vector) — now tagged,
+    # so the initial-access stage of an injection->action->exfil chain starts.
     fired = set(extract_signals("mcp__untrusted__fetch", {"url": "https://e.io"}))
     assert "content.read.external" in fired

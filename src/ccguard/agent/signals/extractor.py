@@ -93,14 +93,19 @@ def _is_untrusted_read_path(file_path: str) -> bool:
 
 
 def _external_content_signals(tool_name: str, tool_input: dict[str, Any]) -> list[str]:
-    """Tool-gated external-content signal (ТЗ-03).
+    """Tool-gated external-content signal (ТЗ-03 / P4).
 
     WebFetch/WebSearch results are always external. A Read is external only when
-    its ``file_path`` is an untrusted location. MCP results from arbitrary
-    servers are NOT covered here — their externalness is not observable from the
-    hook payload (TODO: a future ТЗ once server provenance is available).
+    its ``file_path`` is an untrusted location. P4: a tool named
+    ``mcp__<server>__<tool>`` is a call to a THIRD-PARTY MCP server whose RESULT
+    is untrusted external content — the indirect-prompt-injection vector this
+    product exists to cover. All MCP servers are untrusted by default, so every
+    MCP tool result is tagged (→ initial-access stage); a lone tag is
+    informational — the correlation chain decides severity.
     """
     if tool_name in _EXTERNAL_CONTENT_TOOLS:
+        return ["content.read.external"]
+    if isinstance(tool_name, str) and tool_name.startswith("mcp__"):
         return ["content.read.external"]
     if tool_name == "Read":
         fp = tool_input.get("file_path")
