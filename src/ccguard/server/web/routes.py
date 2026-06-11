@@ -221,6 +221,10 @@ def coverage_page(
     techs = session.exec(select(Technique)).all()
     covered_ids = {t.technique_id for t in coverage_service.techniques_covered(session)}
     by_control = coverage_service.coverage_by_control_type(session)
+    # P6: detection REALITY per technique — detecting / dark / armed — so a
+    # registered-but-never-fired detector reads honestly instead of a blind
+    # green badge. Keyed by technique_id; absent for indicator-only techniques.
+    detection_status = coverage_service.technique_detection_status(session)
 
     # mechanism index: technique_id -> {detectors, indicators, controls}
     mech: dict[str, dict] = {}
@@ -279,6 +283,7 @@ def coverage_page(
             "mech": " · ".join(parts),
             "controls": controls,
             "klass": _klass(controls),
+            "detection_status": detection_status.get(t.technique_id),
         }
 
     # group in-scope techniques into kill-chain stages

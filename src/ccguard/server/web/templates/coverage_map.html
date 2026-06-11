@@ -79,6 +79,9 @@
       <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#c45cff"></span>детект</span>
       <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm" style="background:#5aa9ff"></span>ограничение</span>
       <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 rounded-sm border border-dashed" style="border-color:#ff5470"></span>дыра</span>
+      <span class="text-slate-600">·</span>
+      <span class="flex items-center gap-1" title="детектор реально срабатывал за 30 дней"><span class="text-emerald-400">●</span>ловит</span>
+      <span class="flex items-center gap-1" title="зарегистрирован, но ни разу не срабатывал"><span class="text-slate-500">○</span>не&nbsp;стрелял</span>
     </div>
   </div>
 
@@ -107,6 +110,13 @@
             <div class="mt-1.5 flex flex-wrap gap-1">
               {% for c in t.controls %}<span class="ctag ct-{{ c|lower }}">{{ c }}</span>{% endfor %}
             </div>
+            {% if t.detection_status %}
+            <div class="mt-1 cc-mono text-[9px]">
+              {% if t.detection_status == 'detecting' %}<span class="text-emerald-400" title="детектор реально срабатывал за последние 30 дней">● ловит</span>
+              {% elif t.detection_status == 'dark' %}<span class="text-orange-400" title="детектор зарегистрирован, но давно не срабатывал — возможен регресс">◐ затих</span>
+              {% else %}<span class="text-slate-500" title="детектор зарегистрирован, но ни разу не срабатывал на этом флоте">○ не стрелял</span>{% endif %}
+            </div>
+            {% endif %}
             {% else %}
             <div class="cvt-mech">нет детекта</div>
             {% endif %}
