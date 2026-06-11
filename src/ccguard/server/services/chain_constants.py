@@ -18,11 +18,11 @@ Design choices:
 
 This is the ТЗ-08-faithful "event → signal → stage" path, encoded as data: each
 family is grounded in the representative technique whose ``tactic`` it inherits.
-NOTE: ``impact`` is mapped as of ТЗ-IMPACT (destructive ``impact.*`` signals).
-There is still intentionally NO mapping to ``defense-evasion`` /
-``command-and-control`` — the agent catalog emits no signal for those stages
-yet, so a scenario step on such a stage is "armed but waiting for a signal"
-(add the signal later → the scenario fires with zero engine change).
+NOTE: ``impact`` (ТЗ-IMPACT) and, as of P2, ``defense-evasion`` /
+``command-and-control`` / ``lateral-movement`` are ALL mapped — adding the
+catalog signals + these prefix entries revives each stage with zero
+chain_engine change (the data-driven promise). No endpoint kill-chain stage is
+structurally dead anymore.
 """
 from __future__ import annotations
 
@@ -68,6 +68,13 @@ _SIGNAL_STAGE_RULES: tuple[tuple[str, str], ...] = (
     # revives poison_to_destructive (its impact step now resolves), with NO
     # chain_engine change — the data-driven promise made concrete.
     ("impact.", "impact"),
+    # defense-evasion (P2): tamper with the EDR/security tooling, clear shell
+    # history / system logs (T1562.* / T1070.*).
+    ("defense.", "defense-evasion"),
+    # command-and-control (P2): reverse shells + outbound tunnels (T1071/T1572).
+    ("c2.", "command-and-control"),
+    # lateral-movement (P2): remote command execution to another host (T1021.*).
+    ("lateral.", "lateral-movement"),
 )
 
 

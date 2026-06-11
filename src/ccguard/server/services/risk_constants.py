@@ -84,4 +84,13 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "impact.delete": 5.0,
     "impact.db": 5.0,
     "impact.overwrite": 5.0,
+    # P2: revived kill-chain stages. Blinding the EDR and reverse shells are
+    # top-tier and almost never benign; remote-exec (ssh) is noisier on dev
+    # boxes so it leans on correlation rather than a high per-event weight.
+    "defense.disable_security": 5.0,
+    "defense.clear_history": 3.0,
+    "defense.clear_logs": 4.0,
+    "c2.reverse_shell": 5.0,
+    "c2.tunnel": 3.0,
+    "lateral.remote_exec": 2.0,
 }

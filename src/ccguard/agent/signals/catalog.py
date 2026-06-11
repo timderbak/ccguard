@@ -303,6 +303,66 @@ CATALOG: tuple[Signal, ...] = (
         _p(r"\.claude/(settings\.json|claude\.json|\.mcp\.json)\b|claude_desktop_config\.json"),
         "AI-agent config tamper — Claude settings / MCP config edit",
     ),
+    # --- P2: revive the 3 structurally-dead kill-chain stages -------------
+    # defense-evasion / command-and-control / lateral-movement had no catalog
+    # signal (so any chain step on them was dead). Content-regex signals; their
+    # prefixes are mapped in chain_constants — the stage resolves with zero
+    # engine change (the data-driven promise, same move as ТЗ-IMPACT).
+    Signal(
+        "defense.disable_security",
+        "T1562.001",
+        _p(
+            r"(--dangerously-skip-permissions|disableallhooks"
+            r"|\bccguard\b[^\n]*\b(uninstall|disable|remove)\b"
+            r"|\bufw\s+disable\b|\biptables\s+-f\b|\bsetenforce\s+0\b"
+            r"|spctl\s+--master-disable|csrutil\s+disable"
+            r"|systemctl\s+(stop|disable)\s+\S*(falcon|crowdstrike|defender|auditd|osquery))"
+        ),
+        "Disable security tooling / ccguard hook (impair defenses)",
+    ),
+    Signal(
+        "defense.clear_history",
+        "T1070.003",
+        _p(
+            r"(history\s+-c\b|\bunset\s+histfile\b|histsize\s*=\s*0"
+            r"|rm\b[^\n]*\.(bash|zsh)_history|>\s*~?/?\.(bash|zsh)_history)"
+        ),
+        "Shell-history clearing (indicator removal)",
+    ),
+    Signal(
+        "defense.clear_logs",
+        "T1070.002",
+        _p(
+            r"(journalctl\s+--vacuum|truncate\b[^\n]*/var/log"
+            r"|rm\b[^\n]*/var/log/|>\s*/var/log/)"
+        ),
+        "System-log clearing / truncation (indicator removal)",
+    ),
+    Signal(
+        "c2.reverse_shell",
+        "T1071.001",
+        _p(
+            r"(/dev/tcp/|/dev/udp/|\bnc\s+-\S*e\b|\bncat\b[^\n]*-e\b"
+            r"|mkfifo\b[^\n]*\|\s*n?cat?\b"
+            r"|socat\b[^\n]*exec|bash\s+-i\b[^\n]*>&|sh\s+-i\b[^\n]*>&)"
+        ),
+        "Reverse shell — interactive C2 channel",
+    ),
+    Signal(
+        "c2.tunnel",
+        "T1572",
+        _p(r"(\bngrok\b|cloudflared\s+tunnel|\bchisel\b|ssh\s+[^\n]*\s-r\b|localtunnel)"),
+        "Outbound tunnel / remote-access relay",
+    ),
+    Signal(
+        "lateral.remote_exec",
+        "T1021.004",
+        _p(
+            r"(ssh\s+([\w.-]+@)?[\w.-]+\s+['\"]?[\w/.-]+\s"
+            r"|\bpssh\b|\bpsexec\b|wmic\s+/node:|\bwinrs\s+-r)"
+        ),
+        "Remote command execution on another host (lateral movement)",
+    ),
     # --- Action signals (ТЗ-02 staging middle link) ----------------------
     # These are ACTION signals, not content-regex signals: emission is gated on
     # the tool being a write tool (Write/Edit/NotebookEdit) and decided by the
