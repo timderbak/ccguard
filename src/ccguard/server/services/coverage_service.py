@@ -19,6 +19,7 @@ excluded from gaps and totals so the map shows honest holes, not noise.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_
 from sqlmodel import Session, select
@@ -26,6 +27,7 @@ from sqlmodel import Session, select
 from ccguard.server.db.models import (
     Detector,
     DetectorTechniqueMapping,
+    FindingRecord,
     IndicatorTechniqueMapping,
     Technique,
     TechniqueCrosswalk,
@@ -34,9 +36,112 @@ from ccguard.server.db.models import (
 
 log = logging.getLogger(__name__)
 
+# A detector counts as actively "detecting" only if it emitted a finding within
+# this window; older-than-window → "dark" (regressed/quiet), never-fired →
+# "armed". This is the fix for the decoration where a green "covered" badge
+# never checked whether the bound detector actually fires.
+_DETECTING_WINDOW_DAYS = 30
+
 # Auto-mappings created by the remap heuristic are deliberately low-confidence
 # and tagged so they are distinguishable from vetted seed links (and reviewable).
 _AUTO_CONFIDENCE = 0.3
+
+
+# --------------------------------------------------------------------------- #
+# Detection REALITY — does a "covered" detector actually fire? (P6)            #
+# --------------------------------------------------------------------------- #
+def _last_fired_by_rule(session: Session) -> dict[str, datetime]:
+    """Latest ``discovered_at`` per finding rule_id.
+
+    Selects the TYPED ``discovered_at`` column (so SQLAlchemy returns real
+    datetimes; ``func.max`` would lose the type and hand back a string on
+    SQLite) and reduces to a max per rule_id in Python.
+    """
+    rows = session.exec(
+        select(FindingRecord.rule_id, FindingRecord.discovered_at)
+    ).all()
+    out: dict[str, datetime] = {}
+    for rid, ts in rows:
+        if not rid or ts is None:
+            continue
+        ts = ts if ts.tzinfo else ts.replace(tzinfo=UTC)
+        if rid not in out or ts > out[rid]:
+            out[rid] = ts
+    return out
+
+
+def detector_liveness(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    window_days: int = _DETECTING_WINDOW_DAYS,
+) -> dict[str, dict]:
+    """Real firing status per registered detector, from FindingRecord (P6).
+
+    The coverage map's "covered" boolean only asks whether a detector is
+    REGISTERED, never whether it FIRES — so a regressed/dark detector keeps a
+    green badge forever. This bridges Detector → FindingRecord (via the
+    detector's ``rule_ids``) so the UI can show detection reality, not just
+    editorial intent.
+
+    Returns ``{detector_key: {"last_fired": datetime|None, "status": str}}``:
+      * ``"detecting"`` — a matching finding fired within ``window_days``
+      * ``"dark"``      — fired before, but not within the window (regressed)
+      * ``"armed"``     — registered + bound but NEVER fired
+    """
+    now = now or datetime.now(UTC)
+    cutoff = now - timedelta(days=window_days)
+    last_by_rule = _last_fired_by_rule(session)
+    out: dict[str, dict] = {}
+    for det in session.exec(select(Detector)).all():
+        rids = [r.strip() for r in (det.rule_ids or "").split(",") if r.strip()]
+        last: datetime | None = None
+        for frid, ts in last_by_rule.items():
+            if any(frid == rid or frid.startswith(rid) for rid in rids):
+                if last is None or ts > last:
+                    last = ts
+        if last is None:
+            status = "armed"
+        else:
+            status = "detecting" if last >= cutoff else "dark"
+        out[det.detector_key] = {"last_fired": last, "status": status}
+    return out
+
+
+def technique_detection_status(
+    session: Session,
+    *,
+    now: datetime | None = None,
+    window_days: int = _DETECTING_WINDOW_DAYS,
+) -> dict[str, str]:
+    """Per-technique detection reality, rolled up from bound detectors (P6).
+
+    A technique is ``"detecting"`` if ANY bound detector is detecting, else
+    ``"dark"`` if any is dark, else ``"armed"`` (a detector is bound but none
+    has ever fired). Techniques with no bound detector are absent (they are
+    indicator-only or uncovered — capability, not a firing detector).
+    """
+    liveness = detector_liveness(session, now=now, window_days=window_days)
+    rows = session.exec(
+        select(
+            DetectorTechniqueMapping.technique_id,
+            DetectorTechniqueMapping.detector_key,
+        )
+    ).all()
+    by_tech: dict[str, set[str]] = {}
+    for tech_id, dkey in rows:
+        st = liveness.get(dkey, {}).get("status")
+        if st:
+            by_tech.setdefault(tech_id, set()).add(st)
+    out: dict[str, str] = {}
+    for tech_id, statuses in by_tech.items():
+        if "detecting" in statuses:
+            out[tech_id] = "detecting"
+        elif "dark" in statuses:
+            out[tech_id] = "dark"
+        else:
+            out[tech_id] = "armed"
+    return out
 
 
 # --------------------------------------------------------------------------- #
