@@ -30,6 +30,13 @@ class ServerConfig(BaseModel):
     session_secret: str = "change-me-in-prod"
     cookie_secure: bool = False
     anthropic_api_key: str | None = None
+    # P3.2: LLM backend for the signal drafter. Self-hosted Ollama is the
+    # on-prem default so the enrichment loop runs without a paid API key;
+    # Anthropic is an optional fallback (used when provider='anthropic', or
+    # when Ollama is unreachable AND a key is present).
+    llm_provider: str = "ollama"  # 'ollama' | 'anthropic'
+    ollama_endpoint: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:7b-instruct"
 
     @property
     def llm_enabled_at_startup(self) -> bool:
@@ -63,6 +70,9 @@ class ServerConfig(BaseModel):
             session_secret=os.environ.get("CCGUARD_SESSION_SECRET", "change-me-in-prod"),
             cookie_secure=os.environ.get("CCGUARD_COOKIE_SECURE", "false").lower() == "true",
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY") or None,
+            llm_provider=os.environ.get("CCGUARD_LLM_PROVIDER", cls.model_fields["llm_provider"].default),
+            ollama_endpoint=os.environ.get("CCGUARD_LLM_ENDPOINT", cls.model_fields["ollama_endpoint"].default),
+            ollama_model=os.environ.get("CCGUARD_LLM_MODEL", cls.model_fields["ollama_model"].default),
         )
 
     def is_token_valid(self, token: str) -> bool:

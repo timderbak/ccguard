@@ -91,12 +91,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except Exception:  # noqa: BLE001 — scanner is optional at startup
             logger.exception("failed to initialize ScanService; scanner endpoints will 503")
             app.state.scan_service = None
-        try:
-            from ccguard.server.services.signal_drafter import AnthropicSignalDrafter
-            app.state.signal_drafter = AnthropicSignalDrafter(api_key=cfg.anthropic_api_key)
-        except Exception:  # noqa: BLE001 — drafter is optional at startup
-            logger.exception("failed to initialize SignalDrafter; LLM draft endpoint will 503")
-            app.state.signal_drafter = None
+    # P3.2: the signal drafter is INDEPENDENT of the scanner and defaults to the
+    # self-hosted Ollama backend, so the enrichment loop runs on-prem WITHOUT an
+    # API key. build_signal_drafter returns None only when no usable LLM backend
+    # exists (Ollama unreachable/model-missing AND no Anthropic key) — the
+    # discovery sweep then skips gracefully (the scheduler null-checks it).
+    try:
+        from ccguard.server.services.signal_drafter import build_signal_drafter
+        app.state.signal_drafter = build_signal_drafter(cfg)
+    except Exception:  # noqa: BLE001 — drafter is optional at startup
+        logger.exception("failed to build signal drafter; discovery sweep will skip")
+        app.state.signal_drafter = None
 
     # Trigger policy bootstrap from file if DB has no published policy yet.
     # Otherwise the web UI /policy route returns 503 until first agent sync.
@@ -206,8 +211,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     len(sensor_summary["errors"]),
                 )
                 # Rule Discovery sweep — once-per-day, gated by
-                # discovery.last_run_at. Requires app.state.signal_drafter
-                # (ANTHROPIC_API_KEY at startup); silently skip otherwise.
+                # discovery.last_run_at. Needs app.state.signal_drafter (the
+                # self-hosted Ollama default, or Anthropic fallback); if no
+                # usable LLM backend was found at startup it is None → skip.
                 drafter = getattr(app.state, "signal_drafter", None)
                 if drafter is not None:
                     from datetime import UTC as _UTC

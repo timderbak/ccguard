@@ -313,16 +313,67 @@ class OllamaSignalDrafter:
         return text
 
     def preflight(self) -> bool:
-        """Best-effort reachability + model-loaded check (used at startup, P3.2).
+        """Lightweight reachability + model-present check (startup, P3.2).
 
-        Returns True only if a trivial generate succeeds; any unreachable or
-        model-missing condition returns False (never raises) so the caller can
-        fall back / surface a banner.
+        GETs ``/api/tags`` (no generation cost) and checks the configured model
+        is pulled. Never raises — any unreachable / model-missing condition
+        returns False so the factory can fall back to Anthropic or surface a
+        banner.
         """
+        if self._client is None:
+            self._client = httpx.Client(timeout=self._timeout)
         try:
-            self.draft("preflight")
-        except DrafterError:
+            resp = self._client.get(f"{self._endpoint}/api/tags", timeout=5.0)
+        except (httpx.HTTPError, httpx.TimeoutException):
             return False
-        except Exception:  # noqa: BLE001 — preflight must never raise
+        if resp.status_code != 200:
             return False
-        return True
+        try:
+            body = resp.json()
+        except (ValueError, TypeError):
+            return False
+        if not isinstance(body, dict):
+            return False
+        base = self._model.split(":", 1)[0]
+        names = [m.get("name", "") for m in body.get("models", []) if isinstance(m, dict)]
+        return any(n == self._model or n.split(":", 1)[0] == base for n in names)
+
+
+def build_signal_drafter(cfg: object) -> SignalDrafterProtocol | None:
+    """Pick the signal-drafter backend (P3.2).
+
+    Self-hosted Ollama is the DEFAULT so the enrichment loop runs on-prem with
+    no API key. Anthropic is used when ``llm_provider='anthropic'`` (and a key
+    is present), or as a fallback when Ollama is unreachable AND a key is
+    present. Returns ``None`` when no usable backend exists — the discovery
+    sweep then skips (the scheduler already null-checks the drafter).
+    """
+    provider = (getattr(cfg, "llm_provider", "ollama") or "ollama").lower()
+    api_key = getattr(cfg, "anthropic_api_key", None)
+
+    if provider == "anthropic":
+        if api_key:
+            return AnthropicSignalDrafter(api_key=api_key)
+        log.warning("llm_provider=anthropic but no ANTHROPIC_API_KEY — signal drafter disabled")
+        return None
+
+    endpoint = getattr(cfg, "ollama_endpoint", _OLLAMA_DEFAULT_ENDPOINT)
+    model = getattr(cfg, "ollama_model", _OLLAMA_DEFAULT_MODEL)
+    ollama = OllamaSignalDrafter(endpoint=endpoint, model=model)
+    if ollama.preflight():
+        return ollama
+    if api_key:
+        log.warning(
+            "Ollama at %s unreachable or model '%s' not pulled — falling back to Anthropic",
+            endpoint,
+            model,
+        )
+        return AnthropicSignalDrafter(api_key=api_key)
+    log.warning(
+        "Ollama at %s unreachable or model '%s' not pulled and no ANTHROPIC_API_KEY — "
+        "signal drafter disabled (run `ollama pull %s`)",
+        endpoint,
+        model,
+        model,
+    )
+    return None
