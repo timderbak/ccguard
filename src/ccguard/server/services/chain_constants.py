@@ -51,6 +51,9 @@ _SIGNAL_STAGE_RULES: tuple[tuple[str, str], ...] = (
     # but classified for completeness so it never mis-buckets.
     ("discovery.network_scan", "discovery"),
     ("discovery.recon", "discovery"),
+    # P2: generic discovery fallback (cloud/account enum). Placed AFTER the
+    # specific discovery.secret_grep (credential-access) above so that one wins.
+    ("discovery.", "discovery"),
     # exfiltration: any egress channel (T1567 / T1048 / T1041 / AML.T0024).
     ("cloud.exfil.", "exfiltration"),
     ("egress.", "exfiltration"),

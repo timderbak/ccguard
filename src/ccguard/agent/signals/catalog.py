@@ -387,6 +387,50 @@ CATALOG: tuple[Signal, ...] = (
         ),
         "Remote command execution on another host (lateral movement)",
     ),
+    # --- P2: catalog width pass — cred / discovery / persistence / exec ---
+    Signal(
+        "cred.read.cloud_session",
+        "T1552.001",
+        _p(
+            r"(\.aws/sso/cache|\.config/gh/hosts|\.config/containers/auth\.json"
+            r"|/var/run/secrets/kubernetes\.io/serviceaccount"
+            r"|gcloud\s+auth\s+print-(access|identity)-token"
+            r"|kubectl\s+config\s+view\s+--raw)"
+        ),
+        "Access to cloud/CI session tokens (AWS SSO cache, gh hosts, k8s SA token, gcloud token)",
+    ),
+    Signal(
+        "discovery.cloud_enum",
+        "T1526",
+        _p(
+            r"\b(aws\s+(iam|ec2|s3api)\s+(list|describe)"
+            r"|gcloud\s+(projects|compute|iam)\s+list"
+            r"|az\s+(account|vm|role)\s+list"
+            r"|kubectl\s+get\s+(pods|secrets|nodes)\b[^\n]*(--all-namespaces|\s-A\b))"
+        ),
+        "Cloud resource / IAM enumeration (recon)",
+    ),
+    Signal(
+        "discovery.account_enum",
+        "T1087",
+        _p(
+            r"(\bgetent\s+passwd\b|/etc/passwd\b|\bdscl\s+\.\s+-?list\s+/users"
+            r"|\bnet\s+user\b|\bnet\s+localgroup\b)"
+        ),
+        "Local account enumeration (/etc/passwd, getent, dscl, net user)",
+    ),
+    Signal(
+        "persist.ssh_authorized_keys",
+        "T1098.004",
+        _p(r"authorized_keys\b"),
+        "Modification of SSH authorized_keys — attacker key persistence",
+    ),
+    Signal(
+        "exec.powershell_encoded",
+        "T1059.001",
+        _p(r"\b(powershell|pwsh)(\.exe)?\b[^\n]*\s-e(nc|ncodedcommand)?\s+[a-z0-9+/=]{16,}"),
+        "PowerShell encoded command — obfuscated execution",
+    ),
     # --- Action signals (ТЗ-02 staging middle link) ----------------------
     # These are ACTION signals, not content-regex signals: emission is gated on
     # the tool being a write tool (Write/Edit/NotebookEdit) and decided by the
