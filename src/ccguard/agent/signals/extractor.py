@@ -17,6 +17,7 @@ from typing import Any
 
 from ccguard.agent.signals.catalog import ACTION_SIGNAL_IDS, CATALOG, Signal
 from ccguard.agent.signals.destructive import detect_destructive
+from ccguard.agent.signals.normalize import normalize_command
 
 # Tools whose tool_input carries a filesystem path we want to inspect.
 _PATH_TOOLS = frozenset({"Read", "Write", "Edit", "MultiEdit", "NotebookEdit"})
@@ -186,8 +187,10 @@ def _normalized_text(tool_name: str, tool_input: dict[str, Any]) -> str:
     """
     parts: list[str] = []
     cmd = tool_input.get("command")
-    if isinstance(cmd, str):
-        parts.append(cmd)
+    if isinstance(cmd, str) and cmd:
+        # De-obfuscate (decode base64/hex, resolve var-indirection, strip $IFS)
+        # so encoded payloads are matched on clean text (P1). Fail-open inside.
+        parts.append(normalize_command(cmd).text)
     if tool_name in _PATH_TOOLS:
         fp = tool_input.get("file_path")
         if isinstance(fp, str):
