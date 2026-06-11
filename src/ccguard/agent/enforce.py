@@ -24,6 +24,7 @@ from ccguard.agent.network_utils import detect_ip_as_host, is_private_ip
 from ccguard.agent.prompt_injection_engine import ScanResult
 from ccguard.agent.prompt_injection_engine import scan as pi_scan
 from ccguard.agent.signals.destructive import detect_destructive
+from ccguard.agent.signals.normalize import normalize_command
 from ccguard.schemas import (
     AuditEntry,
     EnforceDecision,
@@ -136,6 +137,14 @@ def _host_match(host: str, pattern: str) -> bool:
 def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
     pol = policy.commands
 
+    # P1: de-obfuscate ONCE. Deny-path matchers (dangerous / destructive /
+    # network / always_deny / denylist) search the normalized text so
+    # base64/$IFS/var-indirection bypasses are closed. The allowlist check
+    # deliberately stays on the RAW command — normalization must never loosen
+    # an allow rule. normalize_command is fail-open (returns raw on any error).
+    norm = normalize_command(command)
+    search_text = command + "\n" + norm.text
+
     # P1 / Dangerous Bash Patterns: проверяем СНАЧАЛА — у этих правил есть
     # «почему опасно» и «что делать», и они должны побеждать always_deny /
     # denylist в reason'е (понятнее для пользователя).
@@ -146,7 +155,7 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
         compiled = _compile_one(rule.pattern)
         if compiled is None:
             continue
-        if not compiled.search(command):
+        if not compiled.search(search_text):
             continue
         rid = f"dangerous.{rule.id}"
         if rule.severity == "block":
@@ -168,7 +177,7 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
     # a hard block, to keep false positives off the enforce path). Either way the
     # rule_id starts with "dangerous." so the existing finding emitter records it
     # (and observe-mode still emits without blocking → DETECT).
-    destructive_cat = detect_destructive(command)
+    destructive_cat = detect_destructive(command) or detect_destructive(norm.text)
     if destructive_cat is not None:
         rid = f"dangerous.destructive/{destructive_cat}"
         if destructive_cat == "db":
@@ -191,7 +200,7 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
     # Делаем ПОСЛЕ dangerous_patterns (у них своя структурированная reason),
     # но ПЕРЕД always_deny/denylist (хотим показать понятный «почему» вместо
     # голого regex).
-    urls = extract_urls_from_command(command)
+    urls = norm.urls or extract_urls_from_command(command)
     for u in urls:
         decision, net_warnings = _check_network_target(u, policy)
         for w in net_warnings:
@@ -208,7 +217,7 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
             )
 
     for pat in _compile_regexes(pol.always_deny):
-        if pat.search(command):
+        if pat.search(search_text):
             return EnforceDecision(
                 permission="deny",
                 reason=f"always_deny: {pat.pattern}",
@@ -225,7 +234,7 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
                 warning_signals=warning_signals,
             )
     for pat in _compile_regexes(pol.denylist_patterns):
-        if pat.search(command):
+        if pat.search(search_text):
             return EnforceDecision(
                 permission="deny",
                 reason=f"denylist: {pat.pattern}",
