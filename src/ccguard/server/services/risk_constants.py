@@ -55,6 +55,10 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "egress.dns_long_subdomain": 3.0,
     "egress.bot_api": 4.0,
     "egress.paste_site": 4.0,
+    # P1: host-agnostic egress action-category — same exfil severity band.
+    "egress.http_client": 4.0,
+    "egress.file_transfer": 4.0,
+    "egress.cloud_cli": 4.0,
     "system.permissive_chmod": 3.0,
     "system.sudo_nopasswd": 4.0,  # privilege escalation primitive
     "system.hosts_edit": 4.0,
