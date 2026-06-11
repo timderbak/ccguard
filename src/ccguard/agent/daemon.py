@@ -194,6 +194,11 @@ def _build_real_sync_callable() -> SyncCallable:
             # carried nothing, so the server can tell idle-but-alive from dead.
             # Best-effort: a heartbeat failure never affects the sync result.
             _send_heartbeat_best_effort(cfg, inv.machine_id)
+            # P6: ship locally-buffered PI/Read findings on the same cycle.
+            # Without this the findings_buffer.db never reaches the server in a
+            # default install (no cron/systemd timer). Best-effort: a flush
+            # failure never affects the sync result.
+            _flush_findings_best_effort()
             dur_ms = (time.monotonic() - t0) * 1000.0
             if getattr(result, "error", None):
                 return DaemonResult(ok=False, error=str(result.error), duration_ms=dur_ms)
@@ -203,6 +208,22 @@ def _build_real_sync_callable() -> SyncCallable:
             return DaemonResult(ok=False, error=f"{type(exc).__name__}: {exc}", duration_ms=dur_ms)
 
     return do_sync
+
+
+def _flush_findings_best_effort() -> None:
+    """Ship any locally-buffered findings (PI/Read) to the server (P6).
+
+    Mirrors the heartbeat best-effort contract: swallows every exception so a
+    flush failure never affects the daemon sync result. The flusher itself
+    handles retries/DLQ; this only guarantees the buffer is drained on each
+    daemon cycle so findings are not stranded in a default install.
+    """
+    try:
+        from ccguard.agent.findings_hook.flusher import flush
+
+        flush()
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _send_heartbeat_best_effort(cfg: object, machine_id: str) -> None:
