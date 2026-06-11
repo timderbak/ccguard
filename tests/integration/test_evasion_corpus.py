@@ -68,14 +68,14 @@ def test_cred_plus_egress_both_perceived():
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason="P2: SaaS/CLI creds beyond the dotfile set not in catalog", strict=True)
 def test_saas_cli_cred_read_perceived():
+    # P2: SaaS / cloud-CLI / DB credential files beyond the dotfile set.
     fired = _fired("cat ~/.snowflake/credentials")
     assert any(s.startswith("cred.") for s in fired)
 
 
-@pytest.mark.xfail(reason="P2: 1Password/secret-manager CLI reads not modeled", strict=True)
 def test_password_manager_cli_cred_read_perceived():
+    # P2: secret-manager CLI reads (1Password / Bitwarden / cloud secret mgrs).
     fired = _fired("op item get 'AWS prod' --fields password")
     assert any(s.startswith("cred.") for s in fired)
 

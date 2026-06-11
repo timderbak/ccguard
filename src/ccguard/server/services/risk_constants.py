@@ -45,6 +45,8 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "cred.read.vault": 5.0,
     "cred.env.api_key": 4.0,
     "cred.read.git_credential_helper": 3.0,
+    "cred.read.saas_token": 5.0,  # P2: SaaS/cloud-CLI/DB creds — top-tier
+    "cred.read.secret_manager": 5.0,  # P2: password/secret-manager read
     "persist.launchd": 3.0,
     "persist.windows_run_key": 3.0,
     "persist.autostart": 3.0,

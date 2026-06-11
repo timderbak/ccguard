@@ -207,6 +207,30 @@ CATALOG: tuple[Signal, ...] = (
         _p(r"\bgit\s+credential\s+(fill|approve|reject)\b"),
         "git credential helper invocation",
     ),
+    # --- P2: credential-access breadth beyond the dotfile set ------------
+    Signal(
+        "cred.read.saas_token",
+        "T1552.001",
+        _p(
+            r"(\.snowflake/|\.databricks|\.dbt/|\.netlify/|\.vercel/"
+            r"|\.terraform\.d/credentials|\.terraformrc\b|\.docker/config\.json"
+            r"|\.kaggle/|\.huggingface/token|\.continue/|\.s3cfg\b"
+            r"|\.pgpass\b|\.my\.cnf\b)"
+        ),
+        "Access to SaaS / cloud-CLI / DB credential files (Snowflake, Databricks, Terraform, Docker, pgpass…)",
+    ),
+    Signal(
+        "cred.read.secret_manager",
+        "T1555.005",
+        _p(
+            r"\b(op\s+(item\s+get|read)|bw\s+get\b|lpass\s+show"
+            r"|gcloud\s+secrets\s+versions\s+access"
+            r"|aws\s+secretsmanager\s+get-secret-value"
+            r"|az\s+keyvault\s+secret\s+show"
+            r"|doppler\s+secrets|sops\s+-d)\b"
+        ),
+        "Secret-manager CLI read (1Password / Bitwarden / LastPass / cloud secret managers)",
+    ),
     Signal(
         "persist.launchd",
         "T1543.001",
