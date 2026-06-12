@@ -53,6 +53,11 @@ def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+# Bulk-removal grouping: > this many active→missing in one sync collapse into a
+# single grouped finding instead of one-per-artifact (anti alert-fatigue).
+_REMOVAL_GROUP_THRESHOLD: int = 3
+
+
 def _make_finding(
     *,
     machine_id: str,
@@ -292,28 +297,53 @@ def update_and_detect(
     all_rows = session.exec(
         select(HookBaseline).where(HookBaseline.machine_id == machine_id)
     ).all()
+    removed: list[HookBaseline] = []
     for r in all_rows:
         slot_key = (r.event_name, r.matcher, r.command_string)
         if slot_key not in seen_slot_keys and r.status != "missing" and r.status != "removed":
             if r.status in ("active", "accepted_drift"):
-                findings.append(
-                    _make_finding(
-                        machine_id=machine_id,
-                        inventory_id=inventory_id,
-                        rule_id="hook.removed",
-                        severity="warn",
-                        title="Принятый hook удалён",
-                        description=(
-                            f"Hook `{r.event_name}`/`{r.matcher or '*'}` был принят в "
-                            "baseline, но исчез из конфигурации — возможно отключение "
-                            "защитного хука (tamper / defense-evasion). Если ты удалял "
-                            "сам — приём не требуется."
-                        ),
-                        payload={"event": r.event_name, "matcher": r.matcher},
-                    )
-                )
+                removed.append(r)
             r.status = "missing"
             session.add(r)
+
+    # A bulk removal (e.g. `npm uninstall <plugin>` dropping many hooks at once)
+    # would otherwise flood the queue with one finding each — collapse > N into a
+    # single grouped finding (P7 / review should-fix).
+    if len(removed) > _REMOVAL_GROUP_THRESHOLD:
+        slots = ", ".join(f"{r.event_name}/{r.matcher or '*'}" for r in removed[:8])
+        findings.append(
+            _make_finding(
+                machine_id=machine_id,
+                inventory_id=inventory_id,
+                rule_id="hook.removed",
+                severity="warn",
+                title=f"Удалено {len(removed)} принятых hook'ов",
+                description=(
+                    f"{len(removed)} принятых hook'ов исчезли из конфигурации за один "
+                    f"sync (возможно массовое удаление плагина): {slots}"
+                    + ("…" if len(removed) > 8 else "")
+                ),
+                payload={"removed_count": len(removed)},
+            )
+        )
+    else:
+        for r in removed:
+            findings.append(
+                _make_finding(
+                    machine_id=machine_id,
+                    inventory_id=inventory_id,
+                    rule_id="hook.removed",
+                    severity="warn",
+                    title="Принятый hook удалён",
+                    description=(
+                        f"Hook `{r.event_name}`/`{r.matcher or '*'}` был принят в "
+                        "baseline, но исчез из конфигурации — возможно отключение "
+                        "защитного хука (tamper / defense-evasion). Если ты удалял "
+                        "сам — приём не требуется."
+                    ),
+                    payload={"event": r.event_name, "matcher": r.matcher},
+                )
+            )
 
     for f in findings:
         session.add(f)

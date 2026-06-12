@@ -43,6 +43,10 @@ def _now() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+# Bulk-removal grouping threshold (anti alert-fatigue).
+_REMOVAL_GROUP_THRESHOLD: int = 3
+
+
 def _make_finding(
     *,
     machine_id: str,
@@ -221,26 +225,50 @@ def update_and_detect(
     all_rows = session.exec(
         select(SkillBaseline).where(SkillBaseline.machine_id == machine_id)
     ).all()
+    removed: list[SkillBaseline] = []
     for r in all_rows:
         slot = (r.name, r.origin, r.parent_plugin or "")
         if slot not in seen_slots and r.status not in ("missing", "removed"):
             if r.status in ("active", "accepted_drift"):
-                findings.append(
-                    _make_finding(
-                        machine_id=machine_id,
-                        inventory_id=inventory_id,
-                        rule_id="skill.removed",
-                        severity="warn",
-                        title="Принятый skill удалён",
-                        description=(
-                            f"Skill `{r.name}` был принят в baseline, но исчез из "
-                            "конфигурации. Removal зафиксирован (supply-chain артефакт удалён)."
-                        ),
-                        payload={"name": r.name, "origin": r.origin},
-                    )
-                )
+                removed.append(r)
             r.status = "missing"
             session.add(r)
+
+    # Bulk removal (e.g. `npm uninstall <plugin>`) → one grouped finding instead
+    # of one-per-skill (anti alert-fatigue; review should-fix).
+    if len(removed) > _REMOVAL_GROUP_THRESHOLD:
+        names = ", ".join(r.name for r in removed[:8])
+        findings.append(
+            _make_finding(
+                machine_id=machine_id,
+                inventory_id=inventory_id,
+                rule_id="skill.removed",
+                severity="warn",
+                title=f"Удалено {len(removed)} принятых skill'ов",
+                description=(
+                    f"{len(removed)} принятых skill'ов исчезли за один sync "
+                    f"(возможно массовое удаление плагина): {names}"
+                    + ("…" if len(removed) > 8 else "")
+                ),
+                payload={"removed_count": len(removed)},
+            )
+        )
+    else:
+        for r in removed:
+            findings.append(
+                _make_finding(
+                    machine_id=machine_id,
+                    inventory_id=inventory_id,
+                    rule_id="skill.removed",
+                    severity="warn",
+                    title="Принятый skill удалён",
+                    description=(
+                        f"Skill `{r.name}` был принят в baseline, но исчез из "
+                        "конфигурации. Removal зафиксирован (supply-chain артефакт удалён)."
+                    ),
+                    payload={"name": r.name, "origin": r.origin},
+                )
+            )
 
     for f in findings:
         session.add(f)

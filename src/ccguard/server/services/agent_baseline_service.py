@@ -60,6 +60,10 @@ def _has_dangerous(tools: list[str] | None) -> bool:
     return bool(set(tools) & DANGEROUS_TOOLS)
 
 
+# Bulk-removal grouping threshold (anti alert-fatigue).
+_REMOVAL_GROUP_THRESHOLD: int = 3
+
+
 def _make_finding(
     *,
     machine_id: str,
@@ -238,28 +242,50 @@ def update_and_detect(
     all_rows = session.exec(
         select(AgentBaseline).where(AgentBaseline.machine_id == machine_id)
     ).all()
+    removed: list[AgentBaseline] = []
     for r in all_rows:
         slot = (r.name, r.origin, r.parent_plugin or "")
         if slot not in seen_slots and r.status not in ("missing", "removed"):
-            # P7: a CONFIRMED subagent disappearing is a supply-chain removal —
-            # emit a finding for visibility. Pending (never accepted) → silent.
+            # P7: a CONFIRMED subagent disappearing is a supply-chain removal.
             if r.status in ("active", "accepted_drift"):
-                findings.append(
-                    _make_finding(
-                        machine_id=machine_id,
-                        inventory_id=inventory_id,
-                        rule_id="agent.removed",
-                        severity="warn",
-                        title="Принятый subagent удалён",
-                        description=(
-                            f"Subagent `{r.name}` был принят в baseline, но исчез из "
-                            "конфигурации. Removal зафиксирован (supply-chain артефакт удалён)."
-                        ),
-                        payload={"name": r.name, "origin": r.origin},
-                    )
-                )
+                removed.append(r)
             r.status = "missing"
             session.add(r)
+
+    # Bulk removal → one grouped finding instead of one-per-agent (anti fatigue).
+    if len(removed) > _REMOVAL_GROUP_THRESHOLD:
+        names = ", ".join(r.name for r in removed[:8])
+        findings.append(
+            _make_finding(
+                machine_id=machine_id,
+                inventory_id=inventory_id,
+                rule_id="agent.removed",
+                severity="warn",
+                title=f"Удалено {len(removed)} принятых subagent'ов",
+                description=(
+                    f"{len(removed)} принятых subagent'ов исчезли за один sync "
+                    f"(возможно массовое удаление плагина): {names}"
+                    + ("…" if len(removed) > 8 else "")
+                ),
+                payload={"removed_count": len(removed)},
+            )
+        )
+    else:
+        for r in removed:
+            findings.append(
+                _make_finding(
+                    machine_id=machine_id,
+                    inventory_id=inventory_id,
+                    rule_id="agent.removed",
+                    severity="warn",
+                    title="Принятый subagent удалён",
+                    description=(
+                        f"Subagent `{r.name}` был принят в baseline, но исчез из "
+                        "конфигурации. Removal зафиксирован (supply-chain артефакт удалён)."
+                    ),
+                    payload={"name": r.name, "origin": r.origin},
+                )
+            )
 
     for f in findings:
         session.add(f)

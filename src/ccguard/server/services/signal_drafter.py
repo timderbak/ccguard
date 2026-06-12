@@ -334,9 +334,11 @@ class OllamaSignalDrafter:
             return False
         if not isinstance(body, dict):
             return False
-        base = self._model.split(":", 1)[0]
+        # Exact tag, or a pulled tag that EXTENDS it (a quant variant like
+        # `…-q4_K_M`). NOT a same-family different size — that would report ready
+        # then 404 the actual generate.
         names = [m.get("name", "") for m in body.get("models", []) if isinstance(m, dict)]
-        return any(n == self._model or n.split(":", 1)[0] == base for n in names)
+        return any(n == self._model or n.startswith(self._model) for n in names)
 
 
 def build_signal_drafter(cfg: object) -> SignalDrafterProtocol | None:
@@ -351,9 +353,18 @@ def build_signal_drafter(cfg: object) -> SignalDrafterProtocol | None:
     provider = (getattr(cfg, "llm_provider", "ollama") or "ollama").lower()
     api_key = getattr(cfg, "anthropic_api_key", None)
 
+    def _try_anthropic() -> SignalDrafterProtocol | None:
+        # Construction imports the anthropic SDK — guard so an SDK-less / changed
+        # box never 500s the admin route or crashes lifespan startup.
+        try:
+            return AnthropicSignalDrafter(api_key=api_key)
+        except Exception:  # noqa: BLE001
+            log.warning("Anthropic drafter unavailable (SDK missing/changed) — drafter disabled")
+            return None
+
     if provider == "anthropic":
         if api_key:
-            return AnthropicSignalDrafter(api_key=api_key)
+            return _try_anthropic()
         log.warning("llm_provider=anthropic but no ANTHROPIC_API_KEY — signal drafter disabled")
         return None
 
@@ -368,7 +379,7 @@ def build_signal_drafter(cfg: object) -> SignalDrafterProtocol | None:
             endpoint,
             model,
         )
-        return AnthropicSignalDrafter(api_key=api_key)
+        return _try_anthropic()
     log.warning(
         "Ollama at %s unreachable or model '%s' not pulled and no ANTHROPIC_API_KEY — "
         "signal drafter disabled (run `ollama pull %s`)",

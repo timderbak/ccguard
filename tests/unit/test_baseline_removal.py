@@ -132,3 +132,34 @@ def test_pending_skill_and_agent_removal_silent(session):
     assert "agent.removed" not in _rules(
         agent_baseline_service.update_and_detect(session, "m", [])
     )
+
+
+# --- bulk-removal grouping (anti alert-fatigue) ----------------------------
+
+def _active_hook_n(i: int) -> HookBaseline:
+    return HookBaseline(
+        machine_id="m", event_name="PreToolUse", matcher=f"M{i}",
+        command_string=f"cmd-{i}", file_path=None, file_content_hash=None,
+        fingerprint=f"fp{i}", status="active",
+        first_seen_at=_now(), last_seen_at=_now(),
+    )
+
+
+def test_bulk_hook_removal_is_grouped(session):
+    for i in range(5):
+        session.add(_active_hook_n(i))
+    session.commit()
+    findings = hook_baseline_service.update_and_detect(session, "m", [])
+    removed = [f for f in findings if f.rule_id == "hook.removed"]
+    assert len(removed) == 1, "5 removals should collapse into ONE grouped finding"
+    import json
+    assert json.loads(removed[0].payload_json)["removed_count"] == 5
+
+
+def test_small_hook_removal_stays_individual(session):
+    for i in range(3):
+        session.add(_active_hook_n(i))
+    session.commit()
+    findings = hook_baseline_service.update_and_detect(session, "m", [])
+    removed = [f for f in findings if f.rule_id == "hook.removed"]
+    assert len(removed) == 3, "<= threshold stays one finding per artifact"
