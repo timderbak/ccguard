@@ -479,6 +479,82 @@ CATALOG: tuple[Signal, ...] = (
         _p(r"\b(powershell|pwsh)(\.exe)?\b[^\n]*\s-e[a-z]*\s+['\"]?[a-z0-9+/=]{16,}"),
         "PowerShell encoded command — obfuscated execution",
     ),
+    # --- P2-width-3: collection stage (archive-staging / capture) ---------
+    # The collection kill-chain stage was fed only by the ubiquitous
+    # ``fs.write.*`` markers (every project write). These add HIGH-signal
+    # collection IOAs — staging data BEFORE exfil — that resolve to the
+    # ``collection`` stage via the new ``collection.`` prefix in chain_constants
+    # (zero engine change). Precision over recall: a project-dir ``tar`` and
+    # archive EXTRACTION stay silent; only a CREATE-archive over a credential
+    # store / whole-home, or a real screen/clipboard capture, fires.
+    Signal(
+        "collection.archive_staging",
+        "T1560.001",
+        _p(
+            # CREATE-archive (tar/gtar/bsdtar c… | zip -r | 7z[a] a | cpio -o |
+            # gpg --symmetric) whose source is a credential store or the whole
+            # home dir — the classic "stage before exfil" move. Hardened against
+            # an adversarial FP/FN corpus:
+            #  * (?<![\w./-]) command-anchors the verb so a FILENAME ``dump.tar``
+            #    (note: ``-C`` lowercases to ``-c``) is not read as a tar verb;
+            #  * (?![a-z]*[xt]) drops EXTRACT/LIST flag clusters (-x*/-t*), so a
+            #    restore INTO a cred dir is not mislabeled as staging;
+            #  * [^\n#]* stops at a trailing ``# comment`` (a bare ``~`` in a note
+            #    must not fire);
+            #  * dot-dirs close on (?:/|\s|$) so ``.ssh-config-backup`` stays quiet.
+            # A reverse-order branch catches ``cd ~/.ssh && tar -cf - .`` where the
+            # sensitive dir precedes the (create-only) archive verb.
+            r"(?:"
+            r"(?<![\w./-])(?:(?:g|bsd|gnu)?tar\s+(?:-\S+\s+)*(?:--create|-?(?![a-z]*[xt])[a-z]*c[a-z]*)"
+            r"|zip\s+(?:-\S+\s+)*-[a-z]*r|7za?\s+a|cpio\s+-o"
+            r"|gpg\b[^\n]*(?:--symmetric|--encrypt|\s-[ce]\b))"
+            r"[^\n#]*"
+            r"(?:~(?:\s|$)|\$home(?:\s|$|/)"
+            r"|(?:[/~ ]|^)\.(?:ssh|aws|gnupg|password-store|kube|docker|mozilla)(?:/|\s|$)"
+            r"|/etc/(?:passwd|shadow|ssh)\b)"
+            r")"
+            r"|(?:"
+            r"(?<![\w./-])cd\s+\S*\.(?:ssh|aws|gnupg|password-store|kube|docker|mozilla)\b[^\n#]*"
+            r"(?:&&|;)\s*[^\n#]*"
+            r"(?:(?:g|bsd|gnu)?tar\s+(?:-\S+\s+)*(?:--create|-?(?![a-z]*[xt])[a-z]*c[a-z]*)"
+            r"|7za?\s+a|cpio\s+-o|zip\s+(?:-\S+\s+)*-[a-z]*r)"
+            r")"
+        ),
+        "Archive-staging of credentials / whole home (tar/zip/7z/cpio/gpg create over a sensitive source) — collection before exfil",
+    ),
+    Signal(
+        "collection.screen_capture",
+        "T1113",
+        _p(
+            # Dedicated screenshot binaries, command-anchored so a hyphenated
+            # name (``screencapture-helper``) or a substring (``pilgrim``) does
+            # not match. ImageMagick ``import`` REQUIRES the ``-window`` flag, so
+            # the python ``import`` keyword and prose like "import config.png"
+            # stay quiet.
+            r"(?<![\w./-])(?:"
+            r"screencapture|scrot|grimshot|grim|maim|gnome-screenshot|spectacle|flameshot|xwd"
+            r")(?![\w-])"
+            r"|(?<![\w./-])import\s+(?:-\S+\s+)*-window\b[^\n]*\.(?:png|jpe?g|webp|bmp|gif|tiff)\b"
+            r"|(?<![\w./-])ffmpeg\b[^\n]*(?:x11grab|gdigrab)"
+        ),
+        "Screen capture (screencapture / scrot / grim / spectacle / ImageMagick import -window) — collection",
+    ),
+    Signal(
+        "collection.clipboard",
+        "T1115",
+        _p(
+            # Clipboard READ/scrape (command-anchored). Low weight — pbpaste has a
+            # benign base rate; the value is correlation (clipboard → egress).
+            # Writes stay quiet: pbcopy is excluded, xclip needs a trailing -o,
+            # and xsel requires an ``o`` (output) flag — the ``b`` board flag
+            # alone (e.g. ``xsel -ib``, a WRITE) must not fire.
+            r"(?<![\w./-])(?:pbpaste|wl-paste|get-clipboard)(?![\w-])"
+            r"|(?<![\w./-])xclip\b[^\n]*\s(?:-o|--output)(?![\w])"
+            r"|(?<![\w./-])xsel\b[^\n]*(?:--output|\s-\S*o(?![\w]))"
+            r"|pyperclip\.paste"
+        ),
+        "Clipboard scrape (pbpaste / xclip -o / xsel -o / wl-paste / Get-Clipboard) — collection",
+    ),
     # --- Action signals (ТЗ-02 staging middle link) ----------------------
     # These are ACTION signals, not content-regex signals: emission is gated on
     # the tool being a write tool (Write/Edit/NotebookEdit) and decided by the

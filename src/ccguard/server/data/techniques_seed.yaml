@@ -69,6 +69,30 @@ techniques:
     url: https://attack.mitre.org/techniques/T1074/
     source: attack-seed
     description: "Data collected and staged in one location prior to exfiltration."
+  - technique_id: T1560.001
+    framework: attack
+    name: "Archive Collected Data: Archive via Utility"
+    tactic: collection
+    parent_technique: T1560
+    url: https://attack.mitre.org/techniques/T1560/001/
+    source: attack-seed
+    description: "Archive (tar/zip/7z) collected data — often a credential store or whole home — before exfiltration."
+  - technique_id: T1113
+    framework: attack
+    name: Screen Capture
+    tactic: collection
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1113/
+    source: attack-seed
+    description: "Capture screen contents (screencapture / scrot / grim / ImageMagick import)."
+  - technique_id: T1115
+    framework: attack
+    name: Clipboard Data
+    tactic: collection
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1115/
+    source: attack-seed
+    description: "Scrape clipboard contents (pbpaste / xclip / wl-paste / Get-Clipboard)."
   - technique_id: T1059
     framework: attack
     name: Command and Scripting Interpreter

@@ -63,6 +63,24 @@ def test_non_advanced_stages_ignored():
     assert evaluate_progression(events, _NOW, lookback_days=14).distinct_count == 0
 
 
+def test_impact_and_privesc_count_as_advanced():
+    # P2-width-3: impact (data destruction) and privilege-escalation join the
+    # advanced set — both sit on the "right side" of the kill chain and are
+    # rare in routine dev. collection stays OUT (fed by ubiquitous fs.write).
+    events = [
+        SlowEvent(_NOW - timedelta(days=5), ("cred.read.aws",)),           # credential-access
+        SlowEvent(_NOW - timedelta(days=3), ("system.permissive_chmod",)),  # privilege-escalation
+        SlowEvent(_NOW - timedelta(days=1), ("impact.delete",)),           # impact
+    ]
+    r = evaluate_progression(events, _NOW, lookback_days=14)
+    assert r.distinct_count == 3
+    assert {h.stage for h in r.stages} == {
+        "credential-access",
+        "privilege-escalation",
+        "impact",
+    }
+
+
 def test_events_outside_lookback_dropped():
     events = [
         SlowEvent(_NOW - timedelta(days=20), ("cred.read.aws",)),   # too old

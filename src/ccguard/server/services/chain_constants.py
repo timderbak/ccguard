@@ -57,7 +57,9 @@ _SIGNAL_STAGE_RULES: tuple[tuple[str, str], ...] = (
     # exfiltration: any egress channel (T1567 / T1048 / T1041 / AML.T0024).
     ("cloud.exfil.", "exfiltration"),
     ("egress.", "exfiltration"),
-    # collection / staging: local file writes (T1074).
+    # collection / staging: dedicated archive/capture IOAs (T1560/T1113/T1115,
+    # P2-width-3) + the weak local-file-write markers (T1074).
+    ("collection.", "collection"),
     ("fs.write.", "collection"),
     # execution: shell / eval / decode (T1059.*).
     ("exec.", "execution"),

@@ -101,4 +101,11 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "c2.reverse_shell": 5.0,
     "c2.tunnel": 3.0,
     "lateral.remote_exec": 2.0,
+    # P2-width-3: collection. archive-staging is sensitive-source-gated (cred
+    # store / whole home) → rarely benign, weighs with persistence. Screen
+    # capture is moderate; clipboard scrape is noisy → low (leans on
+    # collection→egress correlation).
+    "collection.archive_staging": 4.0,
+    "collection.screen_capture": 2.0,
+    "collection.clipboard": 1.0,
 }

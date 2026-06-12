@@ -9,7 +9,8 @@ Friday. Each step is invisible to a window matcher.
 lookback, count how many DISTINCT *advanced* kill-chain stages a machine has
 touched, regardless of spacing. Routine development rarely touches three of the
 "right side" stages (credential-access, exfiltration, C2, defense-evasion,
-lateral-movement, persistence) in two weeks; an attack does, fast OR slow.
+lateral-movement, persistence, privilege-escalation, impact) in two weeks; an
+attack does, fast OR slow.
 
 The ``MIN_SPAN`` gate keeps this engine COMPLEMENTARY to the tight-window ones:
 if all the distinct advanced stages happened inside a short burst, the fast
@@ -21,8 +22,13 @@ without a redeploy.
 from __future__ import annotations
 
 # The "right side" of the kill chain — stages that are rarely all-benign in
-# routine development. impact / privilege-escalation are deliberate candidates
-# for a future widening but start out of the default set (Tim, 12.06).
+# routine development. impact (data destruction) and privilege-escalation join
+# the set in P2-width-3: both are fed by dedicated, low-base-rate signals
+# (impact.* is sensitive-target-gated; system.*/container.* are sudo-NOPASSWD /
+# setuid / container-escape), so the ≥3-distinct + multi-hour-span gate keeps
+# false positives low. collection stays OUT on purpose — it is fed by the
+# ubiquitous fs.write.* markers (every project write), which would fire slow_chain
+# on routine development.
 ADVANCED_STAGES: frozenset[str] = frozenset(
     {
         "credential-access",
@@ -31,6 +37,8 @@ ADVANCED_STAGES: frozenset[str] = frozenset(
         "defense-evasion",
         "lateral-movement",
         "persistence",
+        "privilege-escalation",
+        "impact",
     }
 )
 
