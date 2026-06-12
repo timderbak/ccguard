@@ -418,7 +418,13 @@ class HookBaseline(SQLModel, table=True):
     A row = one "slot" in settings.json (unique by machine + event + matcher +
     command). ``fingerprint`` = sha256(event_name + matcher + command_string +
     file_content_hash). Status transitions: pending → active (admin accept) →
-    accepted_drift (on re-accept). Composite UNIQUE
+    missing/removed. NOTE: ``accepted_drift`` is a RESERVED status — the design
+    envisaged re-accept-after-drift stamping it, but ``accept_baseline`` today
+    unconditionally sets ``active`` (the ``accepted_at``/``accepted_by`` stamps
+    already carry the audit trail), so ``accepted_drift`` is never assigned. The
+    ``status in ("active", "accepted_drift")`` checks in the baseline services
+    keep it purely for forward-compat — if a future re-accept path starts
+    emitting it, removal/tamper detection already handles it. Composite UNIQUE
     ``(machine_id, event_name, matcher, command_string)`` installed via DDL in
     :func:`ccguard.server.db.session.init_db`, mirroring the
     ``MCPServerBaseline`` pattern (keeps ``create_all`` idempotent against
@@ -436,7 +442,8 @@ class HookBaseline(SQLModel, table=True):
     file_content_hash: str | None = None
     fingerprint: str = Field(index=True)
 
-    # pending | active | accepted_drift | missing | removed
+    # pending | active | missing | removed  (accepted_drift = reserved, never
+    # assigned today — see class docstring)
     status: str = Field(default="pending")
 
     first_seen_at: datetime
@@ -453,7 +460,8 @@ class SkillBaseline(SQLModel, table=True):
     fingerprint = sha256(name | origin | parent_plugin | dir_hash).
 
     Status transitions mirror HookBaseline: pending → active (admin
-    accept) → accepted_drift (re-accept). silent removal = "missing".
+    accept) → missing on silent removal. ``accepted_drift`` is reserved but
+    never assigned today (see HookBaseline docstring).
 
     parent_plugin / source_marketplace are denormalized copies from the
     inventory payload so fleet aggregates ("which marketplace ships the

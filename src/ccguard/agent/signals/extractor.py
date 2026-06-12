@@ -102,6 +102,15 @@ def _external_content_signals(tool_name: str, tool_input: dict[str, Any]) -> lis
     product exists to cover. All MCP servers are untrusted by default, so every
     MCP tool result is tagged (→ initial-access stage); a lone tag is
     informational — the correlation chain decides severity.
+
+    Review note (the "MCP-always-initial-access downrank" item): tagging EVERY
+    MCP result as initial-access is DELIBERATE and kept. The over-fire worry is
+    bounded — ``content.read.external`` carries risk weight 1.0 (lowest band) and
+    the chains require it to be FOLLOWED, in order, by execution / credential-
+    access / exfil, so a lone routine MCP read (e.g. a calendar fetch) escalates
+    nothing. Downranking would weaken the very MCP-injection blind spot P4a
+    closed, so we keep the unconditional tag rather than allowlist "trusted"
+    servers (a trusted server is exactly what a rug-pull turns hostile).
     """
     if tool_name in _EXTERNAL_CONTENT_TOOLS:
         return ["content.read.external"]
