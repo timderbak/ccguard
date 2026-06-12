@@ -56,6 +56,11 @@ class McpServerEntry(SchemaBase):
     description: str | None = None
     description_hash: str | None = None
     definition_hash: str | None = None
+    # P4b: hash of the server's RUNTIME tool list (name+description per tool),
+    # the indirect-injection rug-pull surface that lives in tools/list, NOT in
+    # the static config. Captured from a config `tools` array if present, or an
+    # opt-in HTTP tools/list probe. None when unavailable (diff then skipped).
+    tools_hash: str | None = None
 
 
 class SkillEntry(SchemaBase):

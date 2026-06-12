@@ -42,9 +42,11 @@ from ccguard.server.db.models import FindingRecord, MCPServerBaseline
 
 RULE_DESCRIPTION = "mcp.rug_pull.description_changed"
 RULE_DEFINITION = "mcp.rug_pull.definition_changed"
+RULE_TOOLS = "mcp.rug_pull.tools_changed"
 
 SEVERITY_DESCRIPTION = "critical"
 SEVERITY_DEFINITION = "warn"
+SEVERITY_TOOLS = "critical"
 
 DESCRIPTION_PREVIEW_LEN = 200
 
@@ -153,6 +155,7 @@ def update_and_detect(
                     transport=entry.transport,
                     description_hash=entry.description_hash,
                     definition_hash=entry.definition_hash,
+                    tools_hash=entry.tools_hash,
                     description_preview=_preview(entry.description),
                     first_seen_at=now,
                     last_seen_at=now,
@@ -170,6 +173,11 @@ def update_and_detect(
             entry.definition_hash is not None
             and baseline.definition_hash is not None
             and entry.definition_hash != baseline.definition_hash
+        )
+        tools_changed = (
+            entry.tools_hash is not None
+            and baseline.tools_hash is not None
+            and entry.tools_hash != baseline.tools_hash
         )
 
         # TODO(mcp-rug-pull, LLM second opinion):
@@ -241,6 +249,34 @@ def update_and_detect(
                 )
             )
 
+        if tools_changed:
+            findings.append(
+                _make_finding(
+                    machine_id=machine_id,
+                    inventory_id=inventory_id,
+                    rule_id=RULE_TOOLS,
+                    severity=SEVERITY_TOOLS,
+                    title=f"MCP '{entry.name}' изменил набор/описания tools",
+                    description=(
+                        f"Runtime tools/list MCP-сервера '{entry.name}' изменился — "
+                        "поменялись имена или описания инструментов. Описания tools "
+                        "уходят в LLM как авторитетные инструкции, поэтому их подмена в "
+                        "рантайме — основной вектор MCP-инъекции (rug pull)."
+                    ),
+                    source=entry.source,
+                    recommendation=(
+                        "Сверь набор tools с upstream: был ли релиз сервера? Если нет — "
+                        "откатить/удалить. Если да — прочитать diff и принять новый baseline."
+                    ),
+                    matched_value=entry.name,
+                    extra_payload={
+                        "mcp_name": entry.name,
+                        "old_hash": baseline.tools_hash,
+                        "new_hash": entry.tools_hash,
+                    },
+                )
+            )
+
         # Update baseline in place so subsequent snapshots compare against
         # the *current* state. Without this we'd keep firing on every sync.
         baseline.transport = entry.transport
@@ -249,6 +285,8 @@ def update_and_detect(
             baseline.description_preview = _preview(entry.description)
         if entry.definition_hash is not None:
             baseline.definition_hash = entry.definition_hash
+        if entry.tools_hash is not None:
+            baseline.tools_hash = entry.tools_hash
         baseline.last_seen_at = now
         session.add(baseline)
 

@@ -23,6 +23,27 @@ def _hash_text(text: str | None) -> str | None:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
+def tools_hash(tools: object) -> str | None:
+    """Order-independent hash of a runtime tool list (name+description per tool).
+
+    The rug-pull surface lives here (tool descriptions are fed to the LLM as
+    authoritative instructions). Returns None when no usable tool list exists,
+    so the baseline diff is simply skipped (back-compat with no-tools agents).
+    """
+    if not isinstance(tools, list) or not tools:
+        return None
+    parts: list[str] = []
+    for t in tools:
+        if not isinstance(t, dict):
+            continue
+        name = str(t.get("name", ""))
+        desc = str(t.get("description", ""))
+        parts.append(f"{name}\x1f{desc}")
+    if not parts:
+        return None
+    return _hash_text("\x1e".join(sorted(parts)))
+
+
 def _definition_text(command: str | None, args: list[str], url: str | None) -> str:
     """Канонический "контракт" MCP-сервера для definition_hash.
 
@@ -67,6 +88,16 @@ def _entry_from_spec(name: str, spec: dict[str, Any], source: str) -> McpServerE
     description = raw_desc if isinstance(raw_desc, str) else None
     description_hash = _hash_text(description)
     definition_hash = _hash_text(_definition_text(command, args, url))
+    # P4b: capture runtime tool descriptions if the config embeds a resolved
+    # `tools` array; else, when the operator opted in (CCGUARD_MCP_PROBE), probe
+    # the http/sse server's tools/list over HTTP (no process spawn; fail-safe).
+    tools_h = tools_hash(spec.get("tools"))
+    if tools_h is None and transport in ("http", "sse"):
+        from ccguard.agent import mcp_probe  # lazy: avoid import cycle
+
+        if mcp_probe.is_enabled():
+            raw_headers = spec.get("headers") if isinstance(spec.get("headers"), dict) else None
+            tools_h = mcp_probe.probe_tools_hash(raw_url, raw_headers)
     return McpServerEntry(
         name=name,
         transport=transport,  # type: ignore[arg-type]
@@ -78,6 +109,7 @@ def _entry_from_spec(name: str, spec: dict[str, Any], source: str) -> McpServerE
         description=description,
         description_hash=description_hash,
         definition_hash=definition_hash,
+        tools_hash=tools_h,
     )
 
 

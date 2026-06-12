@@ -405,6 +405,9 @@ class MCPServerBaseline(SQLModel, table=True):
     description_hash: str | None = None
     definition_hash: str | None = None
     description_preview: str | None = None
+    # P4b: hash of the runtime tool list (tools/list). Optional/back-compat:
+    # old agents send None and the tools-drift diff is skipped for that row.
+    tools_hash: str | None = None
     first_seen_at: datetime = Field(default_factory=_utcnow)
     last_seen_at: datetime = Field(default_factory=_utcnow)
 
