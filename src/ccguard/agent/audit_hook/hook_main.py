@@ -181,15 +181,19 @@ def _maybe_emit_read_pi_finding(
         text = _read_pi_scan_mod.extract_read_response_text(raw_response)
         if not text:
             return
+        file_path = tool_input.get("file_path")
+        if not isinstance(file_path, str):
+            file_path = ""
         result = _read_pi_scan_mod.scan_read_text(text, cfg)
         if result is None:
+            # P5: the strict catalog missed. If a cheap suspicion heuristic
+            # still flags the content, spool it for the server-side LLM
+            # backstop (drained on the next sync cycle). Best-effort.
+            _maybe_spool_read_escalation(file_path, text)
             return
         # model_missing marker (D-3 from PI engine): never a real detection.
         if result.rule_id == "prompt_injection.llama_guard.model_missing":
             return
-        file_path = tool_input.get("file_path")
-        if not isinstance(file_path, str):
-            file_path = ""
         # Find matched substring snippet around the regex hit for the
         # finding's matched_pattern. Capped at 200 chars (mask_secrets
         # enforces the same ceiling).
@@ -212,6 +216,25 @@ def _maybe_emit_read_pi_finding(
         )
     except Exception:
         # Best-effort — never break the audit pipeline.
+        return
+
+
+def _maybe_spool_read_escalation(file_path: str, text: str) -> None:
+    """Queue regex-missed-but-suspicious read content for the LLM backstop.
+
+    Runs only when the strict PI catalog produced no finding. Lazy imports keep
+    the cost off the (common) non-suspicious path. Best-effort and fail-open —
+    the audit hook must never raise.
+    """
+    try:
+        from ccguard.agent import read_pi_escalation
+
+        if not read_pi_escalation.should_escalate(text):
+            return
+        from ccguard.agent import read_scan_spool
+
+        read_scan_spool.spool(file_path, text)
+    except Exception:
         return
 
 

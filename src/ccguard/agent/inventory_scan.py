@@ -31,12 +31,17 @@ from typing import Any
 
 import httpx
 
+from ccguard.agent import read_scan_spool
 from ccguard.agent.masking import mask_content
 from ccguard.schemas.scan import ScanBatchResponse, ScanRequest, ScanRequestItem, ScannerConfig
 
 logger = logging.getLogger("ccguard.agent.inventory_scan")
 
 DEFAULT_TIMEOUT_SEC = 30.0
+
+# ScanRequest caps a batch at 50 items (schema-level). Config artifacts take
+# priority; read-scan backstop items fill whatever budget remains.
+_MAX_BATCH_ITEMS = 50
 
 
 def _scrub_path(path: Path, claude_home: Path) -> str:
@@ -120,6 +125,37 @@ def _read_and_pack(
     b64 = base64.b64encode(masked.encode("utf-8")).decode("ascii")
     scrubbed = _scrub_path(path, claude_home)
     return ScanRequestItem(file_path=scrubbed, scope=scope, content_b64=b64)  # type: ignore[arg-type]
+
+
+def collect_read_scan_items(
+    max_items: int = _MAX_BATCH_ITEMS,
+) -> tuple[list[ScanRequestItem], list[Path]]:
+    """Drain the read-scan spool (P5) into ``scope="read_file"`` scan items.
+
+    Returns ``(items, spool_paths)``. The spool already masked + username-
+    scrubbed the content at write time, so here we only base64-encode for
+    transport. The caller deletes ``spool_paths`` after a successful POST so a
+    failed sync re-ships next cycle. Never raises.
+    """
+    if max_items <= 0:
+        return [], []
+    try:
+        drained = read_scan_spool.drain(max_items=max_items)
+    except Exception:  # noqa: BLE001 — spool drain must not fail the cycle
+        return [], []
+    items: list[ScanRequestItem] = []
+    paths: list[Path] = []
+    for file_path, content, path in drained:
+        b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
+        items.append(
+            ScanRequestItem(
+                file_path=file_path or "~/read-content",
+                scope="read_file",  # type: ignore[arg-type]
+                content_b64=b64,
+            )
+        )
+        paths.append(path)
+    return items, paths
 
 
 def send_scan_batch(
@@ -232,6 +268,27 @@ def run_scan_cycle(
     token: str,
 ) -> dict[str, Any]:
     """One-shot collect + send. Called from the CLI ``sync`` after inventory
-    POST succeeds. Never raises (scan must not fail the inventory cycle)."""
-    items = collect_scannable_files(claude_home)
-    return send_scan_batch(server_url=server_url, token=token, items=items)
+    POST succeeds. Never raises (scan must not fail the inventory cycle).
+
+    Ships two streams in one batch: config artifacts (agents/skills) and the
+    P5 read-scan backstop spool (scope=read_file). Config artifacts take
+    priority for the 50-item batch cap; read-scan items fill the remainder and
+    are deleted from the spool only once the server has processed the batch
+    (response carries ``items``), so a failed/skipped sync re-ships next cycle.
+    """
+    config_items = collect_scannable_files(claude_home)
+    read_budget = max(0, _MAX_BATCH_ITEMS - len(config_items))
+    read_items, spool_paths = collect_read_scan_items(max_items=read_budget)
+    items = config_items + read_items
+
+    result = send_scan_batch(server_url=server_url, token=token, items=items)
+
+    # Delete spooled entries only if the server actually processed the batch
+    # (a successful POST returns an ``items`` list). Skipped/errored results
+    # leave the spool intact for the next cycle (bounded by the spool cap).
+    if spool_paths and isinstance(result, dict) and "items" in result:
+        try:
+            read_scan_spool.delete(spool_paths)
+        except Exception:  # noqa: BLE001
+            pass
+    return result

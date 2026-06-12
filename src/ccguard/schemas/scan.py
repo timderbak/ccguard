@@ -36,10 +36,21 @@ class ScannerConfig(SchemaBase):
 
 
 class ScanRequestItem(SchemaBase):
-    """One scannable artifact (agent or skill markdown), base64-encoded."""
+    """One scannable artifact, base64-encoded.
+
+    ``scope`` tells the server what the content is so the classifier can frame
+    it correctly:
+
+    * ``agent`` / ``skill`` — a Claude Code configuration artifact (inventory
+      cycle).
+    * ``read_file`` — untrusted content the agent READ via the Read tool that
+      the agent-side strict PI regexes did not catch but a cheap suspicion
+      heuristic flagged (P5 semantic backstop). The server runs the same
+      Anthropic classifier and emits ``llm.scan.<category>`` on a hit.
+    """
 
     file_path: str
-    scope: Literal["agent", "skill"]
+    scope: Literal["agent", "skill", "read_file"]
     content_b64: str
 
 
