@@ -28,7 +28,19 @@ SECRET_MGR = [
     "aws secretsmanager get-secret-value --secret-id prod/db",
     "gcloud secrets versions access latest --secret=api-key",
     "az keyvault secret show --name token --vault-name v",
+    "az account get-access-token",
+    "gcloud auth application-default print-access-token",
+    "aws configure get aws_secret_access_key",
+    "doppler secrets download --no-file",
     "sops -d secrets.enc.yaml",
+]
+OS_KEYCHAIN = [
+    "security find-generic-password -s aws -w",
+    "security dump-keychain",
+    "secret-tool lookup service github",
+    "keyring get aws default",
+    "pass show prod/db",
+    "gopass show api/key",
 ]
 
 
@@ -42,16 +54,25 @@ def test_secret_manager_fires(cmd):
     assert "cred.read.secret_manager" in set(extract_signals("Bash", {"command": cmd})), cmd
 
 
+@pytest.mark.parametrize("cmd", OS_KEYCHAIN)
+def test_os_keychain_fires(cmd):
+    assert "cred.read.os_keychain" in set(extract_signals("Bash", {"command": cmd})), cmd
+
+
 def test_new_cred_signals_map_to_credential_access():
-    assert stage_for_signal("cred.read.saas_token") == "credential-access"
-    assert stage_for_signal("cred.read.secret_manager") == "credential-access"
+    for sig in ("cred.read.saas_token", "cred.read.secret_manager", "cred.read.os_keychain"):
+        assert stage_for_signal(sig) == "credential-access"
 
 
 def test_benign_not_flagged():
-    # a plain docker build / terraform plan is not a credential read
+    # a plain docker build / terraform plan is not a credential read; and
+    # `doppler secrets set` (a WRITE) / bare `doppler secrets` (LIST) are not reads
     assert "cred.read.saas_token" not in set(
         extract_signals("Bash", {"command": "docker build -t app ."})
     )
     assert "cred.read.secret_manager" not in set(
         extract_signals("Bash", {"command": "terraform plan -out tf.plan"})
+    )
+    assert "cred.read.secret_manager" not in set(
+        extract_signals("Bash", {"command": "doppler secrets set API_KEY=x"})
     )

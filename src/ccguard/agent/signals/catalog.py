@@ -233,11 +233,23 @@ CATALOG: tuple[Signal, ...] = (
         _p(
             r"\b(op\s+(item\s+get|read)|bw\s+get\b|lpass\s+show"
             r"|gcloud\s+secrets\s+versions\s+access"
+            r"|gcloud\s+auth\s+(application-default\s+)?print-access-token"
             r"|aws\s+secretsmanager\s+get-secret-value"
-            r"|az\s+keyvault\s+secret\s+show"
-            r"|doppler\s+secrets|sops\s+-d)\b"
+            r"|aws\s+configure\s+get\s+\S*secret\S*"
+            r"|az\s+keyvault\s+secret\s+show|az\s+account\s+get-access-token"
+            r"|doppler\s+secrets\s+(get|download)|sops\s+-d)\b"
         ),
-        "Secret-manager CLI read (1Password / Bitwarden / LastPass / cloud secret managers)",
+        "Secret-manager / cloud-token CLI read (1Password / Bitwarden / LastPass / aws/gcloud/az)",
+    ),
+    Signal(
+        "cred.read.os_keychain",
+        "T1555.001",
+        _p(
+            r"\b(security\s+(find-(generic|internet)-password|dump-keychain)"
+            r"|secret-tool\s+(lookup|search)|keyring\s+get"
+            r"|pass\s+show|gopass\s+show)\b"
+        ),
+        "OS-native credential store read (macOS Keychain / Linux keyring / pass)",
     ),
     Signal(
         "persist.launchd",
