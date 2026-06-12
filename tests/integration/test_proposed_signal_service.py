@@ -97,3 +97,36 @@ def test_double_approve_is_a_noop(client: TestClient) -> None:
         svc.approve(s, row.id, reviewed_by="admin")  # type: ignore[arg-type]
         with pytest.raises(svc.NotPending):
             svc.approve(s, row.id, reviewed_by="admin")  # type: ignore[arg-type]
+
+
+def test_revert_deletes_override_and_marks_reverted(client: TestClient) -> None:
+    # P3.3-7 rollback: un-ship a shipped signal that turned out noisy. Deletes
+    # the catalog.override.<id> so agents drop it next sync, marks row reverted.
+    with Session(client.app.state.engine) as s:
+        row = svc.propose(s, draft=_draft(), source_kind="manual")
+        svc.approve(s, row.id, reviewed_by="admin")  # type: ignore[arg-type]
+        key = f"catalog.override.{row.id_in_draft()}"
+        assert s.get(SettingsRecord, key) is not None
+        reverted = svc.revert(s, row.id, reviewed_by="admin2", reason="too noisy")  # type: ignore[arg-type]
+        assert reverted.status == "reverted"
+        assert reverted.reviewed_by == "admin2"
+        assert reverted.rejection_reason == "too noisy"
+        assert s.get(SettingsRecord, key) is None  # override removed
+
+
+def test_revert_of_pi_pattern_deletes_pi_override(client: TestClient) -> None:
+    pi_draft = {"category": "tool_hijack_v2", "pattern": r"do anything now", "description": "x"}
+    with Session(client.app.state.engine) as s:
+        row = svc.propose(s, draft=pi_draft, source_kind="manual-pi", kind="pi_pattern")
+        svc.approve(s, row.id, reviewed_by="admin")  # type: ignore[arg-type]
+        key = "pi.override.tool_hijack_v2"
+        assert s.get(SettingsRecord, key) is not None
+        svc.revert(s, row.id, reviewed_by="admin", reason="rollback")  # type: ignore[arg-type]
+        assert s.get(SettingsRecord, key) is None
+
+
+def test_revert_requires_approved(client: TestClient) -> None:
+    with Session(client.app.state.engine) as s:
+        row = svc.propose(s, draft=_draft(), source_kind="manual")
+        with pytest.raises(svc.NotApproved):
+            svc.revert(s, row.id, reviewed_by="admin")  # type: ignore[arg-type]  # still pending

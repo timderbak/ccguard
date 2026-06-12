@@ -1192,6 +1192,49 @@ def proposed_signals_reject(
     return RedirectResponse(url="/admin/proposed-signals", status_code=303)
 
 
+@router.post("/admin/proposed-signals/{row_id}/revert")
+def proposed_signals_revert(
+    row_id: int,
+    request: Request,
+    reason: str = Form(""),
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Roll back a shipped signal (P3.3-7): delete its catalog.override.* so
+    agents drop it next sync, mark the draft 'reverted'."""
+    from ccguard.server.services import proposed_signal_service as svc
+
+    try:
+        svc.revert(session, row_id, reviewed_by=user, reason=reason or "(rolled back)")
+    except svc.NotApproved as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return RedirectResponse(url="/admin/proposed-signals", status_code=303)
+
+
+@router.post("/admin/proposed-signals/trigger-discovery")
+def proposed_signals_trigger_discovery(
+    request: Request,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Run the threat-intel discovery sweep ON DEMAND (P3.3-7), instead of
+    waiting for the daily scheduler. Needs app.state.signal_drafter (the
+    self-hosted Ollama default, or Anthropic fallback). Reuses the same monitor
+    set as the scheduled sweep; each monitor is isolation-safe, so an offline
+    source is logged, not fatal."""
+    from ccguard.server.services import discovery_service
+    from ccguard.server.services.source_monitors import default_monitors
+
+    drafter = getattr(request.app.state, "signal_drafter", None)
+    if drafter is None:
+        raise HTTPException(status_code=503, detail="llm drafter not configured")
+    monitors = getattr(request.app.state, "discovery_monitors", None) or default_monitors()
+    discovery_service.tick(session, drafter=drafter, monitors=list(monitors))
+    return RedirectResponse(url="/admin/proposed-signals", status_code=303)
+
+
 @router.post("/machines/{machine_id}/suppress")
 def machine_suppress_signal(
     machine_id: str,

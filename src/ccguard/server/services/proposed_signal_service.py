@@ -42,6 +42,17 @@ class NotPending(ValueError):
     """Tried to approve/reject a row that is not in pending status."""
 
 
+class NotApproved(ValueError):
+    """Tried to revert a row that is not in approved status."""
+
+
+def _override_key_for(kind: str, draft: dict[str, Any]) -> str:
+    """The SettingsRecord key a draft ships its override to (signal vs PI)."""
+    if kind == "pi_pattern":
+        return f"{_PI_OVERRIDE_KEY_PREFIX}{draft['category']}"
+    return f"{_OVERRIDE_KEY_PREFIX}{draft['id']}"
+
+
 def _validate_shape(draft: dict[str, Any]) -> None:
     for k in _REQUIRED_KEYS:
         if k not in draft or not isinstance(draft[k], str) or not draft[k].strip():
@@ -119,11 +130,10 @@ def approve(session: Session, row_id: int, *, reviewed_by: str) -> ProposedSigna
     if row.kind == "pi_pattern":
         _validate_pi_shape(draft)
         _validate_regex(draft["pattern"])
-        override_key = f"{_PI_OVERRIDE_KEY_PREFIX}{draft['category']}"
     else:
         _validate_shape(draft)
         _validate_regex(draft["pattern"])
-        override_key = f"{_OVERRIDE_KEY_PREFIX}{draft['id']}"
+    override_key = _override_key_for(row.kind, draft)
 
     existing = session.get(SettingsRecord, override_key)
     now = datetime.now(UTC)
@@ -153,6 +163,32 @@ def reject(
     row.reviewed_by = reviewed_by
     row.reviewed_at = datetime.now(UTC)
     row.rejection_reason = reason
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def revert(
+    session: Session, row_id: int, *, reviewed_by: str, reason: str = ""
+) -> ProposedSignal:
+    """Roll back an APPROVED draft: delete its ``catalog.override.<id>`` /
+    ``pi.override.<category>`` SettingsRecord so agents drop the override on the
+    next policy sync, and mark the row ``reverted``. Closes the trust loop — an
+    admin can un-ship a signal that turned out noisy without a manual DB edit.
+    Requires ``approved`` status; anything else raises NotApproved."""
+    row = session.get(ProposedSignal, row_id)
+    if row is None or row.status != "approved":
+        raise NotApproved(f"draft {row_id} is not approved")
+    draft = json.loads(row.draft_json)
+    override_key = _override_key_for(row.kind, draft)
+    existing = session.get(SettingsRecord, override_key)
+    if existing is not None:
+        session.delete(existing)
+    row.status = "reverted"
+    row.reviewed_by = reviewed_by
+    row.reviewed_at = datetime.now(UTC)
+    row.rejection_reason = reason or "(rolled back)"
     session.add(row)
     session.commit()
     session.refresh(row)

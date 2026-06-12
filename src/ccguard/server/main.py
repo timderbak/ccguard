@@ -138,27 +138,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services.sensor_health_service import tick as sensor_health_tick
     from ccguard.server.services.sequence_service import tick as sequence_tick
     from ccguard.server.services.slow_chain_service import tick as slow_chain_tick
-    from ccguard.server.services.source_monitors.atlas import AtlasMonitor
-    from ccguard.server.services.source_monitors.atomic_red_team import (
-        AtomicRedTeamMonitor,
-    )
-    from ccguard.server.services.source_monitors.cve_ai_filter import (
-        CVEAIFilterMonitor,
-    )
-    from ccguard.server.services.source_monitors.lakera_blog import (
-        LakeraBlogMonitor,
-    )
-    from ccguard.server.services.source_monitors.mitre_attack import (
-        MitreAttackMonitor,
-    )
+    from ccguard.server.services.source_monitors import default_monitors
 
-    _DISCOVERY_MONITORS = (
-        AtomicRedTeamMonitor(),
-        MitreAttackMonitor(),
-        AtlasMonitor(),
-        LakeraBlogMonitor(),
-        CVEAIFilterMonitor(),
-    )
+    _DISCOVERY_MONITORS = tuple(default_monitors())
+    # Same monitor set reachable by the manual "run discovery now" admin trigger
+    # (routes.py), so the on-demand sweep and the scheduled sweep never drift.
+    app.state.discovery_monitors = list(_DISCOVERY_MONITORS)
 
     if is_disabled():
         logger.info("anomaly scheduler disabled via CCGUARD_DISABLE_SCHEDULER")

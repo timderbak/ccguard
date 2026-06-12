@@ -1,10 +1,20 @@
 {% extends "base.html" %}
 {% block title %}ccguard — предложенные сигналы{% endblock %}
 {% block content %}
-<header class="mb-6">
-    <p class="cc-mono text-[11px] uppercase tracking-wider text-slate-400 mb-2">Управление · Rule Discovery</p>
-    <h2 class="text-2xl font-semibold">Предложенные сигналы</h2>
-    <p class="text-slate-500 text-sm mt-1">Черновики catalog-сигналов от LLM-агента или ручного paste. Approve → запись в SettingsRecord override, агенты подхватывают на следующем policy sync.</p>
+<header class="mb-6 flex items-start justify-between gap-4">
+    <div>
+        <p class="cc-mono text-[11px] uppercase tracking-wider text-slate-400 mb-2">Управление · Rule Discovery</p>
+        <h2 class="text-2xl font-semibold">Предложенные сигналы</h2>
+        <p class="text-slate-500 text-sm mt-1">Черновики catalog-сигналов от LLM-агента или ручного paste. Approve → запись в SettingsRecord override, агенты подхватывают на следующем policy sync.</p>
+    </div>
+    <form method="POST" action="/admin/proposed-signals/trigger-discovery" class="shrink-0"
+          onsubmit="return confirm('Опросить threat-intel источники сейчас и сгенерировать черновики? Это сетевые запросы + вызовы LLM-драфтера.')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <button class="inline-flex items-center gap-1.5 text-sm px-4 py-2 bg-white text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.8 1 6.4 2.6L21 8"/><path d="M21 3v5h-5"/></svg>
+            Запустить discovery
+        </button>
+    </form>
 </header>
 
 <div class="grid grid-cols-3 gap-4 mb-6">
@@ -123,11 +133,22 @@
         <li class="py-2.5 flex items-center gap-3">
             <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 ring-1
                 {% if row.status == 'approved' %}bg-emerald-50 text-emerald-700 ring-emerald-200
+                {% elif row.status == 'reverted' %}bg-amber-50 text-amber-700 ring-amber-200
                 {% else %}bg-red-50 text-red-600 ring-red-200{% endif %}">{{ row.status }}</span>
-            <span class="cc-mono text-xs text-slate-700">{{ draft.id }}</span>
-            <span class="cc-mono text-[11px] text-slate-400">{{ draft.attack_technique }}</span>
-            {% if row.reviewed_by %}<span class="cc-mono text-[11px] text-slate-400 ml-auto">{{ row.reviewed_by }} · {{ row.reviewed_at.isoformat(timespec="minutes") if row.reviewed_at else "" }}</span>{% endif %}
+            <span class="cc-mono text-xs text-slate-700">{{ draft.id or draft.category }}</span>
+            <span class="cc-mono text-[11px] text-slate-400">{{ draft.attack_technique or '' }}</span>
             {% if row.rejection_reason %}<span class="cc-mono text-[11px] text-red-500">{{ row.rejection_reason }}</span>{% endif %}
+            <span class="ml-auto flex items-center gap-3">
+                {% if row.reviewed_by %}<span class="cc-mono text-[11px] text-slate-400">{{ row.reviewed_by }} · {{ row.reviewed_at.isoformat(timespec="minutes") if row.reviewed_at else "" }}</span>{% endif %}
+                {% if row.status == 'approved' %}
+                <form method="POST" action="/admin/proposed-signals/{{ row.id }}/revert" class="flex items-center gap-1"
+                      onsubmit="return confirm('Откатить отгруженный сигнал? Override удалится, агенты сбросят его на следующем sync.')">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                    <input type="text" name="reason" placeholder="причина" class="w-24 text-[11px] px-2 py-0.5 border border-slate-200 rounded" />
+                    <button class="text-[11px] px-2 py-0.5 bg-white text-amber-700 border border-amber-200 rounded hover:bg-amber-50">Откатить</button>
+                </form>
+                {% endif %}
+            </span>
         </li>
         {% endfor %}
     </ul>

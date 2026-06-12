@@ -149,6 +149,81 @@ def test_reject_records_reason(monkeypatch, tmp_path) -> None:
         client.__exit__(None, None, None)
 
 
+def test_revert_unships_override(monkeypatch, tmp_path) -> None:
+    # P3.3-7 rollback: approve then revert; the catalog.override.* row is gone.
+    client, sid = _login(monkeypatch, tmp_path)
+    try:
+        with Session(client.app.state.engine) as s:
+            row = svc.propose(
+                s,
+                draft={
+                    "id": "cred.read.browser",
+                    "attack_technique": "T1555.003",
+                    "pattern": r"login\s+data",
+                    "description": "x",
+                },
+                source_kind="manual",
+            )
+            row_id = row.id
+            svc.approve(s, row_id, reviewed_by="admin")
+        token = _csrf(client, sid)
+        r = client.post(
+            f"/admin/proposed-signals/{row_id}/revert",
+            data={"csrf_token": token, "reason": "too noisy"},
+            cookies={"ccg_session": sid},
+            follow_redirects=False,
+        )
+        assert r.status_code in (200, 303)
+        with Session(client.app.state.engine) as s:
+            assert s.get(SettingsRecord, "catalog.override.cred.read.browser") is None
+            updated = s.get(ProposedSignal, row_id)
+            assert updated is not None
+            assert updated.status == "reverted"
+    finally:
+        client.__exit__(None, None, None)
+
+
+class _NoopMonitor:
+    name = "test-noop"
+
+    def poll(self, since):  # noqa: ANN001, ANN201
+        return []
+
+
+def test_trigger_discovery_runs_sweep(monkeypatch, tmp_path) -> None:
+    client, sid = _login(monkeypatch, tmp_path)
+    try:
+        # Non-None drafter + a no-op monitor → sweep runs with no network/items.
+        client.app.state.signal_drafter = object()
+        client.app.state.discovery_monitors = [_NoopMonitor()]
+        token = _csrf(client, sid)
+        r = client.post(
+            "/admin/proposed-signals/trigger-discovery",
+            data={"csrf_token": token},
+            cookies={"ccg_session": sid},
+            follow_redirects=False,
+        )
+        assert r.status_code in (200, 303)
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_trigger_discovery_503_without_drafter(monkeypatch, tmp_path) -> None:
+    client, sid = _login(monkeypatch, tmp_path)
+    try:
+        client.app.state.signal_drafter = None
+        token = _csrf(client, sid)
+        r = client.post(
+            "/admin/proposed-signals/trigger-discovery",
+            data={"csrf_token": token},
+            cookies={"ccg_session": sid},
+            follow_redirects=False,
+        )
+        assert r.status_code == 503
+    finally:
+        client.__exit__(None, None, None)
+
+
 def test_anonymous_user_blocked(monkeypatch, tmp_path) -> None:
     client, _ = _login(monkeypatch, tmp_path)
     try:
