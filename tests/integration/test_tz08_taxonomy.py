@@ -31,6 +31,7 @@ DETECTOR_KEYS = {
     "external_trigger",
     "rug_pull_tofu",
     "heartbeat_silent",
+    "slow_chain",
 }
 
 
@@ -123,8 +124,8 @@ def test_ipi_covered_by_correlation_not_indicator(tmp_path) -> None:
     assert detail["control_types"] == ["DETECT"]
 
 
-# --- AC5: all 5 detectors registered + bound with control_type=DETECT --------
-def test_all_five_detectors_registered_and_bound(tmp_path) -> None:
+# --- AC5: all detectors registered + bound with control_type=DETECT ----------
+def test_all_detectors_registered_and_bound(tmp_path) -> None:
     eng = _engine(tmp_path)
     with Session(eng) as s:
         again_d = taxonomy_seed_service.load_detector_seed(s)  # first load
@@ -133,7 +134,7 @@ def test_all_five_detectors_registered_and_bound(tmp_path) -> None:
         maps = s.exec(select(DetectorTechniqueMapping)).all()
     assert again_d > 0
     assert second == 0  # idempotent
-    assert keys == DETECTOR_KEYS  # exactly the five existing detectors
+    assert keys == DETECTOR_KEYS  # exactly the registered correlation detectors
     bound = {m.detector_key for m in maps}
     assert bound == DETECTOR_KEYS  # every detector is bound to ≥1 technique
     assert all(m.control_type == "DETECT" for m in maps)  # correlations DETECT

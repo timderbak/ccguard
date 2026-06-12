@@ -137,6 +137,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services.risk_service import tick as risk_tick
     from ccguard.server.services.sensor_health_service import tick as sensor_health_tick
     from ccguard.server.services.sequence_service import tick as sequence_tick
+    from ccguard.server.services.slow_chain_service import tick as slow_chain_tick
     from ccguard.server.services.source_monitors.atlas import AtlasMonitor
     from ccguard.server.services.source_monitors.atomic_red_team import (
         AtomicRedTeamMonitor,
@@ -171,6 +172,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     risk_summary = risk_tick(s)
                     sequence_summary = sequence_tick(s)
                     chain_summary = chain_tick(s)
+                    slow_chain_summary = slow_chain_tick(s)
                     drift_summary = drift_tick(s)
                     sensor_summary = sensor_health_tick(s)
                 logger.info(
@@ -197,6 +199,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     chain_summary["scenarios_active"],
                     chain_summary["findings_emitted"],
                     len(chain_summary["errors"]),
+                )
+                logger.info(
+                    "slow_chain tick: machines=%d findings=%d errors=%d",
+                    slow_chain_summary["machines_evaluated"],
+                    slow_chain_summary["findings_emitted"],
+                    len(slow_chain_summary["errors"]),
                 )
                 logger.info(
                     "drift tick: machines=%d findings=%d errors=%d",

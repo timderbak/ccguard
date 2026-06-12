@@ -41,6 +41,11 @@ detectors:
     kind: correlation
     rule_ids: sensor.silent,sensor.hooks_removed
     description: "sensor_health_service.tick + heartbeat endpoint — silenced or self-disabled sensor."
+  - detector_key: slow_chain
+    name: Low-and-slow kill chain (IOA)
+    kind: correlation
+    rule_ids: ioa.slow_chain
+    description: "slow_chain_service.tick — >=3 distinct advanced kill-chain stages over a 14-day horizon; catches chains deliberately spread across days to slip past the window-bounded sequence/chain matchers."
 
 # detector_key → technique bindings. framework duplicated for query convenience.
 mappings:
@@ -109,3 +114,14 @@ mappings:
     framework: attack
     control_type: DETECT
     relevance: primary
+  # slow_chain: time-spread multi-stage intrusion culminating in exfil.
+  - detector_key: slow_chain
+    technique_id: ASI04
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: slow_chain
+    technique_id: T1567
+    framework: attack
+    control_type: DETECT
+    relevance: secondary
