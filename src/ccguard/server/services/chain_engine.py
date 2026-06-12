@@ -16,6 +16,12 @@ Reuses the existing event substrate verbatim: ``ToolUseEvent`` (+ its
 ``signals_json`` and ``session_id``), per-session grouping, ``FindingRecord``
 creation, and same-day dedup — so it slots into the same scheduler tick. The
 event → stage bridge is :func:`chain_constants.stages_for_signals`.
+
+This is the **hours** tier of the correlation family (three tiers by TIME
+HORIZON): ``sequence_service`` (minutes, tight deterministic IOA) →
+``chain_engine`` (hours, this module) → ``slow_chain_service`` (days, distinct
+advanced-stage accumulation for low-and-slow chains, P7-depth). All three run in
+the same scheduler pass.
 """
 from __future__ import annotations
 

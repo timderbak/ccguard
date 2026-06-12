@@ -13,6 +13,15 @@ Both are session-scoped (ТЗ-01): events are grouped by ``session_id`` and the
 kernel runs per group, with NULL-session events sharing a machine-scope sentinel
 group. The orchestrator :func:`tick` runs BOTH detectors for every machine in a
 single scheduler pass.
+
+Correlation family — three tiers separated by TIME HORIZON, all run in the same
+scheduler tick:
+
+* ``sequence_service``   — **minutes**: this module. Tight, deterministic IOAs
+  with hand-written kernels.
+* ``chain_engine``       — **hours**:   data-driven stage scenarios in a window.
+* ``slow_chain_service`` — **days**:    distinct advanced-stage accumulation,
+  catching low-and-slow chains that outlast any window (P7-depth).
 """
 from __future__ import annotations
 
