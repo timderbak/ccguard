@@ -67,11 +67,16 @@ def main() -> int:
                           agent_version="0.1.0"))
         s.commit()
 
-        # --- the low-and-slow kill chain: 3 distinct advanced stages, spread
-        # across days so the minute/hour window engines miss it ---------------
-        _ev(s, ts=now - timedelta(days=6), tool="Bash", signals=["cred.read.aws"])         # Mon
-        _ev(s, ts=now - timedelta(days=3, hours=4), tool="Bash", signals=["egress.http_client"])  # Wed
-        _ev(s, ts=now - timedelta(days=1, hours=2), tool="Bash", signals=["defense.clear_logs"])  # Fri
+        # --- the low-and-slow kill chain: now 5 distinct advanced stages
+        # (P2-width-3 added impact + privilege-escalation to ADVANCED_STAGES, and
+        # collection.archive_staging as a dedicated sensor), spread across days
+        # so the minute/hour window engines miss it ---------------------------
+        _ev(s, ts=now - timedelta(days=6), tool="Bash", signals=["cred.read.aws"])                    # credential-access
+        _ev(s, ts=now - timedelta(days=5, hours=3), tool="Bash", signals=["system.permissive_chmod"])  # privilege-escalation (NEW)
+        _ev(s, ts=now - timedelta(days=3, hours=4), tool="Bash",
+            signals=["collection.archive_staging", "egress.http_client"])                             # collection (NEW) + exfiltration
+        _ev(s, ts=now - timedelta(days=2, hours=1), tool="Bash", signals=["impact.delete"])           # impact (NEW)
+        _ev(s, ts=now - timedelta(days=1, hours=2), tool="Bash", signals=["defense.clear_logs"])      # defense-evasion
 
         # --- some benign daily volume so the anomaly matrix sparklines have
         # data to draw across the 14-day window -------------------------------
