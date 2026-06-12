@@ -74,9 +74,13 @@ def test_categories_match_context_md():
 
 def test_report_risk_tool_schema_shape():
     assert REPORT_RISK_TOOL["name"] == "report_risk"
-    assert REPORT_RISK_TOOL["strict"] is True
+    # NOT strict: the live Anthropic API rejects strict tools that use
+    # minimum/maximum/maxLength (which this schema needs). strict=True 400'd
+    # every real read_file scan — see the verified fix in llm_client.py.
+    assert "strict" not in REPORT_RISK_TOOL or REPORT_RISK_TOOL["strict"] is not True
     schema = REPORT_RISK_TOOL["input_schema"]
     assert schema["type"] == "object"
+    assert schema["additionalProperties"] is False
     assert set(schema["required"]) == {"risk_score", "category", "rationale"}
     assert schema["properties"]["risk_score"]["minimum"] == 0
     assert schema["properties"]["risk_score"]["maximum"] == 100

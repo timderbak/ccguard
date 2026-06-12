@@ -80,8 +80,15 @@ REPORT_RISK_TOOL: Final[dict[str, Any]] = {
             },
         },
         "required": ["risk_score", "category", "rationale"],
+        "additionalProperties": False,
     },
-    "strict": True,
+    # NOTE: standard (non-strict) tool use. `strict: True` was rejected by the
+    # live Anthropic API for this schema — strict mode forbids `minimum`/
+    # `maximum`/`maxLength` and demands additionalProperties:false, so it 400'd
+    # every read_file scan even with a valid key. The scanner's LLMClient is
+    # mocked in every test, so the broken schema never surfaced in CI; verified
+    # fixed with a real API call. Defensive parsing (risk_score clamp, category
+    # fallback) makes non-strict safe. Guarded by test_report_risk_tool_schema.
 }
 
 SYSTEM_PROMPT: Final[str] = (
