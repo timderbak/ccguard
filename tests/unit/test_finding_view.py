@@ -90,3 +90,50 @@ def test_malformed_payload_is_safe():
     )
     rows = build_explainable_findings([bad])
     assert rows[0]["explainer"] is None  # corrupt payload degrades to plain row
+
+
+def test_slow_chain_finding_gets_stage_explainer():
+    payload = {
+        "distinct_count": 3,
+        "min_distinct": 3,
+        "span_hours": 52.0,
+        "lookback_days": 14.0,
+        "stages": [
+            {
+                "stage": "credential-access",
+                "first_seen": "2026-06-08T10:00:00+00:00",
+                "last_seen": "2026-06-08T10:00:00+00:00",
+                "count": 1,
+                "example_signal": "cred.read.aws",
+            },
+            {
+                "stage": "exfiltration",
+                "first_seen": "2026-06-10T12:00:00+00:00",
+                "last_seen": "2026-06-10T12:30:00+00:00",
+                "count": 2,
+                "example_signal": "egress.http_client",
+            },
+            {
+                "stage": "defense-evasion",
+                "first_seen": "2026-06-11T09:00:00+00:00",
+                "last_seen": "2026-06-11T09:00:00+00:00",
+                "count": 1,
+                "example_signal": "defense.clear_logs",
+            },
+        ],
+    }
+    rows = build_explainable_findings([_fr("ioa.slow_chain", payload)])
+    exp = rows[0]["explainer"]
+    assert exp is not None
+    assert exp["kind"] == "slow_chain"
+    assert exp["distinct_count"] == 3
+    assert exp["min_distinct"] == 3
+    assert len(exp["stages"]) == 3
+    assert exp["stages"][0]["stage"] == "credential-access"
+    assert exp["stages"][0]["example_signal"] == "cred.read.aws"
+    assert exp["stages"][1]["count"] == 2
+
+
+def test_slow_chain_without_stages_degrades_to_passthrough():
+    rows = build_explainable_findings([_fr("ioa.slow_chain", {"distinct_count": 3})])
+    assert rows[0]["explainer"] is None  # no stages → no breakdown

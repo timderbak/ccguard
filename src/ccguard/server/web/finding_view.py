@@ -16,6 +16,7 @@ from typing import Any, Iterable
 from ccguard.agent.signals.catalog import CATALOG
 from ccguard.server.services.risk_constants import RISK_RULE_ID
 from ccguard.server.services.sequence_constants import SEQUENCE_RULE_ID
+from ccguard.server.services.slow_chain_constants import SLOW_CHAIN_RULE_ID
 
 _SIGNAL_TO_TECHNIQUE: dict[str, str] = {s.id: s.attack_technique for s in CATALOG}
 
@@ -79,8 +80,41 @@ def _sequence_explainer(payload: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _slow_chain_explainer(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Break down an ``ioa.slow_chain`` finding: the distinct advanced kill-chain
+    stages a machine touched across the long horizon, each with its own window.
+    """
+    stages = payload.get("stages")
+    if not isinstance(stages, list) or not stages:
+        return None
+    cards: list[dict[str, Any]] = []
+    for st in stages:
+        if not isinstance(st, dict):
+            continue
+        cards.append(
+            {
+                "stage": str(st.get("stage", "")),
+                "first_seen": st.get("first_seen"),
+                "last_seen": st.get("last_seen"),
+                "count": int(st.get("count", 0) or 0),
+                "example_signal": str(st.get("example_signal", "")),
+                "attack_url": attack_url_for_signal(str(st.get("example_signal", ""))),
+            }
+        )
+    if not cards:
+        return None
+    return {
+        "kind": "slow_chain",
+        "distinct_count": int(payload.get("distinct_count", len(cards)) or 0),
+        "min_distinct": int(payload.get("min_distinct", 0) or 0),
+        "span_hours": float(payload.get("span_hours", 0.0) or 0.0),
+        "lookback_days": float(payload.get("lookback_days", 0.0) or 0.0),
+        "stages": cards,
+    }
+
+
 def _explainer_for(rule_id: str, payload_json: str) -> dict[str, Any] | None:
-    if rule_id not in (RISK_RULE_ID, SEQUENCE_RULE_ID):
+    if rule_id not in (RISK_RULE_ID, SEQUENCE_RULE_ID, SLOW_CHAIN_RULE_ID):
         return None
     if not payload_json:
         return None
@@ -92,7 +126,9 @@ def _explainer_for(rule_id: str, payload_json: str) -> dict[str, Any] | None:
         return None
     if rule_id == RISK_RULE_ID:
         return _risk_explainer(payload)
-    return _sequence_explainer(payload)
+    if rule_id == SEQUENCE_RULE_ID:
+        return _sequence_explainer(payload)
+    return _slow_chain_explainer(payload)
 
 
 def _passthrough_payload(payload_json: str) -> dict[str, Any]:

@@ -1,9 +1,16 @@
-{# Matrix table: rows = machines, columns = 4 metrics.
-   Each sparkline cell = 14 vertical bars + last value, wrapped in a link to detail.
+{# Matrix table: rows = machines, columns = the anomaly metrics (10 as of
+   P7-depth — driven by the `metrics` list the route passes from ALL_METRICS,
+   no longer hardcoded). Each sparkline cell = 14 vertical bars + last value,
+   wrapped in a link to detail.
    Test contract: keeps "накопление" (warmup) + "выброс" (outlier) + per-cell links. #}
-{% set ordered_metrics = ['bash_calls_per_day', 'new_mcp_per_week', 'new_agents_per_week', 'skill_dir_hash_changes_per_week'] %}
 {% set metric_meta = {
   'bash_calls_per_day': ('Bash / день', '#c45cff'),
+  'reads_per_day': ('Чтения / день', '#60a5fa'),
+  'writes_per_day': ('Записи / день', '#f472b6'),
+  'webfetch_per_day': ('WebFetch / день', '#22d3ee'),
+  'mcp_calls_per_day': ('MCP-вызовы / день', '#a78bfa'),
+  'egress_signals_per_day': ('Egress-сигналы / день', '#f87171'),
+  'cred_signals_per_day': ('Cred-сигналы / день', '#fb923c'),
   'new_mcp_per_week': ('Новые MCP / нед', '#5aa9ff'),
   'new_agents_per_week': ('Новые агенты / нед', '#34d399'),
   'skill_dir_hash_changes_per_week': ('Skills-hash / нед', '#fbbf24')
@@ -13,22 +20,22 @@
     <thead>
       <tr>
         <th>Машина</th>
-        {% for metric in ordered_metrics %}
-        {% set mm = metric_meta[metric] %}
+        {% for metric in metrics %}
+        {% set mm = metric_meta.get(metric, (metric, '#94a3b8')) %}
         <th><span class="metdot" style="background:{{ mm[1] }}"></span>{{ mm[0] }}</th>
         {% endfor %}
       </tr>
     </thead>
     <tbody>
       {% if not machines %}
-      <tr><td colspan="5" class="py-10 text-center text-slate-500">Машин нет.</td></tr>
+      <tr><td colspan="{{ metrics|length + 1 }}" class="py-10 text-center text-slate-500">Машин нет.</td></tr>
       {% else %}
       {% for m in machines %}
       <tr>
         <td>
           <a href="/machines/{{ m.id }}" class="cc-mono text-xs text-slate-300 hover:text-white hover:underline">{{ m.id[:12] }}</a>
         </td>
-        {% for metric in ordered_metrics %}
+        {% for metric in metrics %}
         {% set cell = m.cells[metric] %}
         <td>
           <a href="/anomalies/{{ m.id }}/{{ metric }}" class="anomcell {% if not cell.warmup and cell.is_outlier %}out{% endif %}">

@@ -308,6 +308,32 @@
                                 <span class="cc-mono text-slate-400">{{ f.explainer.egress.technique or "" }}</span>
                             </li>
                         </ul>
+                        {% elif f.explainer.kind == 'slow_chain' %}
+                        <p class="cc-mono">
+                            <span class="font-semibold text-slate-900">{{ f.explainer.distinct_count }}</span> разных продвинутых стадий kill-chain
+                            за <span class="font-semibold text-slate-900">{{ "%.1f"|format(f.explainer.span_hours) }}ч</span>
+                            · окно {{ "%.0f"|format(f.explainer.lookback_days) }}д
+                            · порог {{ f.explainer.min_distinct }}
+                        </p>
+                        <ol class="space-y-1.5">
+                            {% for s in f.explainer.stages %}
+                            <li class="flex items-start gap-2">
+                                <span class="font-mono text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 ring-1 text-purple-700 bg-purple-50 ring-purple-600/20 shrink-0">{{ s.stage }}</span>
+                                <span class="flex flex-col">
+                                    <span class="flex items-center gap-2">
+                                        {% if s.attack_url %}
+                                        <a href="{{ s.attack_url }}" target="_blank" rel="noopener noreferrer"
+                                           class="cc-mono text-emerald-700 hover:underline">{{ s.example_signal }}</a>
+                                        {% else %}
+                                        <span class="cc-mono text-slate-700">{{ s.example_signal }}</span>
+                                        {% endif %}
+                                        <span class="cc-mono text-slate-400">×{{ s.count }}</span>
+                                    </span>
+                                    <span class="cc-mono text-[11px] text-slate-400">{{ s.first_seen[:16]|replace('T',' ') }} → {{ s.last_seen[:16]|replace('T',' ') }}</span>
+                                </span>
+                            </li>
+                            {% endfor %}
+                        </ol>
                         {% endif %}
                     </div>
                 </details>

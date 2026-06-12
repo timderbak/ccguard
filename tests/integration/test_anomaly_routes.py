@@ -256,3 +256,20 @@ def test_anomaly_detail_unauthenticated_redirects_or_401(admin_client) -> None:
         "/anomalies/m/bash_calls_per_day", follow_redirects=False
     )
     assert r.status_code in (307, 401)
+
+
+def test_matrix_renders_all_p7_metric_columns(admin_client) -> None:
+    """P7-depth: the matrix header now has a column per ALL_METRICS entry, not
+    just the original four (driven by the route's `metrics` list)."""
+    client, _engine, sid = admin_client
+    r = client.get("/_partials/anomalies/matrix", cookies={"ccg_session": sid})
+    assert r.status_code == 200
+    for label in (
+        "Bash / день",
+        "Чтения / день",
+        "WebFetch / день",
+        "MCP-вызовы / день",
+        "Egress-сигналы / день",
+        "Cred-сигналы / день",
+    ):
+        assert label in r.text, f"missing metric column: {label}"

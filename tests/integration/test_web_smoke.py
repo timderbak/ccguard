@@ -463,3 +463,74 @@ def test_change_admin_password(monkeypatch, tmp_path) -> None:
         assert not verify_password("old-pass", new_hash)
 
 
+
+
+def test_machine_detail_renders_slow_chain_stages(monkeypatch, tmp_path):
+    """P7-depth: an ioa.slow_chain finding renders its distinct-stage timeline
+    (validates the new finding_view explainer + machine_detail template block)."""
+    import json
+    from datetime import UTC, datetime
+
+    from sqlmodel import Session
+
+    from ccguard.server.db.models import FindingRecord, Machine
+    from ccguard.server.services.auth_service import create_session, hash_password
+
+    monkeypatch.setenv("CCGUARD_ADMIN_PASSWORD_HASH", hash_password("hunter2"))
+    monkeypatch.setenv("CCGUARD_DB_URL", f"sqlite:///{tmp_path}/web_sc.db")
+    monkeypatch.setenv("CCGUARD_SESSION_SECRET", "test-secret")
+
+    with TestClient(create_app()) as client:
+        engine = client.app.state.engine
+        now = datetime.now(UTC)
+        with Session(engine) as s:
+            s.add(Machine(machine_id="m1", first_seen=now, last_seen=now, agent_version="0.1.0"))
+            s.add(
+                FindingRecord(
+                    machine_id="m1",
+                    inventory_id=None,
+                    rule_id="ioa.slow_chain",
+                    severity="warn",
+                    discovered_at=now,
+                    payload_json=json.dumps(
+                        {
+                            "distinct_count": 3,
+                            "min_distinct": 3,
+                            "span_hours": 52.0,
+                            "lookback_days": 14.0,
+                            "stages": [
+                                {
+                                    "stage": "credential-access",
+                                    "first_seen": "2026-06-08T10:00:00+00:00",
+                                    "last_seen": "2026-06-08T10:00:00+00:00",
+                                    "count": 1,
+                                    "example_signal": "cred.read.aws",
+                                },
+                                {
+                                    "stage": "exfiltration",
+                                    "first_seen": "2026-06-10T12:00:00+00:00",
+                                    "last_seen": "2026-06-10T12:30:00+00:00",
+                                    "count": 2,
+                                    "example_signal": "egress.http_client",
+                                },
+                                {
+                                    "stage": "defense-evasion",
+                                    "first_seen": "2026-06-11T09:00:00+00:00",
+                                    "last_seen": "2026-06-11T09:00:00+00:00",
+                                    "count": 1,
+                                    "example_signal": "defense.clear_logs",
+                                },
+                            ],
+                        }
+                    ),
+                )
+            )
+            sid = create_session(s, user_id="admin")
+        r = client.get("/machines/m1", cookies={"ccg_session": sid})
+        assert r.status_code == 200
+        assert "ioa.slow_chain" in r.text
+        assert "разных продвинутых стадий" in r.text
+        assert "credential-access" in r.text
+        assert "exfiltration" in r.text
+        assert "defense-evasion" in r.text
+        assert "egress.http_client" in r.text
