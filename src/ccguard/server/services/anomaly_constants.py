@@ -31,6 +31,13 @@ SKILL_HASH_FIELD: str = "dir_hash"
 
 ALL_METRICS: tuple[str, ...] = (
     "bash_calls_per_day",
+    # P7-depth: behavioral volume beyond Bash + security-signal rates.
+    "reads_per_day",
+    "writes_per_day",
+    "webfetch_per_day",
+    "mcp_calls_per_day",
+    "egress_signals_per_day",
+    "cred_signals_per_day",
     "new_mcp_per_week",
     "new_agents_per_week",
     "skill_dir_hash_changes_per_week",

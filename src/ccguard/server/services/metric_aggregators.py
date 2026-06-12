@@ -128,6 +128,129 @@ def bash_calls_per_day_series(
 
 
 # ---------------------------------------------------------------------------
+# Behavioral-volume aggregators (P7-depth: anomaly wider than Bash)
+#
+# The anomaly engine only baselined Bash volume; everything else was config
+# drift. These extend the same 3σ machinery to other tool families and to
+# security-signal rates, so a developer who never triggers egress/cred signals
+# (or never WebFetches) lights up when their per-day rate suddenly spikes —
+# complementary to the absolute-weighted risk engine.
+# ---------------------------------------------------------------------------
+
+
+def _event_count_per_day_series(
+    session: Session,
+    machine_id: str,
+    anchor_date: date | None,
+    *,
+    predicate_sql: str,
+) -> list[tuple[date, int]]:
+    """Daily ``ToolUseEvent`` count matching ``predicate_sql``.
+
+    ``predicate_sql`` is a TRUSTED internal WHERE fragment over a tooluseevent
+    row (e.g. ``tool_name = 'Read'``) — never user input. Shares
+    :func:`bash_calls_per_day_series`' UTC-date bucketing on
+    ``substr(ts, 1, 10)`` and the same 14-day zero-padded window.
+    """
+    anchor = anchor_date or _default_anchor()
+    days = _anchor_dates(anchor)
+    sql = _sql(
+        "SELECT substr(ts, 1, 10) AS day, COUNT(*) AS cnt "
+        "FROM tooluseevent "
+        "WHERE machine_id = :mid "
+        f"  AND ({predicate_sql}) "
+        "  AND substr(ts, 1, 10) >= :start_day "
+        "  AND substr(ts, 1, 10) <= :end_day "
+        "GROUP BY day"
+    ).bindparams(
+        mid=machine_id,
+        start_day=days[0].isoformat(),
+        end_day=anchor.isoformat(),
+    )
+    counts: dict[str, int] = {}
+    for row in session.exec(sql).all():  # type: ignore[arg-type]
+        if isinstance(row, tuple):
+            day_key, cnt = row[0], row[1]
+        else:
+            day_key = row.day  # type: ignore[attr-defined]
+            cnt = row.cnt  # type: ignore[attr-defined]
+        counts[str(day_key)] = int(cnt)
+    return [(d, counts.get(d.isoformat(), 0)) for d in days]
+
+
+def reads_per_day_series(
+    session: Session, machine_id: str, anchor_date: date | None = None
+) -> list[tuple[date, int]]:
+    """Daily count of ``Read`` tool calls (file-read volume — recon/staging)."""
+    return _event_count_per_day_series(
+        session, machine_id, anchor_date, predicate_sql="tool_name = 'Read'"
+    )
+
+
+def writes_per_day_series(
+    session: Session, machine_id: str, anchor_date: date | None = None
+) -> list[tuple[date, int]]:
+    """Daily count of file-mutating tool calls (Write/Edit/MultiEdit)."""
+    return _event_count_per_day_series(
+        session,
+        machine_id,
+        anchor_date,
+        predicate_sql="tool_name IN ('Write', 'Edit', 'MultiEdit')",
+    )
+
+
+def webfetch_per_day_series(
+    session: Session, machine_id: str, anchor_date: date | None = None
+) -> list[tuple[date, int]]:
+    """Daily count of outbound fetch tool calls (WebFetch/WebSearch)."""
+    return _event_count_per_day_series(
+        session,
+        machine_id,
+        anchor_date,
+        predicate_sql="tool_name IN ('WebFetch', 'WebSearch')",
+    )
+
+
+def mcp_calls_per_day_series(
+    session: Session, machine_id: str, anchor_date: date | None = None
+) -> list[tuple[date, int]]:
+    """Daily count of MCP tool calls (tool_name ``mcp__<server>__<tool>``).
+
+    The double underscore is escaped because ``_`` is a LIKE wildcard.
+    """
+    return _event_count_per_day_series(
+        session,
+        machine_id,
+        anchor_date,
+        predicate_sql=r"tool_name LIKE 'mcp\_\_%' ESCAPE '\'",
+    )
+
+
+def egress_signals_per_day_series(
+    session: Session, machine_id: str, anchor_date: date | None = None
+) -> list[tuple[date, int]]:
+    """Daily count of events carrying an ``egress.*`` signal (exfil volume)."""
+    return _event_count_per_day_series(
+        session,
+        machine_id,
+        anchor_date,
+        predicate_sql="signals_json LIKE '%egress.%'",
+    )
+
+
+def cred_signals_per_day_series(
+    session: Session, machine_id: str, anchor_date: date | None = None
+) -> list[tuple[date, int]]:
+    """Daily count of events carrying a ``cred.read.*`` signal (secret-read volume)."""
+    return _event_count_per_day_series(
+        session,
+        machine_id,
+        anchor_date,
+        predicate_sql="signals_json LIKE '%cred.read.%'",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Inventory-diff aggregators (shared loader)
 # ---------------------------------------------------------------------------
 

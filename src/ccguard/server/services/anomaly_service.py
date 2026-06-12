@@ -58,6 +58,12 @@ SIGMA_THRESHOLD: float = 3.0
 # individual aggregators via ``unittest.mock.patch.dict``.
 _DISPATCH: dict[str, Callable[..., list[tuple[Any, int]]]] = {
     "bash_calls_per_day": agg.bash_calls_per_day_series,
+    "reads_per_day": agg.reads_per_day_series,
+    "writes_per_day": agg.writes_per_day_series,
+    "webfetch_per_day": agg.webfetch_per_day_series,
+    "mcp_calls_per_day": agg.mcp_calls_per_day_series,
+    "egress_signals_per_day": agg.egress_signals_per_day_series,
+    "cred_signals_per_day": agg.cred_signals_per_day_series,
     "new_mcp_per_week": agg.new_mcp_per_week_series,
     "new_agents_per_week": agg.new_agents_per_week_series,
     "skill_dir_hash_changes_per_week": agg.skill_dir_hash_changes_per_week_series,
