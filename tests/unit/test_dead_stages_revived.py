@@ -17,9 +17,10 @@ CASES = [
     ("ngrok http 8080", "c2.tunnel", "command-and-control"),
     ("history -c", "defense.clear_history", "defense-evasion"),
     ("rm -f ~/.bash_history", "defense.clear_history", "defense-evasion"),
-    ("journalctl --vacuum-time=1s", "defense.clear_logs", "defense-evasion"),
+    ("journalctl --rotate && journalctl --vacuum-time=0", "defense.clear_logs", "defense-evasion"),
+    (": > /var/log/auth.log", "defense.clear_logs", "defense-evasion"),
     ("ufw disable", "defense.disable_security", "defense-evasion"),
-    ("claude --dangerously-skip-permissions", "defense.disable_security", "defense-evasion"),
+    ("pkill -9 falcon-sensor", "defense.disable_security", "defense-evasion"),
     ("ssh deploy@10.0.0.5 'cat /etc/shadow'", "lateral.remote_exec", "lateral-movement"),
 ]
 

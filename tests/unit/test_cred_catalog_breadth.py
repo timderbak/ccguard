@@ -14,7 +14,6 @@ SAAS = [
     "cat ~/.snowflake/credentials",
     "cat ~/.databricks-cfg",
     "cat ~/.dbt/profiles.yml",
-    "cat ~/.docker/config.json",
     "cat ~/.terraform.d/credentials.tfrc.json",
     "cat ~/.pgpass",
     "cat ~/.my.cnf",

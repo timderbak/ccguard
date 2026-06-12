@@ -79,8 +79,10 @@ scenarios:
       Credential access followed by exfiltration over ANY channel, then a
       defense-evasion action (clearing shell history / system logs / disabling
       security tooling). The cover-up step strongly confirms malicious intent.
-    window_seconds: 900
-    severity: critical
+      Severity is `block` (not critical): the cover-up leg can be `history -c`,
+      which has a non-trivial benign base rate, so we surface but don't scream.
+    window_seconds: 600
+    severity: block
     require_order: true
     steps:
       - {step_index: 0, tactic: credential-access, description: "read any secret"}
@@ -93,7 +95,7 @@ scenarios:
       The attacker first disables the security tooling / EDR hook or clears
       logs (defense-evasion), then reads secrets and exfiltrates — the classic
       "go dark, then steal" sequence. Pairs with the hook.removed tamper finding.
-    window_seconds: 1800
+    window_seconds: 900
     severity: critical
     require_order: true
     steps:
@@ -101,14 +103,8 @@ scenarios:
       - {step_index: 1, tactic: credential-access, description: "read any secret"}
       - {step_index: 2, tactic: exfiltration, description: "ANY egress channel"}
 
-  - scenario_key: cred_to_lateral
-    name: "Доступ к секретам → латеральное перемещение"
-    description: >-
-      Stolen credentials are used to execute commands on another host (remote
-      ssh exec / psexec / winrs) — pivoting deeper into the environment.
-    window_seconds: 600
-    severity: block
-    require_order: true
-    steps:
-      - {step_index: 0, tactic: credential-access, description: "read any secret"}
-      - {step_index: 1, tactic: lateral-movement, description: "remote command execution on another host"}
+  # NOTE: a cred→lateral chain was intentionally NOT added — `ssh host <cmd>`
+  # is the universal deploy/CI idiom, so `read .env` + `ssh deploy@prod restart`
+  # would manufacture a finding on every deploy. lateral.remote_exec stays a
+  # low-weight informational tag; lateral-pivot detection needs host-allowlist
+  # context (a future refinement), not a bare ssh-command stage match.

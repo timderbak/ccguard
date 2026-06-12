@@ -48,7 +48,6 @@ def test_new_scenarios_loaded_and_no_dead_stages(tmp_path):
         "injection_to_c2",
         "exfil_then_coverup",
         "evade_then_steal",
-        "cred_to_lateral",
     } <= keys
     # every step tactic must resolve to a producible stage (no armed-waiting dead steps)
     for st in steps:
@@ -75,10 +74,14 @@ def test_exfil_then_coverup_fires(tmp_path):
     assert "ioa.chain.exfil_then_coverup" in rule_ids
 
 
-def test_cred_to_lateral_fires(tmp_path):
+def test_benign_cred_egress_without_coverup_stays_quiet(tmp_path):
+    # A benign session (read .env, curl an internal health URL, write a build
+    # log) produces credential-access + exfiltration but NO defense-evasion
+    # signal — so the cover-up / evade chains must NOT fire.
     with Session(_engine(tmp_path)) as s:
         chain_seed_service.load_chain_seed(s)
-        _ev(s, "m", signals=["cred.read.ssh"], minutes_ago=4)         # credential-access
-        _ev(s, "m", signals=["lateral.remote_exec"], minutes_ago=1)   # lateral-movement
+        _ev(s, "m", signals=["cred.read.dotenv"], minutes_ago=5)
+        _ev(s, "m", signals=["egress.network_tool"], minutes_ago=2)
         rule_ids = [f.rule_id for f in chain_engine.evaluate_machine(s, "m")]
-    assert "ioa.chain.cred_to_lateral" in rule_ids
+    assert "ioa.chain.exfil_then_coverup" not in rule_ids
+    assert "ioa.chain.evade_then_steal" not in rule_ids

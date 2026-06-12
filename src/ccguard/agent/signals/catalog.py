@@ -69,23 +69,28 @@ CATALOG: tuple[Signal, ...] = (
         "egress.http_client",
         "T1041",
         _p(
+            # Anchored to CALL forms (not bare library names) so `npm i axios`,
+            # `grep "fetch(" src/`, `git commit -m "http post"` do NOT fire.
             r"\b(requests\.(get|post|put|patch|delete|request)"
             r"|httpx\.(get|post|put|patch|delete)|urllib\.request|urllib2\."
-            r"|http\.client|aiohttp|socket\.(socket|connect)"
-            r"|net::http|net/http"
-            r"|invoke-webrequest|invoke-restmethod|\bhttpie\b|\bxh\b|axios|fetch\("
-            r"|\bhttp\s+(?:get|post|put|patch|delete|head|options)\b)"
+            r"|http\.client|socket\.(socket|connect)"
+            r"|invoke-webrequest|invoke-restmethod"
+            r"|fetch\(\s*['\"]?https?://"
+            r"|\bhttp\s+(?:get|post|put|patch|delete|head|options)\s+\S*[:/.]\S)"
         ),
-        "Ad-hoc HTTP client egress (python/node/ruby/powershell/httpie) — host-agnostic",
+        "Ad-hoc HTTP client egress (python requests/httpx/urllib/socket, node fetch(url), httpie, PowerShell) — host-agnostic",
     ),
     Signal(
         "egress.file_transfer",
         "T1048",
         _p(
-            r"\b(rclone\s+(copy|sync|move)|rsync\s+\S+.*\s\S+:"
-            r"|\blftp\b|\btftp\b|\bftp\s+-?\w*\s)"
+            # Require a REMOTE destination so a purely-local `rsync a/ b/` (with
+            # a stray `:` elsewhere on the line) does not fire.
+            r"\b(rclone\s+(copy|sync|move)\s+\S+\s+\S+:"
+            r"|rsync\b[^\n]*\s(?:[\w.-]+@[\w.-]+:|[\w.-]+:[~/])"
+            r"|\blftp\b|\btftp\b|\bftp\s+[\w.-]+\.[\w.-]+)"
         ),
-        "Bulk file-transfer egress (rclone/rsync-remote/ftp)",
+        "Bulk file-transfer egress to a REMOTE host (rclone remote:, rsync host:path, ftp)",
     ),
     Signal(
         "egress.cloud_cli",
@@ -212,12 +217,15 @@ CATALOG: tuple[Signal, ...] = (
         "cred.read.saas_token",
         "T1552.001",
         _p(
+            # NOTE: .docker/config.json dropped — it FPs on the universal
+            # kaniko/BuildKit `-v ~/.docker/config.json:...` volume-mount idiom.
+            # End-anchored so .pgpass.bak / .s3cfg.lock etc. do not fire.
             r"(\.snowflake/|\.databricks|\.dbt/|\.netlify/|\.vercel/"
-            r"|\.terraform\.d/credentials|\.terraformrc\b|\.docker/config\.json"
-            r"|\.kaggle/|\.huggingface/token|\.continue/|\.s3cfg\b"
-            r"|\.pgpass\b|\.my\.cnf\b)"
+            r"|\.terraform\.d/credentials|\.terraformrc\b"
+            r"|\.kaggle/|\.huggingface/token|\.continue/|\.s3cfg(?![\w])"
+            r"|\.pgpass(?![\w.])|\.my\.cnf(?![\w]))"
         ),
-        "Access to SaaS / cloud-CLI / DB credential files (Snowflake, Databricks, Terraform, Docker, pgpass…)",
+        "Access to SaaS / cloud-CLI / DB credential files (Snowflake, Databricks, Terraform, pgpass…)",
     ),
     Signal(
         "cred.read.secret_manager",
@@ -336,56 +344,81 @@ CATALOG: tuple[Signal, ...] = (
         "defense.disable_security",
         "T1562.001",
         _p(
-            r"(--dangerously-skip-permissions|disableallhooks"
-            r"|\bccguard\b[^\n]*\b(uninstall|disable|remove)\b"
-            r"|\bufw\s+disable\b|\biptables\s+-f\b|\bsetenforce\s+0\b"
+            # NOTE: --dangerously-skip-permissions is a normal Claude Code launch
+            # flag (it skips Claude's permission prompts, NOT ccguard's hooks) —
+            # tagging it as defense-evasion is a false positive, so it is excluded.
+            r"(disableallhooks"
+            # ccguard tamper — verb ADJACENT to the product name (bounded, so
+            # prose like "ccguard helps disable nothing" does not fire).
+            r"|\bccguard\s+(uninstall|disable|stop|remove)\b|\b(uninstall|remove)\s+ccguard\b"
+            r"|\bufw\s+disable\b|\biptables\s+-f\b|\bsetenforce\s+(0|permissive)\b"
             r"|spctl\s+--master-disable|csrutil\s+disable"
-            r"|systemctl\s+(stop|disable)\s+\S*(falcon|crowdstrike|defender|auditd|osquery))"
+            # Kill / stop / restart / unload the EDR sensor itself.
+            r"|(pkill|killall|kill)\b[^\n]*\b(falcon|crowdstrike|osquery|auditd|sentinelone)\b"
+            r"|systemctl\s+(stop|disable|restart|mask)\s+\S*(falcon|crowdstrike|defender|auditd|osquery)"
+            r"|launchctl\s+(unload|bootout)\b[^\n]*(crowdstrike|falcon))"
         ),
-        "Disable security tooling / ccguard hook (impair defenses)",
+        "Disable / kill security tooling or the ccguard hook (impair defenses)",
     ),
     Signal(
         "defense.clear_history",
         "T1070.003",
         _p(
-            r"(history\s+-c\b|\bunset\s+histfile\b|histsize\s*=\s*0"
-            r"|rm\b[^\n]*\.(bash|zsh)_history|>\s*~?/?\.(bash|zsh)_history)"
+            r"(history\s+-c\b|history\s+-w\s+/dev/null|\bunset\s+histfile\b"
+            r"|histsize\s*=\s*0|(export\s+)?histfile=/dev/null"
+            r"|(rm|shred|truncate)\b[^\n]*\.(bash|zsh)_history(?![\w])"
+            r"|>\s*~?/?\.(bash|zsh)_history(?![\w.])"
+            r"|ln\s+-sf?\s+/dev/null\b[^\n]*_history)"
         ),
-        "Shell-history clearing (indicator removal)",
+        "Shell-history clearing / tampering (indicator removal)",
     ),
     Signal(
         "defense.clear_logs",
         "T1070.002",
         _p(
-            r"(journalctl\s+--vacuum|truncate\b[^\n]*/var/log"
-            r"|rm\b[^\n]*/var/log/|>\s*/var/log/)"
+            # High-precision WIPE forms only — a bare `cmd > /var/log/x.log`
+            # redirect is dropped (it FPs on benign app/CI log writes). Retention
+            # (`journalctl --vacuum-time=2d`) is excluded; only a 0-time/size or
+            # --rotate wipe fires.
+            r"(journalctl\s+(--rotate|--vacuum-time=0|--vacuum-size=0)"
+            r"|(truncate\s+-s\s*0|\bshred)\b[^\n]*/var/log"
+            r"|\brm\s+-\S*[rf][^\n]*/var/log"
+            r"|(:|cat\s+/dev/null)\s*>\s*/var/log/)"
         ),
-        "System-log clearing / truncation (indicator removal)",
+        "System-log wipe / truncation (indicator removal)",
     ),
     Signal(
         "c2.reverse_shell",
         "T1071.001",
         _p(
-            r"(/dev/tcp/|/dev/udp/|\bnc\s+-\S*e\b|\bncat\b[^\n]*-e\b"
+            r"(/dev/tcp/|/dev/udp/|\bnc\b[^\n]*-e\s*/|\bncat\b[^\n]*-e\b"
             r"|mkfifo\b[^\n]*\|\s*n?cat?\b"
-            r"|socat\b[^\n]*exec|bash\s+-i\b[^\n]*>&|sh\s+-i\b[^\n]*>&)"
+            r"|socat\b[^\n]*exec|bash\s+-i\b[^\n]*>&|sh\s+-i\b[^\n]*>&"
+            # inline-interpreter reverse shells (python/perl/ruby socket→shell)
+            r"|(python[0-9.]*|perl|ruby)\b[^\n]*socket[^\n]*(/bin/(sh|bash)|exec|subprocess))"
         ),
         "Reverse shell — interactive C2 channel",
     ),
     Signal(
         "c2.tunnel",
         "T1572",
-        _p(r"(\bngrok\b|cloudflared\s+tunnel|\bchisel\b|ssh\s+[^\n]*\s-r\b|localtunnel)"),
-        "Outbound tunnel / remote-access relay",
+        _p(r"\b(ngrok|autossh|chisel|localtunnel)\b|cloudflared\s+tunnel|\bssh\b[^\n]*\s-R[\s\d:]"),
+        "Outbound tunnel / remote-access relay (incl. ssh -R reverse tunnel)",
     ),
     Signal(
         "lateral.remote_exec",
         "T1021.004",
         _p(
-            r"(ssh\s+([\w.-]+@)?[\w.-]+\s+['\"]?[\w/.-]+\s"
+            # Allow leading option flags (-i key / -p port / -o ...) and anchor
+            # the remote-command token so `ssh -i k host ./x.sh` matches and
+            # `ssh -T git@github.com` (auth probe, no command) does not.
+            # Use [ \t] (same-line) not \s — the normalizer joins copies with
+            # \n, and \s+\S+ would otherwise match a host on one line + the next
+            # copy's first token, fabricating a "remote command".
+            r"(ssh([ \t]+-\S+([ \t]+\S+)?)*[ \t]+([\w.-]+@)?[a-z0-9][\w.-]*[ \t]+\S"
             r"|\bpssh\b|\bpsexec\b|wmic\s+/node:|\bwinrs\s+-r)"
         ),
-        "Remote command execution on another host (lateral movement)",
+        "Remote command execution on another host (lateral movement; low-weight, correlation-gated)",
     ),
     # --- P2: catalog width pass — cred / discovery / persistence / exec ---
     Signal(
@@ -422,13 +455,16 @@ CATALOG: tuple[Signal, ...] = (
     Signal(
         "persist.ssh_authorized_keys",
         "T1098.004",
-        _p(r"authorized_keys\b"),
-        "Modification of SSH authorized_keys — attacker key persistence",
+        # WRITE-gated: a redirect/tee/ssh-copy-id into authorized_keys(2). A
+        # plain `cat ~/.ssh/authorized_keys` READ must NOT be flagged as persistence.
+        _p(r"(>>?\s*\S*authorized_keys2?\b|\btee\b[^\n]*authorized_keys2?\b|\bssh-copy-id\b)"),
+        "Write to SSH authorized_keys — attacker-key persistence",
     ),
     Signal(
         "exec.powershell_encoded",
         "T1059.001",
-        _p(r"\b(powershell|pwsh)(\.exe)?\b[^\n]*\s-e(nc|ncodedcommand)?\s+[a-z0-9+/=]{16,}"),
+        # Accept PowerShell -e/-en/-enc/-encodedcommand abbreviations + a quoted blob.
+        _p(r"\b(powershell|pwsh)(\.exe)?\b[^\n]*\s-e[a-z]*\s+['\"]?[a-z0-9+/=]{16,}"),
         "PowerShell encoded command — obfuscated execution",
     ),
     # --- Action signals (ТЗ-02 staging middle link) ----------------------
