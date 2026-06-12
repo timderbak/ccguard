@@ -344,13 +344,17 @@ class OllamaSignalDrafter:
 def build_signal_drafter(cfg: object) -> SignalDrafterProtocol | None:
     """Pick the signal-drafter backend (P3.2).
 
-    Self-hosted Ollama is the DEFAULT so the enrichment loop runs on-prem with
-    no API key. Anthropic is used when ``llm_provider='anthropic'`` (and a key
-    is present), or as a fallback when Ollama is unreachable AND a key is
-    present. Returns ``None`` when no usable backend exists — the discovery
-    sweep then skips (the scheduler already null-checks the drafter).
+    Precedence:
+      * ``llm_provider='anthropic'``        → Anthropic (key required).
+      * ``llm_provider='auto'`` (default) + key present → Anthropic, and Ollama
+        is NEVER contacted (current hosted / testing path).
+      * ``llm_provider='ollama'``, or ``'auto'`` with NO key → self-hosted
+        Ollama; if Ollama is explicitly requested but unreachable AND a key
+        exists, fall back to Anthropic.
+    Returns ``None`` when no usable backend exists — the discovery sweep then
+    skips (the scheduler already null-checks the drafter).
     """
-    provider = (getattr(cfg, "llm_provider", "ollama") or "ollama").lower()
+    provider = (getattr(cfg, "llm_provider", "auto") or "auto").lower()
     api_key = getattr(cfg, "anthropic_api_key", None)
 
     def _try_anthropic() -> SignalDrafterProtocol | None:
@@ -368,6 +372,11 @@ def build_signal_drafter(cfg: object) -> SignalDrafterProtocol | None:
         log.warning("llm_provider=anthropic but no ANTHROPIC_API_KEY — signal drafter disabled")
         return None
 
+    # 'auto' with a key → Anthropic, leave Ollama untouched (hosted/testing).
+    if provider == "auto" and api_key:
+        return _try_anthropic()
+
+    # 'ollama', or 'auto' with no key → self-hosted backend.
     endpoint = getattr(cfg, "ollama_endpoint", _OLLAMA_DEFAULT_ENDPOINT)
     model = getattr(cfg, "ollama_model", _OLLAMA_DEFAULT_MODEL)
     ollama = OllamaSignalDrafter(endpoint=endpoint, model=model)
@@ -381,8 +390,8 @@ def build_signal_drafter(cfg: object) -> SignalDrafterProtocol | None:
         )
         return _try_anthropic()
     log.warning(
-        "Ollama at %s unreachable or model '%s' not pulled and no ANTHROPIC_API_KEY — "
-        "signal drafter disabled (run `ollama pull %s`)",
+        "No usable LLM drafter: Ollama unreachable at %s (model '%s') and no "
+        "ANTHROPIC_API_KEY — drafter disabled (set ANTHROPIC_API_KEY, or run `ollama pull %s`)",
         endpoint,
         model,
         model,

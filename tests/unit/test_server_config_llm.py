@@ -1,12 +1,13 @@
-"""P3.2: ServerConfig LLM-backend fields default to self-hosted Ollama."""
+"""P3.2: ServerConfig LLM-backend fields. Default provider is 'auto' (Anthropic
+when a key is present, Ollama otherwise)."""
 from __future__ import annotations
 
 from ccguard.server.config import ServerConfig
 
 
-def test_llm_provider_defaults_to_ollama():
+def test_llm_provider_defaults_to_auto():
     cfg = ServerConfig()
-    assert cfg.llm_provider == "ollama"
+    assert cfg.llm_provider == "auto"
     assert cfg.ollama_endpoint == "http://localhost:11434"
     assert cfg.ollama_model == "qwen2.5:7b-instruct"
 

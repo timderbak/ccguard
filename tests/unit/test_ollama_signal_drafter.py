@@ -156,3 +156,24 @@ def test_factory_explicit_anthropic_provider():
 
 def test_factory_anthropic_provider_no_key_is_none():
     assert build_signal_drafter(_cfg(llm_provider="anthropic")) is None
+
+
+def test_factory_auto_with_key_uses_anthropic_and_never_touches_ollama(monkeypatch):
+    # the current hosted/testing path: a key means Anthropic, and Ollama's
+    # preflight must NOT be called at all.
+    def _boom(self):
+        raise AssertionError("Ollama preflight must not run when auto+key")
+
+    monkeypatch.setattr(OllamaSignalDrafter, "preflight", _boom)
+    d = build_signal_drafter(_cfg(llm_provider="auto", anthropic_api_key="sk-x"))
+    assert isinstance(d, AnthropicSignalDrafter)
+
+
+def test_factory_auto_no_key_uses_ollama(monkeypatch):
+    monkeypatch.setattr(OllamaSignalDrafter, "preflight", lambda self: True)
+    assert isinstance(build_signal_drafter(_cfg(llm_provider="auto")), OllamaSignalDrafter)
+
+
+def test_factory_auto_no_key_no_ollama_is_none(monkeypatch):
+    monkeypatch.setattr(OllamaSignalDrafter, "preflight", lambda self: False)
+    assert build_signal_drafter(_cfg(llm_provider="auto")) is None

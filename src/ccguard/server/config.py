@@ -30,11 +30,14 @@ class ServerConfig(BaseModel):
     session_secret: str = "change-me-in-prod"
     cookie_secure: bool = False
     anthropic_api_key: str | None = None
-    # P3.2: LLM backend for the signal drafter. Self-hosted Ollama is the
-    # on-prem default so the enrichment loop runs without a paid API key;
-    # Anthropic is an optional fallback (used when provider='anthropic', or
-    # when Ollama is unreachable AND a key is present).
-    llm_provider: str = "ollama"  # 'ollama' | 'anthropic'
+    # P3.2: LLM backend for the signal drafter. Default 'auto':
+    #   * ANTHROPIC_API_KEY present  → use Anthropic, do NOT touch Ollama
+    #     (the current hosted / testing path).
+    #   * no key                     → self-hosted Ollama (future on-prem
+    #     clients, no paid API).
+    # Force a backend with CCGUARD_LLM_PROVIDER=anthropic|ollama. Ollama is
+    # wired and ready but never contacted unless selected or no key exists.
+    llm_provider: str = "auto"  # 'auto' | 'anthropic' | 'ollama'
     ollama_endpoint: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b-instruct"
 
