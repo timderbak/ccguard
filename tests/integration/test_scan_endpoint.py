@@ -400,3 +400,20 @@ def test_scan_content_does_not_log_raw_content(
             )
     finally:
         client.__exit__(None, None, None)
+
+
+def test_env_forces_llm_scanner_enabled_at_startup(monkeypatch, tmp_path: Path) -> None:
+    """P5 prod activation: CCGUARD_LLM_SCANNER_ENABLED=true flips the setting on
+    at boot, so prod activation is a deploy-time env var, not a manual UI toggle."""
+    monkeypatch.setenv("CCGUARD_SERVER_CONFIG", str(tmp_path / "absent.yaml"))
+    monkeypatch.setenv("CCGUARD_DB_URL", f"sqlite:///{tmp_path}/sc-enable.db")
+    monkeypatch.setenv("CCGUARD_SESSION_SECRET", "test-secret-scanner-enable")
+    monkeypatch.setenv("CCGUARD_LLM_SCANNER_ENABLED", "true")
+    client = TestClient(create_app())
+    client.__enter__()
+    try:
+        with Session(client.app.state.engine) as s:
+            rec = s.get(SettingsRecord, "llm_scanner_enabled")
+            assert rec is not None and rec.value == "true"
+    finally:
+        client.__exit__(None, None, None)

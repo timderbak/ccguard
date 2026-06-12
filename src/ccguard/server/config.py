@@ -9,6 +9,13 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
 
+def _parse_optional_bool(raw: str | None) -> bool | None:
+    """None when unset; else truthy ('1'/'true'/'yes'/'on', case-insensitive)."""
+    if raw is None:
+        return None
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 class TokenEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
     value: str
@@ -40,6 +47,11 @@ class ServerConfig(BaseModel):
     llm_provider: str = "auto"  # 'auto' | 'anthropic' | 'ollama'
     ollama_endpoint: str = "http://localhost:11434"
     ollama_model: str = "qwen2.5:7b-instruct"
+    # P5: read_file semantic-PI backstop master switch. None → managed via the
+    # /settings UI (seeded default is off). True/False (from
+    # CCGUARD_LLM_SCANNER_ENABLED) → authoritative at EVERY startup, for
+    # deploy-time activation without a manual UI flip (paired with ANTHROPIC_API_KEY).
+    llm_scanner_enabled: bool | None = None
 
     @property
     def llm_enabled_at_startup(self) -> bool:
@@ -76,6 +88,7 @@ class ServerConfig(BaseModel):
             llm_provider=os.environ.get("CCGUARD_LLM_PROVIDER", cls.model_fields["llm_provider"].default),
             ollama_endpoint=os.environ.get("CCGUARD_LLM_ENDPOINT", cls.model_fields["ollama_endpoint"].default),
             ollama_model=os.environ.get("CCGUARD_LLM_MODEL", cls.model_fields["ollama_model"].default),
+            llm_scanner_enabled=_parse_optional_bool(os.environ.get("CCGUARD_LLM_SCANNER_ENABLED")),
         )
 
     def is_token_valid(self, token: str) -> bool:

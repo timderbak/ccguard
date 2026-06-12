@@ -44,6 +44,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Plan 03-01 D-04: seed LLM-scanner KV defaults on first startup;
         # subsequent restarts are no-ops, preserving admin edits.
         seed_llm_settings(_s)
+        # P5 prod activation: CCGUARD_LLM_SCANNER_ENABLED, when explicitly set,
+        # is authoritative each boot — flips the read_file semantic backstop on
+        # (or off) at deploy time without a manual /settings toggle. Unset →
+        # managed via the UI (the seeded default is off). Pair with
+        # ANTHROPIC_API_KEY (which builds the ScanService below).
+        if cfg.llm_scanner_enabled is not None:
+            from ccguard.server.services.settings_service import set_setting
+            set_setting(_s, "llm_scanner_enabled", "true" if cfg.llm_scanner_enabled else "false")
+            logger.info(
+                "llm_scanner_enabled=%s from CCGUARD_LLM_SCANNER_ENABLED (authoritative this boot)",
+                cfg.llm_scanner_enabled,
+            )
         # Behavioral Detection Stage 2: seed risk-engine tunables.
         seed_risk_settings(_s)
         # Behavioral Detection Stage 3: seed sequence-detector tunables.

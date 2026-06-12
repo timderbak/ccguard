@@ -22,3 +22,20 @@ def test_load_reads_llm_env(monkeypatch, tmp_path):
     assert cfg.llm_provider == "anthropic"
     assert cfg.ollama_model == "llama3.1:8b-instruct"
     assert cfg.ollama_endpoint == "http://ollama-host:11434"
+
+
+def test_llm_scanner_enabled_defaults_to_none():
+    # None = "managed via the /settings UI" (the seeded default is off).
+    assert ServerConfig().llm_scanner_enabled is None
+
+
+def test_load_reads_llm_scanner_enabled_env(monkeypatch, tmp_path):
+    monkeypatch.setenv("CCGUARD_SERVER_CONFIG", str(tmp_path / "absent.yaml"))
+    # unset → None (UI-managed)
+    monkeypatch.delenv("CCGUARD_LLM_SCANNER_ENABLED", raising=False)
+    assert ServerConfig.load().llm_scanner_enabled is None
+    # explicit truthy / falsy → bool (deploy-time authoritative)
+    monkeypatch.setenv("CCGUARD_LLM_SCANNER_ENABLED", "true")
+    assert ServerConfig.load().llm_scanner_enabled is True
+    monkeypatch.setenv("CCGUARD_LLM_SCANNER_ENABLED", "off")
+    assert ServerConfig.load().llm_scanner_enabled is False
