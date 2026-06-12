@@ -51,14 +51,16 @@ def _mk_event(
     session.commit()
 
 
-def test_no_warm_baseline_no_finding(client: TestClient) -> None:
+def test_cold_machine_still_fires_deterministic_ioa(client: TestClient) -> None:
+    # Harsher: the deterministic cred->egress IOA fires even on a fresh (cold)
+    # machine — the warm gate that blinded new endpoints for ~7 days is removed.
     with Session(client.app.state.engine) as session:  # type: ignore[attr-defined]
         mid = _mk_machine(session, "m-cold", warm=False)
         now = datetime.now(UTC)
         _mk_event(session, mid, ["cred.read.aws"], ts=now - timedelta(minutes=2))
         _mk_event(session, mid, ["egress.network_tool"], ts=now)
         summary = sequence_service.tick(session)
-        assert summary["findings_emitted"] == 0
+        assert summary["findings_emitted"] == 1
 
 
 def test_cred_only_no_finding(client: TestClient) -> None:

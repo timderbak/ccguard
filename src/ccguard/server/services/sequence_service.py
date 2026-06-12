@@ -228,7 +228,6 @@ from sqlmodel import Session, select  # noqa: E402
 from ccguard.server.db.models import (  # noqa: E402
     FindingRecord,
     Machine,
-    MachineBaseline,
     ToolUseEvent,
 )
 from ccguard.server.services import settings_service  # noqa: E402
@@ -272,16 +271,6 @@ def _load_tunables(session: Session) -> tuple[float, float]:
         _f("sequence.window_minutes", DEFAULT_WINDOW_MINUTES),
         _f("sequence.lookback_hours", DEFAULT_LOOKBACK_HOURS),
     )
-
-
-def _machine_is_warm(session: Session, machine_id: str) -> bool:
-    stmt = (
-        select(MachineBaseline)
-        .where(MachineBaseline.machine_id == machine_id)
-        .where(MachineBaseline.baseline_ready == True)  # noqa: E712
-        .limit(1)
-    )
-    return session.exec(stmt).first() is not None
 
 
 def _same_day_finding_exists(
@@ -351,8 +340,11 @@ def _group_by_session(
 
 def evaluate_one(session: Session, machine_id: str) -> FindingRecord | None:
     """Detect an exfil sequence for one machine and emit a finding if matched."""
-    if not _machine_is_warm(session, machine_id):
-        return None
+    # Deterministic cred->egress / staging IOA fire from the FIRST event — they
+    # are signal-sequence patterns, not statistical anomalies, so NO warm
+    # baseline is required. The warm gate only blinded fresh machines for ~7 days,
+    # exactly when a quiet attacker on a new endpoint is most dangerous. (The
+    # statistical anomaly engine keeps its own warmup; this is the IOA path.)
 
     window_min, lookback_h = _load_tunables(session)
     now = datetime.now(UTC)
@@ -513,8 +505,11 @@ def evaluate_one_staging(session: Session, machine_id: str) -> FindingRecord | N
     noise in one session never hides a real chain in another). Dedup is
     severity-aware per rule_id so a benign finding can't shadow an attack.
     """
-    if not _machine_is_warm(session, machine_id):
-        return None
+    # Deterministic cred->egress / staging IOA fire from the FIRST event — they
+    # are signal-sequence patterns, not statistical anomalies, so NO warm
+    # baseline is required. The warm gate only blinded fresh machines for ~7 days,
+    # exactly when a quiet attacker on a new endpoint is most dangerous. (The
+    # statistical anomaly engine keeps its own warmup; this is the IOA path.)
 
     window_min, lookback_h = _load_tunables(session)
     weights, thresholds = _load_staging_cfg(session)
