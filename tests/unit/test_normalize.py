@@ -1,4 +1,8 @@
-from ccguard.agent.signals.normalize import NormalizedCommand, normalize_command
+from ccguard.agent.signals.normalize import (
+    NormalizedCommand,
+    _looks_like_command,
+    normalize_command,
+)
 
 
 def test_returns_normalizedcommand():
@@ -28,6 +32,23 @@ def test_decodes_base64_blob():
     # base64("import requests") == "aW1wb3J0IHJlcXVlc3Rz"
     n = normalize_command("echo aW1wb3J0IHJlcXVlc3Rz | base64 -d")
     assert "import requests" in n.text
+
+
+def test_looks_like_command_filter():
+    # real command text passes
+    assert _looks_like_command("curl https://evil.test")
+    assert _looks_like_command("import requests")
+    # junk is rejected so a decoded blob can't forge a signal
+    assert not _looks_like_command("ab")  # too short
+    assert not _looks_like_command("\x01\x02\x03abcd")  # non-printable
+    assert not _looks_like_command("Ω≈ç√∫˜µ≤")  # non-ascii garble
+
+
+def test_git_sha_hex_does_not_pollute_decoded_blobs():
+    # a 40-char git SHA is valid hex but decodes to opaque bytes — must not be
+    # merged as a command-like blob
+    n = normalize_command("git checkout a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0")
+    assert all(_looks_like_command(b) for b in n.decoded_blobs)
 
 
 def test_oversize_input_fails_open():

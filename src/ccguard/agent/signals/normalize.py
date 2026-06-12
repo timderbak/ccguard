@@ -92,6 +92,20 @@ def _expand_vars(text: str, vars_: dict[str, str]) -> str:
     return re.sub(r"\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)", repl, text)
 
 
+_CMD_CHARS = set(" ./:_-@|=\"'$(){}[]<>~&;*+,!?")
+
+
+def _looks_like_command(dec: str) -> bool:
+    """Only merge a decoded blob into the search surface if it plausibly holds
+    shell/command text: ASCII, length >= 4, and >=85% command-like chars. This
+    rejects random hex/base64 (git SHAs, opaque tokens) that decode to printable
+    junk and could otherwise forge a signal (review should-fix)."""
+    if len(dec) < 4 or not dec.isascii() or not dec.isprintable():
+        return False
+    good = sum(1 for c in dec if c.isalnum() or c in _CMD_CHARS)
+    return good / len(dec) >= 0.85
+
+
 def _decode_blobs(text: str) -> list[str]:
     out: list[str] = []
     for m in _B64_TOKEN.finditer(text):
@@ -102,7 +116,7 @@ def _decode_blobs(text: str) -> list[str]:
             dec = base64.b64decode(tok, validate=True).decode("utf-8", "ignore")
         except (binascii.Error, ValueError):
             continue
-        if dec.isprintable() and len(dec) >= 3:
+        if _looks_like_command(dec):
             out.append(dec)
     for m in _HEX_TOKEN.finditer(text):
         if len(out) >= _MAX_BLOBS:
@@ -114,7 +128,7 @@ def _decode_blobs(text: str) -> list[str]:
             dec = bytes.fromhex(raw).decode("utf-8", "ignore")
         except ValueError:
             continue
-        if dec.isprintable() and len(dec) >= 3:
+        if _looks_like_command(dec):
             out.append(dec)
     return out
 
