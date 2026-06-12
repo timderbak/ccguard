@@ -7,10 +7,10 @@
 # with NO change to the scenario.
 #
 # Stages must be backed by a signal the agent emits (see chain_constants
-# _SIGNAL_STAGE_RULES). Stages with no signal yet (impact / defense-evasion /
-# command-and-control) are "armed-waiting": the scenario loads, but the step
-# can only fire once a signal for that stage exists — at which point it fires
-# with zero engine change (the data-driven promise, made visible).
+# _SIGNAL_STAGE_RULES). As of P2/P4 every endpoint kill-chain stage is now
+# mapped (impact, defense-evasion, command-and-control, lateral-movement all
+# have signals), so the scenarios below fire end-to-end — the data-driven
+# promise made concrete: new chains are rows here, not engine code.
 #
 # Loaded idempotently at startup (insert-or-skip on scenario_key). Severity uses
 # the FindingRecord vocabulary (info|warn|block|critical).
@@ -49,13 +49,66 @@ scenarios:
     name: "Компрометация цепочки → выполнение → деструктив"
     description: >-
       Supply-chain / rug-pull entry leads to code execution and then a
-      destructive action. NOTE: the `impact` stage is armed-waiting — no agent
-      signal maps to impact yet, so this scenario will start firing only once a
-      destructive-action signal is added (data-driven, no engine change).
+      destructive action (impact.* signals now live — fires end-to-end).
     window_seconds: 300
     severity: block
     require_order: true
     steps:
       - {step_index: 0, tactic: initial-access, description: "supply-chain / pkg.publish entry"}
       - {step_index: 1, tactic: execution, description: "pipe-to-shell / eval"}
-      - {step_index: 2, tactic: impact, description: "destructive (armed-waiting: no signal yet)"}
+      - {step_index: 2, tactic: impact, description: "destructive (rm -rf / DROP / dd)"}
+
+  # --- P2/P4 flagship chains: now fireable thanks to the revived stages -----
+  - scenario_key: injection_to_c2
+    name: "Инъекция → выполнение → C2 (reverse shell)"
+    description: >-
+      External/MCP-delivered injection leads to code execution and then an
+      interactive command-and-control channel (reverse shell / tunnel). The
+      initial-access step also fires on MCP tool-results (content.read.external).
+    window_seconds: 600
+    severity: critical
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: initial-access, description: "external content / MCP tool-result injection"}
+      - {step_index: 1, tactic: execution, description: "pipe-to-shell / eval / inline code"}
+      - {step_index: 2, tactic: command-and-control, description: "reverse shell / outbound tunnel"}
+
+  - scenario_key: exfil_then_coverup
+    name: "Доступ → вынос → заметание следов"
+    description: >-
+      Credential access followed by exfiltration over ANY channel, then a
+      defense-evasion action (clearing shell history / system logs / disabling
+      security tooling). The cover-up step strongly confirms malicious intent.
+    window_seconds: 900
+    severity: critical
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: credential-access, description: "read any secret"}
+      - {step_index: 1, tactic: exfiltration, description: "ANY egress channel"}
+      - {step_index: 2, tactic: defense-evasion, description: "clear history/logs / disable tooling"}
+
+  - scenario_key: evade_then_steal
+    name: "Ослепление защиты → доступ → вынос"
+    description: >-
+      The attacker first disables the security tooling / EDR hook or clears
+      logs (defense-evasion), then reads secrets and exfiltrates — the classic
+      "go dark, then steal" sequence. Pairs with the hook.removed tamper finding.
+    window_seconds: 1800
+    severity: critical
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: defense-evasion, description: "disable security tooling / clear logs"}
+      - {step_index: 1, tactic: credential-access, description: "read any secret"}
+      - {step_index: 2, tactic: exfiltration, description: "ANY egress channel"}
+
+  - scenario_key: cred_to_lateral
+    name: "Доступ к секретам → латеральное перемещение"
+    description: >-
+      Stolen credentials are used to execute commands on another host (remote
+      ssh exec / psexec / winrs) — pivoting deeper into the environment.
+    window_seconds: 600
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: credential-access, description: "read any secret"}
+      - {step_index: 1, tactic: lateral-movement, description: "remote command execution on another host"}
