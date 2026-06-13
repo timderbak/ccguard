@@ -56,7 +56,10 @@ CATALOG: tuple[Signal, ...] = (
     Signal(
         "egress.network_tool",
         "T1041",
-        _p(r"\b(curl|wget|nc|ncat|scp|sftp)\b"),
+        # Command-anchored: not preceded by a path/word char, so a tool name as a
+        # path component (``/opt/curl``, ``func nc``) does not forge egress. Real
+        # invocations (start, after space / ; | & ( newline) still fire.
+        _p(r"(?<![\w/.\-])(curl|wget|nc|ncat|scp|sftp)\b"),
         "Outbound transfer tool invoked",
     ),
     # --- P1: egress as ACTION-category (host-agnostic) -----------------------
