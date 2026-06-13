@@ -108,4 +108,10 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "collection.archive_staging": 4.0,
     "collection.screen_capture": 2.0,
     "collection.clipboard": 1.0,
+    # Coverage expansion (audit-driven).
+    "collection.db_dump": 3.0,
+    "cred.read.env_dump": 4.0,
+    "pkg.install_untrusted": 3.0,  # supply-chain entry
+    "egress.dns_tool": 3.0,
+    "egress.icmp_tunnel": 3.0,
 }

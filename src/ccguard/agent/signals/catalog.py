@@ -104,8 +104,16 @@ CATALOG: tuple[Signal, ...] = (
     Signal(
         "exec.pipe_to_shell",
         "T1059.004",
-        _p(r"(\|\s*(ba|z)?sh\b|base64\s+(-d|--decode)|\beval\b)"),
-        "Piping/decoding into a shell interpreter",
+        # | sh / | bash, base64 decode, eval, AND piping into a language
+        # interpreter that reads CODE FROM STDIN (no script arg) — `curl … |
+        # python3`, `… | perl`. A script arg (`… | python3 parse.py`) is data
+        # processing and does NOT match (interpreter must end the pipe segment).
+        _p(
+            r"(\|\s*(ba|z)?sh\b"
+            r"|\|\s*(python[0-9.]*|perl|ruby|node|deno|bun|php|rscript)\b\s*-?\s*(?=$|[|;&\n])"
+            r"|base64\s+(-d|--decode)|\beval\b)"
+        ),
+        "Piping/decoding into a shell or language interpreter (stdin code)",
     ),
     Signal(
         "persist.shell_rc",
@@ -147,7 +155,12 @@ CATALOG: tuple[Signal, ...] = (
     Signal(
         "cred.read.browser",
         "T1555.003",
-        _p(r"(login\s+data|cookies\.sqlite|cookies\.binarycookies|formhistory\.sqlite)"),
+        _p(
+            r"(login\s+data|cookies\.sqlite|cookies\.binarycookies|formhistory\.sqlite"
+            # Chromium-family profile cookie / login stores (macOS/Linux paths).
+            r"|/(google/chrome|chromium|microsoft\s*edge|bravesoftware|vivaldi|opera\s*software)/"
+            r"[^/]+/(cookies|login\s*data|web\s*data)\b)"
+        ),
         "Access to browser credential / cookie stores",
     ),
     Signal(
@@ -181,8 +194,11 @@ CATALOG: tuple[Signal, ...] = (
     Signal(
         "recon.cloud_metadata",
         "T1552.005",
-        _p(r"\b169\.254\.169\.254\b"),
-        "Cloud instance-metadata endpoint access",
+        _p(
+            r"\b(169\.254\.169\.254|metadata\.google\.internal|100\.100\.100\.200"
+            r"|metadata\.azure\.com|fd00:ec2::254)\b"
+        ),
+        "Cloud instance-metadata endpoint access (AWS/GCP/Azure/Alibaba)",
     ),
     Signal(
         "persist.systemd",
@@ -557,6 +573,56 @@ CATALOG: tuple[Signal, ...] = (
             r"|pyperclip\.paste"
         ),
         "Clipboard scrape (pbpaste / xclip -o / xsel -o / wl-paste / Get-Clipboard) — collection",
+    ),
+    # --- Coverage expansion (audit-driven, low-FP, data-driven auto-stage) --
+    Signal(
+        "collection.db_dump",
+        "T1005",
+        _p(
+            r"\b(pg_dump(all)?|mysqldump|mariadb-dump|mongodump"
+            r"|sqlite3\s+\S+\s+['\"]?\.dump|redis-cli\s+--rdb)\b"
+        ),
+        "Database dump (pg_dump/mysqldump/mongodump/sqlite3 .dump) — bulk collection",
+    ),
+    Signal(
+        "cred.read.env_dump",
+        "T1552.001",
+        # Full environment dump: bare `env` / `printenv` (or piped/redirected) —
+        # leaks every secret in env vars. `env VAR=x cmd` (setting a var) does NOT
+        # match (a non-pipe/redirect token follows).
+        _p(r"(?<![\w.-])(env|printenv)\s*($|\||>)"),
+        "Full environment dump (env/printenv) — may leak secrets held in env vars",
+    ),
+    Signal(
+        "pkg.install_untrusted",
+        "T1195.002",
+        # Install a package straight from a git/URL source (not a registry) —
+        # supply-chain code-execution entry. A normal `pip install requests` has
+        # no url and does not match.
+        _p(
+            r"\b(pip[0-9]?|pip3|uv|pipx|npm|pnpm|yarn)\s+(install|add)\b"
+            r"[^\n]*(\bgit\+https?://|\bgit\+ssh|\bhttps?://|\bgit@)"
+        ),
+        "Package install from an untrusted git/URL source — supply-chain entry",
+    ),
+    Signal(
+        "egress.dns_tool",
+        "T1071.004",
+        # DNS-resolver invocation with TUNNEL markers (TXT/NULL/ANY query, or an
+        # encoded data label) — DNS exfil. A plain `dig example.com` is silent.
+        _p(
+            r"\b(dig|nslookup|host|drill|kdig)\b[^\n]*"
+            r"(\b(txt|null|any)\b|[a-z2-7]{16,}\.[a-z0-9.-]+|\b[0-9a-f]{16,}\.)"
+        ),
+        "DNS-tool query with tunnel markers (TXT/NULL/ANY or encoded label) — DNS exfil",
+    ),
+    Signal(
+        "egress.icmp_tunnel",
+        "T1095",
+        # ICMP covert channel: ping with a hex payload, or hping/nping. A normal
+        # `ping host` is silent.
+        _p(r"(\bping\b[^\n]*\s-p\s+[0-9a-f]{4,}|\bhping3?\b|\bnping\b[^\n]*--icmp)"),
+        "ICMP tunnel / exfil (ping -p payload, hping, nping --icmp) — covert channel",
     ),
     # --- Action signals (ТЗ-02 staging middle link) ----------------------
     # These are ACTION signals, not content-regex signals: emission is gated on

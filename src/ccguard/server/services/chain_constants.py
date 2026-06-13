@@ -42,6 +42,7 @@ _SIGNAL_STAGE_RULES: tuple[tuple[str, str], ...] = (
     # (T1195 / AML.T0010 / ASI04 are all initial-access in the seed).
     ("content.read.external", "initial-access"),
     ("pkg.publish", "initial-access"),
+    ("pkg.install", "initial-access"),  # untrusted git/URL install = supply-chain entry
     # credential-access: secret reads + cloud-metadata + secret discovery
     # (T1552.* / T1555.* — credential-access).
     ("recon.cloud_metadata", "credential-access"),

@@ -155,12 +155,37 @@ def _is_hidden_path(file_path: str) -> bool:
     return False
 
 
-def _write_signals(tool_name: str, tool_input: dict[str, Any]) -> list[str]:
-    """Tool-gated staging-write signal (ТЗ-02).
+# Dangerous WRITE TARGETS → the right kill-chain signal, decided by the path a
+# write tool (Write/Edit) touches — NOT the path shape. Closes the gap where
+# writing an attacker key / cron / agent-config via Write only produced the weak
+# fs.write.normal (→ collection) and so never connected to the persistence chain.
+# All ids already map to the persistence stage in chain_constants (persist.* /
+# config.agent_settings_edit), so a Write-based implant now feeds correlation.
+_WRITE_TARGET_RULES: tuple[tuple[Any, str], ...] = (
+    (re.compile(r"(^|/)authorized_keys2?$"), "persist.ssh_authorized_keys"),
+    (re.compile(r"(^|/)(\.bashrc|\.zshrc|\.bash_profile|\.zprofile|\.profile)$"), "persist.shell_rc"),
+    (re.compile(r"(/etc/cron|/var/spool/cron|/cron\.(d|daily|hourly|weekly|monthly)/|(^|/)crontab$)"), "persist.cron"),
+    (
+        re.compile(
+            r"(\.claude/(settings\.json|claude\.json|\.mcp\.json)"
+            r"|(^|/)\.mcp\.json$|(^|/)\.claude\.json$|claude_desktop_config\.json)"
+        ),
+        "config.agent_settings_edit",
+    ),
+)
 
-    Emitted ONLY for write tools, decided by the target path shape — never via
-    the content-regex loop, so a Read of a hidden path is never mistaken for a
-    write. Missing/non-str ``file_path`` → no signal (fail-quiet).
+
+def _write_target_signal(fp: str) -> list[str]:
+    low = fp.lower()
+    return [sig for rx, sig in _WRITE_TARGET_RULES if rx.search(low)]
+
+
+def _write_signals(tool_name: str, tool_input: dict[str, Any]) -> list[str]:
+    """Tool-gated staging-write signal (ТЗ-02) + dangerous-target persistence.
+
+    Emitted ONLY for write tools, decided by the target path — never via the
+    content-regex loop, so a Read of a hidden path is never mistaken for a write.
+    Missing/non-str ``file_path`` → no signal (fail-quiet).
     """
     if tool_name not in _WRITE_TOOLS:
         return []
@@ -173,6 +198,8 @@ def _write_signals(tool_name: str, tool_input: dict[str, Any]) -> list[str]:
     marker = _write_category_marker(fp)
     if marker is not None:
         out.append(marker)
+    # Dangerous write TARGET → the real persistence/config signal (not path shape).
+    out.extend(_write_target_signal(fp))
     return out
 
 
