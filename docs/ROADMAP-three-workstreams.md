@@ -41,8 +41,12 @@
 - ✅ **B.3** (`5375186`) — single-command cred-exfil hard-block (cred-файл = payload egress'а; FP-safe by construction).
 - ✅ **C.1** (`7149417`) — benign-корпус (77 dev-команд) + CI-гард: 0 ложных hard-блоков. Страховка блок-яруса.
 - ✅ **C.7** (`f78f1ce`) — `exec.lolbin_download` (certutil/bitsadmin/mshta).
+- ✅ **C.4+C.5** (`2d8815a`) — `persist.scheduled_task` (systemd-timer/schtasks/`at`, команд-якорь на `at`) + osascript clipboard-read (`set the clipboard` исключён). TDD attack+benign.
+- ✅ **C.6** (`4cc6a54`) — деобфускация `rev` (разворот) + `tr` charmap/ROT13 в нормализаторе. Additive + junk-filtered (FP-safe by construction). Корпус обфускации 124→126/127, флор поднят до 126.
 
 **Веха:** ccguard теперь НЕ только смотрит — он БЛОКИРУЕТ 3 однозначно-злые вещи из коробки (reverse shell · отключение защиты · угон ключей), с FP-страховкой. Камера → охранник.
 **B.4 (curl|bash external) НЕ берём в hard** — легит-инсталлеры (docker/rustup) делают так; остаётся block-severity (флипается в observe).
 
-**Следующее:** A.3/A.4 (синтетические события триггера → таймлайн/risk) · B.6 (Write-ветка enforce, но нужен hook-matcher на Write) · C.2-C.6 (ещё техники + ROT13).
+**A.4 — решение (не катим без присмотра):** «синтетическое событие триггера» через firehose `ToolUseEvent` читают 6+ потребителей (risk, slow_chain, sequence, chain_engine, anomaly-volume) → риск двойных алертов + загрязнения volume-бейзлайнов. Чистый вариант — in-memory `RiskInputEvent` из trigger-FindingRecord только в risk-скоринге (без персиста). НО: это поднимет risk и на benign `skill.drift`/`agent.drift` (часто — обычное обновление версии), а критичный moat-алерт опасный случай УЖЕ покрывает. Вывод: наименьшая доп.ценность при наибольшем behavior-риске → делать осознанно с Тимом (дифф-веса rug_pull≫drift), не автономно. Триггер уже виден в таймлайне как finding; «→ таймлайн» по сути закрыт.
+
+**Следующее:** B.6 (Write-ветка enforce, нужен hook-matcher на Write) · C.2/C.3 (`egress.git_push_remote` / `cred.read.ci_token` — оба FP-рискованны через обычный push/env, нужен узкий якорь) · A.4 risk-priming (с Тимом).
