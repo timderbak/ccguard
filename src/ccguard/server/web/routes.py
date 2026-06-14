@@ -188,6 +188,7 @@ def overview_page(
     )
     active_threats = [
         {
+            "id": f.id,
             "machine_id": f.machine_id,
             "severity": f.severity,
             "rule_id": f.rule_id,
@@ -1541,6 +1542,7 @@ def _finding_view_model(row) -> object:
         # handler at `/admin/scan/{file_hash}/rescan` separately validates
         # len==64 and hex-only.
         def __init__(self, r) -> None:
+            self.id = r.id
             self.discovered_at = r.discovered_at
             self.machine_id = r.machine_id
             self.rule_id = r.rule_id
@@ -1615,6 +1617,157 @@ def findings_page(
             "csrf_token": _csrf_for(request),
         },
     )
+
+
+# Payload keys already surfaced in the header / story sections — hidden from the
+# raw key/value dump so it shows only the *extra* data.
+_DETAIL_PAYLOAD_SKIP = {
+    "rule_id", "severity", "title", "narrative", "rationale", "matched_value",
+}
+
+
+def _finding_detail_context(session: Session, finding) -> dict:
+    """Assemble EVERYTHING about one finding for its dedicated page: the
+    explainer/chain, the full payload, the producing detector + its techniques,
+    the source artifact (injection snippet / MCP server / file), the machine,
+    and the surrounding activity that makes up the story."""
+    import json as _json
+
+    from ccguard.server.db.models import (
+        Detector,
+        DetectorTechniqueMapping,
+        FindingRecord,
+        Machine,
+        Technique,
+    )
+    from ccguard.server.web.finding_view import build_explainable_findings, humanize_rule
+
+    rid = finding.rule_id
+    enriched = build_explainable_findings([finding])[0]
+
+    try:
+        payload = _json.loads(finding.payload_json) if finding.payload_json else {}
+        if not isinstance(payload, dict):
+            payload = {}
+    except (ValueError, TypeError):
+        payload = {}
+
+    def _fmt(v) -> str:
+        if isinstance(v, (list, dict)):
+            return _json.dumps(v, ensure_ascii=False)
+        return str(v)
+
+    payload_rows = [
+        {"key": k, "value": _fmt(v)}
+        for k, v in payload.items()
+        if k not in _DETAIL_PAYLOAD_SKIP and v not in (None, "", [], {})
+    ]
+
+    # producing detector (correlation findings) + its technique bindings
+    detector = None
+    techniques: list[dict] = []
+    det_row = None
+    for d in session.exec(select(Detector)):
+        rids = [r.strip() for r in (d.rule_ids or "").split(",") if r.strip()]
+        if any(rid == r or rid.startswith(r) for r in rids):
+            det_row = d
+            break
+    if det_row is not None:
+        detector = {"key": det_row.detector_key, "name": det_row.name, "description": det_row.description}
+        tech_ids = [
+            m.technique_id
+            for m in session.exec(
+                select(DetectorTechniqueMapping).where(
+                    DetectorTechniqueMapping.detector_key == det_row.detector_key
+                )
+            )
+        ]
+        for tid in sorted(set(tech_ids)):
+            t = session.exec(select(Technique).where(Technique.technique_id == tid)).first()
+            techniques.append({"id": tid, "name": t.name if t else "", "url": t.url if t else None})
+
+    # catalog-signal finding (cred.read.*, c2.*, ...) — pull its ATT&CK technique
+    if not techniques:
+        from ccguard.server.web.finding_view import attack_url_for_signal, _SIGNAL_TO_TECHNIQUE
+        tech = _SIGNAL_TO_TECHNIQUE.get(rid)
+        if tech:
+            techniques.append({"id": tech, "name": "", "url": attack_url_for_signal(rid)})
+
+    # source artifact: split the "<identity>::<snippet>" matched_pattern that the
+    # PI / dangerous detectors compose, so the page shows WHAT was injected / WHERE.
+    artifact = None
+    mv = payload.get("matched_value") or payload.get("matched_pattern") or ""
+    if isinstance(mv, str) and mv:
+        if "::" in mv:
+            ident, snippet = mv.split("::", 1)
+            artifact = {"source": ident, "snippet": snippet}
+        else:
+            artifact = {"source": "", "snippet": mv}
+
+    machine = None
+    is_fleet = finding.machine_id in ("_fleet", "_server")
+    if not is_fleet:
+        machine = session.get(Machine, finding.machine_id)
+
+    # surrounding activity (the "what else happened" context / chain): other
+    # findings on the same machine within +/- 48h, newest first.
+    nearby: list[dict] = []
+    if not is_fleet:
+        lo = finding.discovered_at - timedelta(hours=48)
+        hi = finding.discovered_at + timedelta(hours=48)
+        rows = session.exec(
+            select(FindingRecord)
+            .where(FindingRecord.machine_id == finding.machine_id)
+            .where(FindingRecord.discovered_at >= lo)
+            .where(FindingRecord.discovered_at <= hi)
+            .where(FindingRecord.id != finding.id)
+            .order_by(FindingRecord.discovered_at.desc())  # type: ignore[attr-defined]
+        ).all()
+        for r in rows[:20]:
+            nearby.append({
+                "id": r.id, "rule_id": r.rule_id, "label": humanize_rule(r.rule_id),
+                "severity": r.severity, "discovered_at": r.discovered_at,
+                "before": r.discovered_at < finding.discovered_at,
+            })
+
+    return {
+        "finding": finding,
+        "rule_id": rid,
+        "label": humanize_rule(rid),
+        "severity": finding.severity,
+        "machine_id": finding.machine_id,
+        "machine": machine,
+        "is_fleet": is_fleet,
+        "discovered_at": finding.discovered_at,
+        "explainer": enriched.get("explainer"),
+        "details": enriched.get("details"),
+        "payload": payload,
+        "payload_rows": payload_rows,
+        "detector": detector,
+        "techniques": techniques,
+        "artifact": artifact,
+        "nearby": nearby,
+        "title": payload.get("title"),
+        "narrative": payload.get("narrative") or payload.get("rationale"),
+    }
+
+
+@router.get("/findings/{finding_id}", response_class=HTMLResponse)
+def finding_detail_page(
+    request: Request,
+    finding_id: int,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    from ccguard.server.db.models import FindingRecord
+
+    finding = session.get(FindingRecord, finding_id)
+    if finding is None:
+        raise HTTPException(status_code=404, detail="finding not found")
+    ctx = _finding_detail_context(session, finding)
+    ctx["user"] = user
+    ctx["csrf_token"] = _csrf_for(request)
+    return templates.TemplateResponse(request, "finding_detail.html", ctx)
 
 
 _TIMEFRAME_HOURS = {"1h": 1, "24h": 24, "7d": 24 * 7}

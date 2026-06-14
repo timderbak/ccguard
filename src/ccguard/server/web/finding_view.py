@@ -270,6 +270,7 @@ def build_explainable_findings(findings: Iterable[Any]) -> list[dict[str, Any]]:
         payload_json = f.payload_json or ""
         explainer = _explainer_for(f.rule_id, payload_json)
         row: dict[str, Any] = {
+            "id": getattr(f, "id", None),
             "rule_id": f.rule_id,
             "severity": f.severity,
             "discovered_at": f.discovered_at,

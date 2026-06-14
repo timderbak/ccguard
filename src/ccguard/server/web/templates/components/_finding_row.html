@@ -29,7 +29,10 @@
         {% set _label = humanize_rule(finding.rule_id) %}
         <div class="flex items-center gap-2">
             {% if finding.rule_id == 'ioa.ai_trigger_escalation' %}<span class="fnd-sev fnd-sev-warn" title="AI-origin триггер связан с endpoint-эксфилом — то, что классический EDR не видит">MOAT</span>{% elif kind %}<span class="fnd-kind">{{ kind }}</span>{% endif %}
-            {% if _label != finding.rule_id %}
+            {% if finding.id %}
+            <a href="/findings/{{ finding.id }}" class="text-xs text-slate-100 truncate hover:text-white hover:underline" title="{{ finding.rule_id }} — открыть находку">{% if _label != finding.rule_id %}{{ _label }}{% else %}{{ finding.rule_id }}{% endif %}</a>
+            {% if _label != finding.rule_id %}<span class="cc-mono text-[10px] text-slate-500 truncate hidden md:inline">{{ finding.rule_id }}</span>{% endif %}
+            {% elif _label != finding.rule_id %}
             <span class="text-xs text-slate-100 truncate" title="{{ finding.rule_id }}">{{ _label }}</span>
             <span class="cc-mono text-[10px] text-slate-500 truncate hidden md:inline">{{ finding.rule_id }}</span>
             {% else %}
@@ -57,6 +60,8 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
             <button type="submit" class="cc-mono text-[11px] text-slate-400 hover:text-white hover:underline">пересканировать</button>
         </form>
+        {% elif finding.id %}
+        <a href="/findings/{{ finding.id }}" class="cc-mono text-[11px] text-slate-400 hover:text-white hover:underline">открыть →</a>
         {% else %}
         <span class="text-slate-600">—</span>
         {% endif %}

@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}ccguard — находка {{ rule_id }}{% endblock %}
+{% block content %}
+<style>
+  .fd-step{display:flex;flex-direction:column;gap:2px;border:1px solid #ffffff1a;border-radius:10px;
+    padding:10px 14px;background:#ffffff08;min-width:130px}
+  .fd-step .lab{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:#94a3b8}
+  .fd-step .val{font-size:13px;color:#fff;font-family:ui-monospace,monospace;word-break:break-all}
+  .fd-arrow{color:#c45cff;font-size:20px;flex:none;display:flex;flex-direction:column;align-items:center;line-height:1}
+  .fd-arrow small{font-size:9px;color:#94a3b8;font-family:ui-monospace,monospace}
+  .fd-kv{display:grid;grid-template-columns:170px 1fr;gap:6px 16px;font-size:12px}
+  .fd-kv .k{color:#94a3b8;font-family:ui-monospace,monospace}
+  .fd-kv .v{color:#e2e8f0;font-family:ui-monospace,monospace;word-break:break-all}
+  .fd-stage{font-size:10px;letter-spacing:.04em;text-transform:uppercase;border:1px solid;border-radius:6px;padding:3px 8px;font-family:ui-monospace,monospace}
+</style>
+
+<div class="mb-4">
+  <a href="/findings" class="cc-mono text-xs text-slate-500 hover:text-white">← Находки</a>
+</div>
+
+<!-- verdict header -->
+<div class="cc-card p-5 mb-4">
+  <div class="flex items-center gap-3 flex-wrap">
+    <span class="cc-sev {% if severity in ('critical','block') %}cc-sev-block{% elif severity=='warn' %}cc-sev-warn{% else %}cc-sev-info{% endif %}">{{ severity | upper }}</span>
+    {% if rule_id == 'ioa.ai_trigger_escalation' %}<span class="cc-sev cc-sev-warn" title="AI-origin триггер связан с endpoint-эксфилом">MOAT</span>{% endif %}
+    {% if is_fleet and rule_id == 'ioa.fleet_campaign' %}<span class="cc-sev cc-sev-warn">FLEET</span>{% endif %}
+    <h2 class="text-xl text-white cc-display">{{ label }}</h2>
+  </div>
+  <div class="flex items-center gap-4 mt-2 flex-wrap text-xs text-slate-400 cc-mono">
+    <span title="внутренний rule_id">{{ rule_id }}</span>
+    <span>·</span>
+    {% if is_fleet %}<span>вся сеть</span>{% else %}<a href="/machines/{{ machine_id }}" class="text-slate-300 hover:text-white hover:underline">{{ machine_id }}</a>{% endif %}
+    {% if machine and machine.hostname %}<span class="text-slate-500">({{ machine.hostname }})</span>{% endif %}
+    <span>·</span>
+    <span>{{ discovered_at.strftime('%d.%m.%Y %H:%M:%S') }} UTC</span>
+  </div>
+  {% if title %}<p class="text-sm text-slate-200 mt-3">{{ title }}</p>{% endif %}
+  {% if narrative %}<p class="text-sm text-slate-300 mt-2 leading-relaxed">{{ narrative }}</p>{% endif %}
+</div>
+
+<!-- the chain, drawn per finding kind -->
+{% if explainer %}
+<div class="cc-card p-5 mb-4">
+  <div class="cc-eyebrow mb-4" style="color:#c45cff">Цепочка</div>
+
+  {% if explainer.kind == 'ai_trigger_escalation' %}
+  <div class="flex items-center gap-3 flex-wrap">
+    <div class="fd-step" style="border-color:#ff547066">
+      <span class="lab">AI-триггер (причина)</span>
+      <span class="val">{{ explainer.trigger_rule }}</span>
+    </div>
+    <div class="fd-arrow">→<small>{{ explainer.gap_hours }}ч</small></div>
+    <div class="fd-step" style="border-color:#ff8aa066">
+      <span class="lab">Эскалация ({{ explainer.escalation.stage }})</span>
+      {% if explainer.escalation.attack_url %}
+      <a class="val text-emerald-300 hover:underline" href="{{ explainer.escalation.attack_url }}" target="_blank" rel="noopener">{{ explainer.escalation.signal_id }}</a>
+      {% else %}<span class="val">{{ explainer.escalation.signal_id }}</span>{% endif %}
+    </div>
+  </div>
+  <p class="text-xs text-slate-500 mt-3">Связь причина→следствие на одной машине в окне {{ explainer.window_hours }}ч — то, что классический EDR не строит.</p>
+
+  {% elif explainer.kind == 'fleet_campaign' %}
+  <div class="flex items-center gap-3 flex-wrap">
+    <div class="fd-step" style="border-color:#ff547066">
+      <span class="lab">Скомпрометированный {{ explainer.family }}-компонент</span>
+      <span class="val">{{ explainer.identity }}</span>
+    </div>
+    <div class="fd-arrow">→<small>{{ explainer.spread_hours }}ч</small></div>
+    <div class="flex flex-col gap-1.5">
+      <span class="fd-step lab" style="border:none;padding:0;background:none">{{ explainer.machine_count }} машин под ударом</span>
+      <div class="flex gap-1.5 flex-wrap">
+        {% for m in explainer.machines %}<a href="/machines/{{ m }}" class="cc-mono text-xs px-2 py-1 rounded bg-white/5 ring-1 ring-white/10 text-slate-200 hover:text-white">{{ m }}</a>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  {% elif explainer.kind == 'slow_chain' %}
+  <p class="text-sm text-slate-300 mb-3"><b class="text-white">{{ explainer.distinct_count }}</b> разных продвинутых стадий kill-chain за <b class="text-white">{{ "%.0f"|format(explainer.span_hours) }}ч</b>:</p>
+  <div class="flex items-center gap-2 flex-wrap">
+    {% for st in explainer.stages %}
+    {% if not loop.first %}<span class="fd-arrow">→</span>{% endif %}
+    <span class="fd-stage" style="color:#ff8aa0;border-color:#ff547055">{{ st.stage }}{% if st.example_signal %} · {{ st.example_signal }}{% endif %}</span>
+    {% endfor %}
+  </div>
+
+  {% elif explainer.kind == 'sequence' %}
+  <div class="flex items-center gap-3 flex-wrap">
+    <div class="fd-step"><span class="lab">Доступ к секрету</span><span class="val">{{ explainer.cred.signal_id }}</span></div>
+    <div class="fd-arrow">→<small>{{ "%.0f"|format(explainer.elapsed_seconds) }}s</small></div>
+    <div class="fd-step"><span class="lab">Вынос</span><span class="val">{{ explainer.egress.signal_id }}</span></div>
+  </div>
+
+  {% else %}
+  <p class="text-sm text-slate-400">Подробности — в данных находки ниже.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- artifact / evidence: WHAT was injected / matched, WHERE -->
+{% if artifact %}
+<div class="cc-card p-5 mb-4" data-testid="fd-artifact">
+  <div class="cc-eyebrow mb-3" style="color:#ff8aa0">Улика</div>
+  {% if artifact.source %}
+  <div class="fd-kv mb-3"><span class="k">источник</span><span class="v">{{ artifact.source }}</span></div>
+  {% endif %}
+  <pre class="text-xs text-amber-200 bg-black/30 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-words" style="border:1px solid #ffffff14">{{ artifact.snippet }}</pre>
+</div>
+{% endif %}
+
+<!-- producing detector + MITRE techniques -->
+{% if detector or techniques %}
+<div class="cc-card p-5 mb-4">
+  <div class="cc-eyebrow mb-3">Детектор и техники</div>
+  {% if detector %}
+  <div class="flex items-center gap-2 mb-2">
+    <a href="/detectors/{{ detector.key }}" class="text-sm text-white hover:underline">{{ detector.name }}</a>
+    <span class="cc-mono text-[10px] text-slate-500">{{ detector.key }}</span>
+  </div>
+  {% if detector.description %}<p class="text-xs text-slate-400 leading-relaxed mb-3">{{ detector.description }}</p>{% endif %}
+  {% endif %}
+  {% if techniques %}
+  <div class="flex gap-2 flex-wrap">
+    {% for t in techniques %}
+    {% if t.url %}<a href="{{ t.url }}" target="_blank" rel="noopener" class="cc-mono text-xs px-2 py-1 rounded bg-white/5 ring-1 ring-white/10 text-emerald-300 hover:text-emerald-200">{{ t.id }}{% if t.name %} · {{ t.name }}{% endif %}</a>
+    {% else %}<span class="cc-mono text-xs px-2 py-1 rounded bg-white/5 ring-1 ring-white/10 text-slate-300">{{ t.id }}{% if t.name %} · {{ t.name }}{% endif %}</span>{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- raw data: the full payload -->
+{% if payload_rows %}
+<div class="cc-card p-5 mb-4" data-testid="fd-rawdata">
+  <div class="cc-eyebrow mb-3">Данные находки</div>
+  <div class="fd-kv">
+    {% for row in payload_rows %}
+    <span class="k">{{ row.key }}</span><span class="v">{{ row.value }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- surrounding activity — walk the chain (clickable) -->
+{% if nearby %}
+<div class="cc-card p-5 mb-4" data-testid="fd-nearby">
+  <div class="cc-eyebrow mb-3">Что ещё было на этой машине (±48ч)</div>
+  <div class="flex flex-col gap-1.5">
+    {% for n in nearby %}
+    <a href="/findings/{{ n.id }}" class="flex items-center gap-3 p-1.5 rounded-lg hover:bg-white/5 transition">
+      <span class="cc-mono text-[10px] flex-none w-12 {% if n.before %}text-slate-500{% else %}text-slate-600{% endif %}">{{ 'до' if n.before else 'после' }}</span>
+      <span class="cc-sev {% if n.severity in ('critical','block') %}cc-sev-block{% elif n.severity=='warn' %}cc-sev-warn{% else %}cc-sev-info{% endif %} flex-none">{{ n.severity | upper }}</span>
+      <span class="text-sm text-slate-200 flex-1 truncate">{{ n.label }}</span>
+      <span class="cc-mono text-[11px] text-slate-500 flex-none">{{ n.discovered_at.strftime('%d.%m %H:%M') }}</span>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}

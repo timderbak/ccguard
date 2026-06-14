@@ -94,7 +94,7 @@
     </div>
     <div class="flex flex-col gap-2">
         {% for t in active_threats %}
-        <a href="{% if t.machine_id == '_fleet' %}/findings?rule_id={{ t.rule_id }}{% else %}/machines/{{ t.machine_id }}{% endif %}"
+        <a href="{% if t.id %}/findings/{{ t.id }}{% elif t.machine_id == '_fleet' %}/findings?rule_id={{ t.rule_id }}{% else %}/machines/{{ t.machine_id }}{% endif %}"
            class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition"
            data-testid="active-threat-row">
             <span class="cc-sev cc-sev-block flex-none">{{ t.severity | upper }}</span>

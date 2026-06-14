@@ -71,8 +71,9 @@ def test_panel_surfaces_moat_finding_with_label_and_link(admin_client) -> None:
     assert "AI-триггер → эскалация" in body
     # moat callout badge
     assert ">MOAT<" in body
-    # links to the machine detail
-    assert "/machines/dev-laptop-07" in body
+    # row drills into the dedicated finding detail page (machine still shown as text)
+    assert "/findings/" in body
+    assert "dev-laptop-07" in body
 
 
 def test_panel_lists_multiple_and_excludes_warn(admin_client) -> None:
