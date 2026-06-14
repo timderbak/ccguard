@@ -35,4 +35,9 @@
 
 ---
 
-**Текущий шаг:** A.1 (explainer для moat-алерта).
+## Прогресс (14.06)
+- ✅ **A.1+A.2** (`98965ee`) — explainer + карточка-история для moat-алерта.
+- ✅ **B.1+B.2+B.5** (`544674a`) — `hard_deny` tier: reverse shell + отключение ccguard/EDR блочатся ИЗ КОРОБКИ (даже в observe). FP≈0.
+- ✅ **C.7** (`f78f1ce`) — `exec.lolbin_download` (certutil/bitsadmin/mshta).
+
+**Следующее:** B.3 (single-command cred-exfil hard-block — нужна аккуратная FP-калибровка корпусом) · A.3/A.4 (синтетические события триггера) · C.1 (benign-корпус) · C.2-C.5 (ещё техники).
