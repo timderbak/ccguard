@@ -43,6 +43,8 @@ _VAR_REF = re.compile(r"\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)")
 # bash substring slicing ${name:off:len} / ${name:off} — a common carve trick
 _VAR_SLICE = re.compile(r"\$\{([A-Za-z_]\w*):(\d+)(?::(\d+))?\}")
 _QUOTE_NOISE = re.compile(r"(\w)['\"]+(\w)")
+# Single/double-quoted literal BODIES — the carrier of a rev/tr-ciphered payload.
+_QUOTED_LITERAL = re.compile(r"'([^']*)'|\"([^\"]*)\"")
 # ANSI-C / printf string bodies: $'...'  or  printf [-v x] '...' / "..."
 _ANSI_C = re.compile(r"\$'([^']*)'|printf\s+(?:-v\s+\w+\s+)?['\"]([^'\"]*)['\"]")
 _C_ESCAPE = re.compile(r"\\x[0-9a-fA-F]{2}|\\[0-7]{1,3}")
@@ -247,6 +249,122 @@ def _unescape_inline(text: str) -> str:
     return _ANSI_C.sub(repl, text)
 
 
+def _expand_tr_set(s: str) -> str:
+    """Expand a ``tr`` SET argument: ranges (``a-z``) and simple backslash
+    escapes. Bounded by input length; never raises."""
+    if "\\" in s:
+        try:
+            s = s.encode("latin-1", "ignore").decode("unicode_escape", "ignore")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            pass
+    out: list[str] = []
+    i = 0
+    n = len(s)
+    while i < n and len(out) < 256:
+        if i + 2 < n and s[i + 1] == "-" and s[i] <= s[i + 2]:
+            for c in range(ord(s[i]), ord(s[i + 2]) + 1):
+                out.append(chr(c))
+            i += 3
+        else:
+            out.append(s[i])
+            i += 1
+    return "".join(out)
+
+
+def _build_tr_map(set1: str, set2: str) -> dict[str, str] | None:
+    """Build a char-substitution table from a ``tr SET1 SET2`` pair (covers
+    ROT13 and any monoalphabetic cipher). ``None`` if either set is empty."""
+    a = _expand_tr_set(set1)
+    b = _expand_tr_set(set2)
+    if not a or not b:
+        return None
+    if len(b) < len(a):  # tr repeats SET2's last char to pad
+        b = b + b[-1] * (len(a) - len(b))
+    return {x: y for x, y in zip(a, b[: len(a)], strict=False) if x != y}
+
+
+def _charmap_candidates(statements: list[str]) -> list[str]:
+    """Carrier strings a rev/tr transform could hide a command in: quoted
+    literals + ``echo``/``printf`` arguments, across all statements."""
+    cand: list[str] = []
+    seen: set[str] = set()
+
+    def _add(s: str) -> None:
+        if s and s not in seen:
+            seen.add(s)
+            cand.append(s)
+
+    for st in statements:
+        for m in _QUOTED_LITERAL.finditer(st):
+            _add(m.group(1) if m.group(1) is not None else m.group(2))
+        # strip command-substitution punctuation so `$(echo x` tokenizes cleanly
+        clean = st.replace("$(", " ").replace("`", " ").replace(")", " ")
+        try:
+            toks = shlex.split(clean, posix=True)
+        except ValueError:
+            toks = clean.split()
+        for idx, tok in enumerate(toks):
+            if tok.rsplit("/", 1)[-1] in {"echo", "printf"}:
+                for arg in toks[idx + 1 :]:
+                    if not arg.startswith("-"):
+                        _add(arg)
+    return cand
+
+
+def _charmap_decode(statements: list[str]) -> list[str]:
+    """De-obfuscate ``rev`` (string reversal) and ``tr`` (charmap/ROT cipher).
+
+    Only fires when a ``rev``/``tr`` command word is present; ``tr`` with
+    delete/squeeze/complement flags is skipped (not a substitution). Outputs are
+    candidate blobs run through ``_looks_like_command`` — they can only ADD a
+    de-obfuscated string to the search surface, never forge a benign signal."""
+    has_rev = False
+    tr_maps: list[dict[str, str]] = []
+    for st in statements:
+        clean = st.replace("$(", " ").replace("`", " ").replace(")", " ")
+        try:
+            toks = shlex.split(clean, posix=True)
+        except ValueError:
+            toks = clean.split()
+        i = 0
+        while i < len(toks):
+            base = toks[i].rsplit("/", 1)[-1]
+            if base == "rev":
+                has_rev = True
+            elif base == "tr":
+                sets: list[str] = []
+                bad = False
+                for a in toks[i + 1 :]:
+                    if a.startswith("-") and len(a) > 1:
+                        if any(f in a[1:] for f in "dsc"):
+                            bad = True
+                            break
+                        continue  # unrelated flag (e.g. -t)
+                    sets.append(a)
+                    if len(sets) == 2:
+                        break
+                if not bad and len(sets) == 2:
+                    mp = _build_tr_map(sets[0], sets[1])
+                    if mp:
+                        tr_maps.append(mp)
+            i += 1
+    if not has_rev and not tr_maps:
+        return []
+    out: list[str] = []
+    for lit in _charmap_candidates(statements):
+        if has_rev:
+            r = lit[::-1]
+            if _looks_like_command(r):
+                out.append(r)
+        for mp in tr_maps:
+            d = "".join(mp.get(c, c) for c in lit)
+            if d != lit and _looks_like_command(d):
+                out.append(d)
+        if len(out) >= _MAX_BLOBS:
+            break
+    return out
+
+
 def _extract_urls(fragments: list[str]) -> list[str]:
     out: list[str] = []
     for st in fragments:
@@ -287,6 +405,10 @@ def normalize_command(raw: object) -> NormalizedCommand:
         expanded = [_expand_vars(s, vars_) for s in statements]
         decode_surface = "\n".join([denoised, unescaped, *expanded])
         blobs = _decode_iter(decode_surface)
+        # charmap de-obfuscation (rev / tr cipher) — bounded, additive, junk-filtered
+        charmap_blobs = _charmap_decode(expanded)
+        if charmap_blobs:
+            blobs = (blobs + charmap_blobs)[:_MAX_BLOBS]
         urls = _extract_urls([*expanded, *blobs])
         text = "\n".join([raw, denoised, unescaped, *expanded, *blobs])
         return NormalizedCommand(

