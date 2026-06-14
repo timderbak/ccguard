@@ -166,6 +166,42 @@ _HARD_DENY_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
 )
 
 
+# File-write tools. Their PreToolUse `content` is the agent's OWN output being
+# persisted — NOT untrusted input being acted on — so the prompt-injection block
+# step is skipped for them (else writing a security doc / PI test-fixture / the
+# PI catalog itself would self-block). They get the target-based hard-deny only.
+_WRITE_TOOLS: tuple[str, ...] = ("Write", "Edit", "MultiEdit")
+
+# Write/Edit hard-deny target: dropping a key into ~/.ssh/authorized_keys is
+# attacker-key persistence — never legitimate from an AI coding agent. Target is
+# what matters (any content is bad), so this is path-based and FP≈0. Matches the
+# file anywhere in the path (`~/`, absolute, relative), `/` or `\` separators.
+_HARD_DENY_WRITE_TARGET: re.Pattern[str] = re.compile(
+    r"(?:^|[/\\])\.ssh[/\\]authorized_keys2?$", re.IGNORECASE
+)
+
+
+def _decide_write(tool_input: dict) -> EnforceDecision:
+    """Write/Edit hard-deny: block writes to ~/.ssh/authorized_keys out of the
+    box (even in observe). Everything else passes through — file writes are not
+    otherwise gated on the hot path."""
+    fp = tool_input.get("file_path")
+    if not isinstance(fp, str) or not fp:
+        return EnforceDecision(permission="allow", reason="no file_path")
+    if _HARD_DENY_WRITE_TARGET.search(fp.strip()):
+        return EnforceDecision(
+            permission="deny",
+            reason=(
+                "Запись в ~/.ssh/authorized_keys — установка attacker-ключа "
+                "(persistence / backdoor). Заблокировано из коробки: это действие "
+                "никогда не легитимно для AI-агента."
+            ),
+            rule_id="hard.ssh_authorized_keys_write",
+            hard_deny=True,
+        )
+    return EnforceDecision(permission="allow", reason="ok")
+
+
 def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
     pol = policy.commands
 
@@ -489,7 +525,7 @@ def _decide_inner(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
     # short-circuits with deny. warn/info severity matches emit a finding and
     # fall through to existing rules (so v0.1 enforcement still applies).
     pi_cfg = policy.prompt_injection
-    if pi_cfg.enabled:
+    if pi_cfg.enabled and payload.tool_name not in _WRITE_TOOLS:
         text = _extract_pi_payload(payload.tool_input)
         pi_result: ScanResult | None
         try:
@@ -569,6 +605,10 @@ def _decide_inner(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
         # files. Disk-read happens only when the flag is on AND the engine is
         # enabled — keeps the hot path zero-cost for the default config.
         return _decide_read(ti, policy)
+    if tool in _WRITE_TOOLS:
+        # B.6: target-based hard-deny for never-legitimate write targets
+        # (~/.ssh/authorized_keys). PI step already skipped for these tools.
+        return _decide_write(ti)
     return EnforceDecision(permission="allow", reason="tool not in enforce scope")
 
 

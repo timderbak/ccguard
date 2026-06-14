@@ -15,8 +15,11 @@ from ccguard.agent.config import default_config_dir
 
 Scope = Literal["user", "project", "managed"]
 
-# Matcher'ы PreToolUse enforce-хука (v0.1).
-HOOK_MATCHERS = ["Bash", "mcp__.*", "WebFetch", "WebSearch"]
+# Matcher'ы PreToolUse enforce-хука. Write/Edit (v0.2, B.6): target-based
+# hard-deny на запись ~/.ssh/authorized_keys. PI-шаг для них пропускается, путь
+# дешёвый (один path-чек) — в пределах <100ms PreToolUse budget. Старые агенты
+# graceful: repair/verify дорегистрирует недостающие matcher'ы на следующем sync.
+HOOK_MATCHERS = ["Bash", "Write", "Edit", "mcp__.*", "WebFetch", "WebSearch"]
 HOOK_TIMEOUT = 5
 SHIM_MARKER = "# ccguard-shim"  # маркер для идемпотентности
 HOOK_TYPE = "command"
