@@ -46,6 +46,11 @@ detectors:
     kind: correlation
     rule_ids: ioa.slow_chain
     description: "slow_chain_service.tick — >=3 distinct advanced kill-chain stages over a 14-day horizon; catches chains deliberately spread across days to slip past the window-bounded sequence/chain matchers."
+  - detector_key: ai_trigger_escalation
+    name: AI-trigger → escalation (IOA)
+    kind: correlation
+    rule_ids: ioa.ai_trigger_escalation
+    description: "supply_chain_escalation_service.tick — links an AI-origin trigger (MCP rug-pull / skill-hook-agent drift / prompt injection) to a subsequent endpoint escalation (exfil/C2/impact, or an ioa.* chain) on the same machine within a window. The connected attack a classic EDR cannot see — ccguard's differentiating moat."
 
 # detector_key → technique bindings. framework duplicated for query convenience.
 mappings:
@@ -121,6 +126,22 @@ mappings:
     control_type: DETECT
     relevance: primary
   - detector_key: slow_chain
+    technique_id: T1567
+    framework: attack
+    control_type: DETECT
+    relevance: secondary
+  # ai_trigger_escalation: AI-origin trigger linked to endpoint escalation (moat).
+  - detector_key: ai_trigger_escalation
+    technique_id: AML.T0051
+    framework: atlas
+    control_type: DETECT
+    relevance: primary
+  - detector_key: ai_trigger_escalation
+    technique_id: ASI04
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: ai_trigger_escalation
     technique_id: T1567
     framework: attack
     control_type: DETECT

@@ -150,6 +150,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services.sensor_health_service import tick as sensor_health_tick
     from ccguard.server.services.sequence_service import tick as sequence_tick
     from ccguard.server.services.slow_chain_service import tick as slow_chain_tick
+    from ccguard.server.services.supply_chain_escalation_service import (
+        tick as ai_escalation_tick,
+    )
     from ccguard.server.services.source_monitors import default_monitors
 
     _DISCOVERY_MONITORS = tuple(default_monitors())
@@ -172,6 +175,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     slow_chain_summary = slow_chain_tick(s)
                     drift_summary = drift_tick(s)
                     sensor_summary = sensor_health_tick(s)
+                    # The moat correlator runs LAST so it sees every trigger /
+                    # ioa.* finding the other engines just emitted this tick.
+                    ai_escalation_summary = ai_escalation_tick(s)
                 logger.info(
                     "anomaly tick: machines=%d findings=%d errors=%d",
                     summary["machines_evaluated"],
@@ -214,6 +220,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     sensor_summary["machines_evaluated"],
                     sensor_summary["findings_emitted"],
                     len(sensor_summary["errors"]),
+                )
+                logger.info(
+                    "ai_escalation tick: machines=%d findings=%d errors=%d",
+                    ai_escalation_summary["machines_evaluated"],
+                    ai_escalation_summary["findings_emitted"],
+                    len(ai_escalation_summary["errors"]),
                 )
                 # Rule Discovery sweep — once-per-day, gated by
                 # discovery.last_run_at. Needs app.state.signal_drafter (the

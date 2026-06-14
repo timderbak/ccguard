@@ -32,6 +32,7 @@ DETECTOR_KEYS = {
     "rug_pull_tofu",
     "heartbeat_silent",
     "slow_chain",
+    "ai_trigger_escalation",
 }
 
 
