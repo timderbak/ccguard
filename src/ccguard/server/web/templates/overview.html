@@ -24,14 +24,34 @@
     </div>
 </div>
 
+{% if not machines %}
+<div class="cc-card p-8 mb-4" data-testid="onboarding-empty" style="border:1px solid #8b5cf640">
+    <div class="cc-eyebrow" style="color:#c45cff">Начало работы</div>
+    <h3 class="text-xl text-white cc-display mt-2">Ни один агент ещё не подключён</h3>
+    <p class="text-sm text-slate-300 mt-2 leading-relaxed max-w-2xl">
+        ccguard видит AI-агентов только на тех машинах, где установлен endpoint-агент.
+        Пока их нет — показывать нечего (это <b class="text-white">не</b> значит «всё чисто»).
+        Поставьте агента на dev-машину, и она появится здесь с инвентарём, находками и риском.
+    </p>
+    <a href="/admin/install-agent" class="inline-block mt-5 cc-sev cc-sev-block px-4 py-2 text-sm" data-testid="onboarding-install-cta">
+        Поставить первого агента →
+    </a>
+</div>
+{% endif %}
+
 <!-- Fortexa dashboard header: surface score + KPI strip -->
 <div class="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-4 mb-4">
     <div class="cc-card p-5 flex items-center gap-4">
-        <div class="ov-ring" style="--p: {{ surface.score }}">
+        <div class="ov-ring" style="--p: {{ surface.score if machines else 0 }}">
             <div class="hole">
                 <div>
+                    {% if machines %}
                     <div class="cc-num text-2xl text-white">{{ surface.score }}<span class="text-sm text-slate-400">/100</span></div>
                     <div class="cc-mono text-[8px] tracking-widest text-slate-500 mt-0.5">MCP-СКОР</div>
+                    {% else %}
+                    <div class="cc-num text-lg text-slate-500">—</div>
+                    <div class="cc-mono text-[8px] tracking-widest text-slate-600 mt-0.5">НЕТ ДАННЫХ</div>
+                    {% endif %}
                 </div>
             </div>
         </div>

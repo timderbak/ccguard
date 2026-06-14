@@ -96,3 +96,23 @@ def test_moat_finding_sorts_first(admin_client) -> None:
     _finding(eng, machine="m1", rule_id="ioa.ai_trigger_escalation", severity="critical", ago_min=30)
     body = client.get("/", cookies={"ccg_session": sid}).text
     assert body.index("AI-триггер → эскалация") < body.index("Подмена MCP-сервера")
+
+
+# --- onboarding empty-state: no agents yet → install CTA, not a fake 100/100 ---
+def test_overview_shows_onboarding_when_no_machines(admin_client) -> None:
+    client, sid = admin_client
+    body = client.get("/", cookies={"ccg_session": sid}).text
+    assert 'data-testid="onboarding-empty"' in body
+    assert 'data-testid="onboarding-install-cta"' in body
+    assert "НЕТ ДАННЫХ" in body  # misleading "100/100" suppressed when no data
+
+
+def test_overview_hides_onboarding_when_machine_present(admin_client) -> None:
+    client, sid = admin_client
+    from datetime import UTC, datetime
+    from ccguard.server.db.models import Machine
+    with Session(client.app.state.engine) as s:
+        s.add(Machine(machine_id="m1", hostname="dev-1", last_seen=datetime.now(UTC)))
+        s.commit()
+    body = client.get("/", cookies={"ccg_session": sid}).text
+    assert 'data-testid="onboarding-empty"' not in body
