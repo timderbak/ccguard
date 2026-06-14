@@ -624,6 +624,20 @@ CATALOG: tuple[Signal, ...] = (
         _p(r"(\bping\b[^\n]*\s-p\s+[0-9a-f]{4,}|\bhping3?\b|\bnping\b[^\n]*--icmp)"),
         "ICMP tunnel / exfil (ping -p payload, hping, nping --icmp) — covert channel",
     ),
+    Signal(
+        "exec.lolbin_download",
+        "T1105",
+        # Download-cradle via living-off-the-land binaries — almost always
+        # malicious in download form. `certutil -hashfile` / local `regsvr32`
+        # (no http) do NOT match.
+        _p(
+            r"\bcertutil\b[^\n]*(-urlcache|-f\s+https?://|-split\s+-f\s+https?://)"
+            r"|\bbitsadmin\b[^\n]*/transfer"
+            r"|\bmshta\b[^\n]*https?://"
+            r"|\bregsvr32\b[^\n]*/i:\s*https?://"
+        ),
+        "Download-cradle via LOLBin (certutil/bitsadmin/mshta/regsvr32) — remote payload fetch+exec",
+    ),
     # --- Action signals (ТЗ-02 staging middle link) ----------------------
     # These are ACTION signals, not content-regex signals: emission is gated on
     # the tool being a write tool (Write/Edit/NotebookEdit) and decided by the

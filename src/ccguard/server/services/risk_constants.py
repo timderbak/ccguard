@@ -114,4 +114,5 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "pkg.install_untrusted": 3.0,  # supply-chain entry
     "egress.dns_tool": 3.0,
     "egress.icmp_tunnel": 3.0,
+    "exec.lolbin_download": 4.0,  # download-cradle LOLBin, rarely benign
 }

