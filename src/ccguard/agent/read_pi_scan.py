@@ -102,11 +102,21 @@ def extract_read_response_text(tool_response: Any) -> str:
         raw = tool_response.get("content")
         if isinstance(raw, str):
             return raw
+        # MCP shape: content is a list of {type:"text", text:"..."} blocks.
+        if isinstance(raw, list):
+            parts = [b.get("text") for b in raw if isinstance(b, dict) and isinstance(b.get("text"), str)]
+            if parts:
+                return "\n".join(parts)
         # Some clients nest under "result"/"text"; tolerate both.
         for key in ("result", "text", "output"):
             v = tool_response.get(key)
             if isinstance(v, str):
                 return v
+    # Top-level list of MCP content blocks (no dict envelope).
+    if isinstance(tool_response, list):
+        parts = [b.get("text") for b in tool_response if isinstance(b, dict) and isinstance(b.get("text"), str)]
+        if parts:
+            return "\n".join(parts)
     return ""
 
 

@@ -98,6 +98,9 @@ def main_cli(stdin_text: str | None = None) -> int:
         # buffer write below must not be affected.
         if tool_name == "Read":
             _maybe_emit_read_pi_finding(tool_input, raw_response)
+        elif tool_name == "WebFetch" or tool_name.startswith("mcp__"):
+            # indirect-injection scan of the web page / MCP tool RESULT body
+            _maybe_emit_tool_result_pi_finding(tool_name, tool_input, raw_response)
 
         # 2. Fingerprint + extract signals, THEN drop raw tool_input (privacy
         #    invariant). Both consume the raw input in-process; only the 16-hex
@@ -216,6 +219,63 @@ def _maybe_emit_read_pi_finding(
         )
     except Exception:
         # Best-effort — never break the audit pipeline.
+        return
+
+
+def _maybe_emit_tool_result_pi_finding(
+    tool_name: str,
+    tool_input: dict[str, Any],
+    raw_response: Any,
+) -> None:
+    """Scan a WebFetch / MCP tool_response BODY for prompt-injection markers.
+
+    This is the indirect-injection vector ccguard's moat is about: a poisoned
+    web page or a malicious MCP tool result fed back into the model as authority.
+    Previously only Read content was deep-scanned. Emits
+    ``prompt_injection.{web,mcp}_result.<category>`` (a moat TRIGGER the server
+    correlates to any later endpoint escalation), and spools regex-misses for the
+    server-side LLM backstop. Best-effort / silent (audit hook must never raise).
+    """
+    try:
+        cfg = _load_pi_cfg_or_default()
+        if not cfg.enabled:
+            return
+        text = _read_pi_scan_mod.extract_read_response_text(raw_response)
+        if not text:
+            return
+        if tool_name.startswith("mcp__"):
+            channel = "mcp"
+            parts = tool_name.split("__")
+            identifier = parts[1] if len(parts) > 1 else tool_name  # MCP server name
+        else:
+            channel = "web"
+            url = tool_input.get("url")
+            identifier = url if isinstance(url, str) else ""
+        result = _read_pi_scan_mod.scan_read_text(text, cfg)
+        if result is None:
+            # strict catalog missed → queue for the server LLM backstop
+            _maybe_spool_read_escalation(identifier or channel, text)
+            return
+        if result.rule_id == "prompt_injection.llama_guard.model_missing":
+            return
+        snippet = _extract_match_snippet(text, result.matched_pattern)
+        composed = f"{identifier}::{snippet}" if identifier else snippet
+
+        from ccguard.agent.findings_hook.buffer import emit_finding
+
+        base = result.rule_id
+        cat = base[len("prompt_injection.") :] if base.startswith("prompt_injection.") else result.category
+        rule_id = f"prompt_injection.{channel}_result.{cat}"
+        where = "MCP-результате" if channel == "mcp" else "WebFetch-результате"
+        emit_finding(
+            rule_id=rule_id,
+            severity="warn",
+            title=f"Признаки prompt injection в {where} ({result.category})",
+            source="regex",
+            matched_pattern=composed,
+            tool_name=tool_name,
+        )
+    except Exception:
         return
 
 
