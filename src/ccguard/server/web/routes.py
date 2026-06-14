@@ -57,6 +57,10 @@ templates.env.filters["hook_word"] = _hook_word
 templates.env.filters["skill_word"] = _skill_word
 templates.env.filters["agent_word"] = _agent_word
 
+from ccguard.server.web.finding_view import humanize_rule as _humanize_rule
+
+templates.env.globals["humanize_rule"] = _humanize_rule
+
 router = APIRouter()
 
 COOKIE_NAME = "ccg_session"

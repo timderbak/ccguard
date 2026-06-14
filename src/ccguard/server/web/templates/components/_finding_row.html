@@ -26,9 +26,15 @@
         {% endif %}
     </td>
     <td class="pr-3 max-w-[420px]">
+        {% set _label = humanize_rule(finding.rule_id) %}
         <div class="flex items-center gap-2">
-            {% if kind %}<span class="fnd-kind">{{ kind }}</span>{% endif %}
+            {% if finding.rule_id == 'ioa.ai_trigger_escalation' %}<span class="fnd-sev fnd-sev-warn" title="AI-origin триггер связан с endpoint-эксфилом — то, что классический EDR не видит">MOAT</span>{% elif kind %}<span class="fnd-kind">{{ kind }}</span>{% endif %}
+            {% if _label != finding.rule_id %}
+            <span class="text-xs text-slate-100 truncate" title="{{ finding.rule_id }}">{{ _label }}</span>
+            <span class="cc-mono text-[10px] text-slate-500 truncate hidden md:inline">{{ finding.rule_id }}</span>
+            {% else %}
             <span class="cc-mono text-xs text-slate-200 truncate">{{ finding.rule_id }}</span>
+            {% endif %}
         </div>
         {% set rationale = finding.details.get('rationale', '') if finding.details else '' %}
         {% if rationale %}<div class="text-[11px] text-slate-500 mt-0.5 truncate" title="{{ rationale }}">{{ rationale }}</div>{% endif %}

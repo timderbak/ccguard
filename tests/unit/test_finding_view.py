@@ -181,3 +181,23 @@ def test_ai_trigger_escalation_via_ioa_finding_has_no_attack_url():
 def test_ai_trigger_malformed_payload_degrades_to_passthrough():
     rows = build_explainable_findings([_fr("ioa.ai_trigger_escalation", {"narrative": "x"})])
     assert rows[0]["explainer"] is None  # no trigger_rule/escalation_signal → no breakdown
+
+
+# --- humanize_rule: plain-language labels for the findings list + overview ----
+def test_humanize_rule_exact_and_prefix():
+    from ccguard.server.web.finding_view import humanize_rule
+    # exact
+    assert humanize_rule("ioa.ai_trigger_escalation") == "AI-триггер → эскалация (supply-chain атака)"
+    assert humanize_rule("ioa.slow_chain") == "Медленная kill-chain (растянута на дни)"
+    # prefix
+    assert humanize_rule("mcp.rug_pull.tools_changed") == "Подмена MCP-сервера (rug-pull)"
+    assert humanize_rule("sensor.hooks_removed") == "Security-хук удалён (агент ослеплён)"
+    assert humanize_rule("prompt_injection.base64_encoded_prompt") == "Prompt injection"
+    assert humanize_rule("dangerous.exfil/curl-pipe-bash") == "Опасная команда"
+    # ioa.chain.* beats the generic ioa. prefix (more specific first)
+    assert humanize_rule("ioa.chain.recon_to_exfil") == "Kill-chain цепочка"
+
+
+def test_humanize_rule_unknown_falls_back_to_raw():
+    from ccguard.server.web.finding_view import humanize_rule
+    assert humanize_rule("some.brand.new.rule") == "some.brand.new.rule"
