@@ -117,7 +117,12 @@ CATALOG: tuple[Signal, ...] = (
         # processing and does NOT match (interpreter must end the pipe segment).
         _p(
             r"(\|\s*(ba|z)?sh\b"
-            r"|\|\s*(python[0-9.]*|perl|ruby|node|deno|bun|php|rscript)\b\s*-?\s*(?=$|[|;&\n])"
+            r"|\|\s*(python[0-9.]*|perl|ruby|node|deno|bun|php|rscript)\b\s*(?:/dev/stdin|-)?\s*(?=$|[|;&\n])"
+            # red-team: pipe into awk system() / make -f - (stdin code) + sourcing
+            # a process substitution `source <(curl …)` (dynamic code exec)
+            r"|\|\s*g?awk\b[^\n]*system\("
+            r"|\|\s*make\b[^\n]*-f\s*-"
+            r"|\b(?:source|\.)\s+<\("
             r"|base64\s+(-d|--decode)|\beval\b)"
         ),
         "Piping/decoding into a shell or language interpreter (stdin code)",
@@ -304,8 +309,13 @@ CATALOG: tuple[Signal, ...] = (
     Signal(
         "exec.code_eval_inline",
         "T1059",
-        _p(r"\b(python3?|node|perl|ruby|deno|bun)\s+-[ec]\b"),
-        "Inline code execution (python -c / node -e / etc)",
+        # red-team: version suffix (python3.12), php -r, Rscript -e, and remote
+        # script exec `bun|deno run https://…` were all evading the old pattern.
+        _p(
+            r"\b(python[0-9.]*|node|perl|ruby|deno|bun|php|rscript)\s+-[ecr]\b"
+            r"|\b(?:bun|deno)\s+run\s+https?://"
+        ),
+        "Inline code execution (python -c / node -e / php -r / Rscript -e / bun run url)",
     ),
     Signal(
         "exec.base64_decode",
