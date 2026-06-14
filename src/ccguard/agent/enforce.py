@@ -134,6 +134,37 @@ def _host_match(host: str, pattern: str) -> bool:
     return host.lower() == pattern.lower()
 
 
+# Hard-deny rules: actions that are NEVER legitimate from an AI coding agent.
+# These BLOCK out of the box — independent of policy and enforcement_mode (observe
+# does not flip them). Kept deliberately tiny and zero-FP. Matched against the
+# de-obfuscated search text so encoded variants are caught too.
+_HARD_DENY_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
+    (
+        re.compile(
+            r"/dev/tcp/|/dev/udp/|\bnc\b[^\n]*-e\s*/|\bncat\b[^\n]*-e\b"
+            r"|mkfifo\b[^\n]*\|\s*n?cat?\b|socat\b[^\n]*exec"
+            r"|bash\s+-i\b[^\n]*>&|sh\s+-i\b[^\n]*>&"
+            r"|(python[0-9.]*|perl|ruby)\b[^\n]*socket[^\n]*(/bin/(sh|bash)|exec|subprocess)",
+            re.IGNORECASE,
+        ),
+        "hard.reverse_shell",
+        "Reverse shell — интерактивный C2-канал. Это действие никогда не легитимно "
+        "и заблокировано из коробки (независимо от режима).",
+    ),
+    (
+        re.compile(
+            r"disableallhooks|\bccguard\s+(uninstall|disable|stop|remove)\b"
+            r"|\b(uninstall|remove)\s+ccguard\b"
+            r"|(pkill|killall|kill)\b[^\n]*\b(falcon|crowdstrike|osquery|auditd|sentinelone)\b",
+            re.IGNORECASE,
+        ),
+        "hard.disable_security",
+        "Попытка отключить ccguard / EDR-сенсор (impair defenses). Заблокировано "
+        "из коробки — снять защиту можно только через консоль, не командой агента.",
+    ),
+)
+
+
 def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
     pol = policy.commands
 
@@ -144,6 +175,13 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
     # an allow rule. normalize_command is fail-open (returns raw on any error).
     norm = normalize_command(command)
     search_text = command + "\n" + norm.text
+
+    # Hard-deny tier FIRST: never-legitimate actions block regardless of mode.
+    for rx, rid, reason in _HARD_DENY_RULES:
+        if rx.search(search_text):
+            return EnforceDecision(
+                permission="deny", reason=reason, rule_id=rid, hard_deny=True
+            )
 
     # P1 / Dangerous Bash Patterns: проверяем СНАЧАЛА — у этих правил есть
     # «почему опасно» и «что делать», и они должны побеждать always_deny /
@@ -401,6 +439,9 @@ def _apply_enforcement_mode(decision: EnforceDecision, policy: Policy) -> Enforc
     modes default to the safe ``enforce`` behavior.
     """
     if decision.permission != "deny":
+        return decision
+    # Hard deny is never-legitimate → block even in observe mode.
+    if decision.hard_deny:
         return decision
     mode = getattr(policy, "enforcement_mode", "enforce")
     if mode != "observe":

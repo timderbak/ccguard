@@ -26,6 +26,10 @@ class EnforceDecision(SchemaBase):
     reason: str
     rule_id: str | None = None
     fail_open: bool = False
+    # Hard deny: a never-legitimate action (reverse shell, disabling ccguard).
+    # Blocks REGARDLESS of enforcement_mode — observe does NOT flip it to allow.
+    # The "block obvious-evil out of the box" tier.
+    hard_deny: bool = False
     # P1 / Dangerous Bash Patterns: rule_id'ы severity=warn правил, которые
     # сматчились, но не блокируют. Сохраняются в audit для последующего
     # анализа без прерывания работы пользователя.
