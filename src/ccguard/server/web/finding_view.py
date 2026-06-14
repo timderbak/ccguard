@@ -23,6 +23,43 @@ from ccguard.server.services.supply_chain_escalation_service import (
 
 _SIGNAL_TO_TECHNIQUE: dict[str, str] = {s.id: s.attack_technique for s in CATALOG}
 
+# Human labels for the rule_ids that surface on the overview "active threats"
+# panel. Raw rule_ids (``ioa.ai_trigger_escalation``) read as machine noise to a
+# vibecoder — give the catch a plain-language name. Matched by exact id first,
+# then by prefix; unknown ids fall back to the raw id so nothing is hidden.
+_RULE_LABELS_EXACT: dict[str, str] = {
+    AI_TRIGGER_RULE_ID: "AI-триггер → эскалация (supply-chain атака)",
+    SLOW_CHAIN_RULE_ID: "Медленная kill-chain (растянута на дни)",
+    SEQUENCE_RULE_ID: "Цепочка кражи → вынос",
+    RISK_RULE_ID: "Повышенный риск активности",
+}
+_RULE_LABELS_PREFIX: tuple[tuple[str, str], ...] = (
+    ("ioa.chain.", "Kill-chain цепочка"),
+    ("ioa.", "Скоррелированная атака"),
+    ("mcp.rug_pull", "Подмена MCP-сервера (rug-pull)"),
+    ("hook.rug_pull", "Подмена hook (rug-pull)"),
+    ("skill.rug_pull", "Подмена skill (rug-pull)"),
+    ("agent.rug_pull", "Подмена sub-agent (rug-pull)"),
+    ("skill.drift", "Дрейф skill"),
+    ("agent.drift", "Дрейф sub-agent"),
+    ("hook.content", "Дрейф содержимого hook"),
+    ("persist.agent_config", "Правка конфигурации агента (tamper)"),
+    ("sensor.", "Security-хук удалён (агент ослеплён)"),
+    ("prompt_injection.", "Prompt injection"),
+    ("llm.scan", "Семантическая инъекция (LLM-вердикт)"),
+    ("dangerous.", "Опасная команда"),
+)
+
+
+def humanize_rule(rule_id: str) -> str:
+    """Plain-language label for a finding rule_id; raw id as fallback."""
+    if rule_id in _RULE_LABELS_EXACT:
+        return _RULE_LABELS_EXACT[rule_id]
+    for prefix, label in _RULE_LABELS_PREFIX:
+        if rule_id.startswith(prefix):
+            return label
+    return rule_id
+
 
 def attack_url_for_signal(signal_id: str) -> str | None:
     """Return the MITRE ATT&CK URL for a catalog signal, or ``None`` if unknown.

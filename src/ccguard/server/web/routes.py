@@ -167,13 +167,32 @@ def overview_page(
     week_detections = len(
         session.exec(select(FindingRecord.id).where(FindingRecord.discovered_at >= since7)).all()
     )
-    open_threats = len(
-        session.exec(
-            select(FindingRecord.id)
-            .where(FindingRecord.severity.in_(["block", "critical"]))
-            .where(FindingRecord.discovered_at >= since7)
-        ).all()
+    open_threat_rows = session.exec(
+        select(FindingRecord)
+        .where(FindingRecord.severity.in_(["block", "critical"]))
+        .where(FindingRecord.discovered_at >= since7)
+        .order_by(FindingRecord.discovered_at.desc())
+    ).all()
+    open_threats = len(open_threat_rows)
+    # Surface the actual catch on the landing (not just a count): the most recent
+    # block/critical findings with a plain-language label + machine link. The
+    # "ioa.*" correlations (incl. the moat) sort first — they are the story.
+    from ccguard.server.web.finding_view import humanize_rule
+    _sorted = sorted(
+        open_threat_rows,
+        key=lambda f: (0 if f.rule_id.startswith("ioa.") else 1, ),
     )
+    active_threats = [
+        {
+            "machine_id": f.machine_id,
+            "severity": f.severity,
+            "rule_id": f.rule_id,
+            "label": humanize_rule(f.rule_id),
+            "discovered_at": f.discovered_at,
+            "is_moat": f.rule_id == "ioa.ai_trigger_escalation",
+        }
+        for f in _sorted[:8]
+    ]
     pending_feeds = len(
         session.exec(select(ProposedSignal.id).where(ProposedSignal.status == "pending")).all()
     )
@@ -189,6 +208,7 @@ def overview_page(
             "surface": surface,
             "week_detections": week_detections,
             "open_threats": open_threats,
+            "active_threats": active_threats,
             "pending_feeds": pending_feeds,
             "csrf_token": _csrf_for(request),
         },
