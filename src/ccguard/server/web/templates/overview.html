@@ -94,15 +94,17 @@
     </div>
     <div class="flex flex-col gap-2">
         {% for t in active_threats %}
-        <a href="/machines/{{ t.machine_id }}"
+        <a href="{% if t.machine_id == '_fleet' %}/findings?rule_id={{ t.rule_id }}{% else %}/machines/{{ t.machine_id }}{% endif %}"
            class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition"
            data-testid="active-threat-row">
             <span class="cc-sev cc-sev-block flex-none">{{ t.severity | upper }}</span>
-            {% if t.is_moat %}
+            {% if t.machine_id == '_fleet' %}
+            <span class="cc-sev cc-sev-warn flex-none" title="Один компонент скомпрометирован на нескольких машинах — орг-уровень кампания, которую per-endpoint EDR не агрегирует">FLEET</span>
+            {% elif t.is_moat %}
             <span class="cc-sev cc-sev-warn flex-none" title="AI-origin триггер связан с endpoint-эксфилом — то, что классический EDR не видит">MOAT</span>
             {% endif %}
             <span class="text-sm text-white flex-1 truncate">{{ t.label }}</span>
-            <span class="cc-mono text-xs text-slate-400 flex-none">{{ t.machine_id }}</span>
+            <span class="cc-mono text-xs text-slate-400 flex-none">{% if t.machine_id == '_fleet' %}вся сеть{% else %}{{ t.machine_id }}{% endif %}</span>
             <span class="cc-mono text-[11px] text-slate-500 flex-none hidden sm:inline">{{ t.discovered_at.strftime('%d.%m %H:%M') }}</span>
         </a>
         {% endfor %}

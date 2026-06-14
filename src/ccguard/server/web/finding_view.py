@@ -29,6 +29,7 @@ _SIGNAL_TO_TECHNIQUE: dict[str, str] = {s.id: s.attack_technique for s in CATALO
 # then by prefix; unknown ids fall back to the raw id so nothing is hidden.
 _RULE_LABELS_EXACT: dict[str, str] = {
     AI_TRIGGER_RULE_ID: "AI-триггер → эскалация (supply-chain атака)",
+    "ioa.fleet_campaign": "Орг-кампания: один компонент на N машинах",
     SLOW_CHAIN_RULE_ID: "Медленная kill-chain (растянута на дни)",
     SEQUENCE_RULE_ID: "Цепочка кражи → вынос",
     RISK_RULE_ID: "Повышенный риск активности",
@@ -181,6 +182,7 @@ def _explainer_for(rule_id: str, payload_json: str) -> dict[str, Any] | None:
         SEQUENCE_RULE_ID,
         SLOW_CHAIN_RULE_ID,
         AI_TRIGGER_RULE_ID,
+        "ioa.fleet_campaign",
     ):
         return None
     if not payload_json:
@@ -197,7 +199,29 @@ def _explainer_for(rule_id: str, payload_json: str) -> dict[str, Any] | None:
         return _sequence_explainer(payload)
     if rule_id == AI_TRIGGER_RULE_ID:
         return _ai_trigger_explainer(payload)
+    if rule_id == "ioa.fleet_campaign":
+        return _fleet_campaign_explainer(payload)
     return _slow_chain_explainer(payload)
+
+
+def _fleet_campaign_explainer(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Break down ``ioa.fleet_campaign``: one compromised component (MCP/skill/
+    hook/agent) seen across N machines — the org-wide supply-chain campaign a
+    per-endpoint EDR structurally cannot aggregate."""
+    identity = payload.get("identity")
+    machines = payload.get("machines")
+    if not identity or not isinstance(machines, list):
+        return None
+    return {
+        "kind": "fleet_campaign",
+        "identity": identity,
+        "family": payload.get("family", ""),
+        "machine_count": payload.get("machine_count", len(machines)),
+        "machines": machines,
+        "spread_hours": payload.get("spread_hours"),
+        "window_hours": payload.get("window_hours"),
+        "narrative": payload.get("narrative", ""),
+    }
 
 
 def _passthrough_payload(payload_json: str) -> dict[str, Any]:

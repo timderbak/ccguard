@@ -153,6 +153,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services.supply_chain_escalation_service import (
         tick as ai_escalation_tick,
     )
+    from ccguard.server.services.fleet_campaign_service import tick as fleet_campaign_tick
     from ccguard.server.services.source_monitors import default_monitors
 
     _DISCOVERY_MONITORS = tuple(default_monitors())
@@ -178,6 +179,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     # The moat correlator runs LAST so it sees every trigger /
                     # ioa.* finding the other engines just emitted this tick.
                     ai_escalation_summary = ai_escalation_tick(s)
+                    # Fleet-scope campaign sweep (org-wide): same compromised
+                    # component across N machines → ioa.fleet_campaign.
+                    fleet_campaign_summary = fleet_campaign_tick(s)
                 logger.info(
                     "anomaly tick: machines=%d findings=%d errors=%d",
                     summary["machines_evaluated"],

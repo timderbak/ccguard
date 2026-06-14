@@ -33,6 +33,7 @@ DETECTOR_KEYS = {
     "heartbeat_silent",
     "slow_chain",
     "ai_trigger_escalation",
+    "fleet_campaign",
 }
 
 
