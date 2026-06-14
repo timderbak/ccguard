@@ -142,21 +142,36 @@ def _host_match(host: str, pattern: str) -> bool:
 _HARD_DENY_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
     (
         re.compile(
-            # /dev/tcp|udp is a reverse shell ONLY inside a redirection — so anchor
-            # on an adjacent redirect char. This drops the FP where the path is a
-            # mere argument (`grep /dev/tcp/ docs`, `cat notes | grep /dev/tcp/`).
-            r"[<>&]{1,3}\s*/dev/(?:tcp|udp)/"
-            # nc/ncat shell-exec: -e AND the long forms --exec/--sh-exec/--lua-exec
-            r"|\b(?:nc|ncat)\b[^\n]*\s(?:-e\b|--exec\b|--sh-exec\b|--lua-exec\b)"
-            r"|mkfifo\b[^\n]*\|\s*n?cat?\b"
+            # /dev/tcp|udp reverse shell — require the HOST/PORT shape so the device
+            # path as a real channel (redirect, tee, dd, cat) fires while a bare
+            # `grep /dev/tcp/ docs` (no host/port) does NOT. Red-team-hardened.
+            r"/dev/(?:tcp|udp)/[^/\s]+/\d+"
+            # nc/ncat/netcat shell-exec: -e AND long forms --exec/--sh-exec/--lua-exec
+            r"|\b(?:nc|ncat|netcat)\b[^\n]*\s(?:-e\b|--exec\b|--sh-exec\b|--lua-exec\b)"
+            # named-pipe shell to a network tool (nc / openssl s_client / socat)
+            r"|mkfifo\b[^\n]*\|\s*(?:n?cat?|openssl\s+s_client|socat)\b"
             # socat shell-exec: EXEC: and SYSTEM: address types (require the colon)
             r"|socat\b[^\n]*\b(?:exec|system):"
-            r"|bash\s+-i\b[^\n]*>&|sh\s+-i\b[^\n]*>&"
-            # inline-interpreter reverse shell: require an inline -c/-e flag AND a
-            # socket→shell primitive, so a benign mention (`python x.py # socket
-            # subprocess`) does not hard-block.
-            r"|(?:python[0-9.]*|perl|ruby)\b[^\n]*\s-[ce]\b[^\n]*socket"
-            r"[^\n]*(?:dup2|/bin/(?:sh|bash)|pty\.spawn|subprocess)",
+            r"|(?:ba)?sh\s+-i\b[^\n]*>&"
+            # gawk/awk /inet/ network reverse shell
+            r"|\bg?awk\b[^\n]*/inet/(?:tcp|udp)/"
+            # node.js socket → child_process
+            r"|\bnode\b[^\n]*(?:net\.(?:connect|createconnection)|require\(['\"]net['\"]\))"
+            r"[^\n]*(?:child_process|spawn|exec)"
+            # php socket → shell
+            r"|\bphp\b[^\n]*(?:fsockopen|pfsockopen|stream_socket_client)"
+            r"[^\n]*(?:proc_open|shell_exec|`|/bin/|exec)"
+            # lua socket → shell
+            r"|\blua[0-9.]*\b[^\n]*socket[^\n]*(?:io\.popen|os\.execute)"
+            # perl/ruby socket → shell
+            r"|\b(?:perl|ruby)\b[^\n]*(?:socket|tcpsocket|fsockopen|io::socket)"
+            r"[^\n]*(?:exec|/bin/(?:sh|bash)|io\.popen|->open|system)"
+            # python socket → shell (inline -c or heredoc): connect + a shell-spawn
+            r"|socket[^\n]*\.connect\([^\n]*(?:os\.dup2|pty\.spawn"
+            r"|os\.system\(['\"]?(?:/bin/)?(?:sh|bash)"
+            r"|subprocess\.\w+\(\s*\[?['\"](?:/bin/)?(?:sh|bash))"
+            # pty.spawn of a shell — the classic reverse-shell TTY upgrade
+            r"|pty\.spawn\(\s*\(?\s*['\"]?(?:/bin/)?(?:sh|bash)\b",
             re.IGNORECASE,
         ),
         "hard.reverse_shell",

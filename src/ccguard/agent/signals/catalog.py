@@ -58,8 +58,12 @@ CATALOG: tuple[Signal, ...] = (
         "T1041",
         # Command-anchored: not preceded by a path/word char, so a tool name as a
         # path component (``/opt/curl``, ``func nc``) does not forge egress. Real
-        # invocations (start, after space / ; | & ( newline) still fire.
-        _p(r"(?<![\w/.\-])(curl|wget|nc|ncat|scp|sftp)\b"),
+        # invocations (start, after space / ; | & ( newline) still fire. Red-team-
+        # widened with alias/alt outbound tools (websocat/kcat/xh/socat/mail/...).
+        _p(
+            r"(?<![\w/.\-])(curl|curlie|wget|nc|ncat|netcat|socat|websocat"
+            r"|kcat|kafkacat|xh|httpie|scp|sftp|mail|mailx|sendmail|ssmtp|msmtp)\b"
+        ),
         "Outbound transfer tool invoked",
     ),
     # --- P1: egress as ACTION-category (host-agnostic) -----------------------
@@ -90,6 +94,9 @@ CATALOG: tuple[Signal, ...] = (
             # Require a REMOTE destination so a purely-local `rsync a/ b/` (with
             # a stray `:` elsewhere on the line) does not fire.
             r"\b(rclone\s+(copy|sync|move)\s+\S+\s+\S+:"
+            # rcat (upload-from-stdin) / cat (download-to-stdout) take a single
+            # remote: arg — red-team found `rclone rcat remote:` evaded copy/sync/move.
+            r"|rclone\s+(?:rcat|cat)\s+\S+:"
             r"|rsync\b[^\n]*\s(?:[\w.-]+@[\w.-]+:|[\w.-]+:[~/])"
             r"|\blftp\b|\btftp\b|\bftp\s+[\w.-]+\.[\w.-]+)"
         ),
@@ -379,11 +386,15 @@ CATALOG: tuple[Signal, ...] = (
             # flag (it skips Claude's permission prompts, NOT ccguard's hooks) —
             # tagging it as defense-evasion is a false positive, so it is excluded.
             r"(disableallhooks"
-            # ccguard tamper — verb ADJACENT to the product name (bounded, so
-            # prose like "ccguard helps disable nothing" does not fire).
+            # ccguard tamper — verb ADJACENT to the product name, EITHER order
+            # (bounded, so prose like "ccguard helps disable nothing" does not fire).
+            # Red-team: `systemctl --user stop ccguard.service` (verb-before),
+            # `chattr +i ...ccguard-enforce` (lock the hook) now caught.
             r"|\bccguard\s+(uninstall|disable|stop|remove)\b|\b(uninstall|remove)\s+ccguard\b"
+            r"|\b(?:stop|disable|mask|kill|unload|rm)\b[^\n]*ccguard"
+            r"|\bchattr\s+[-+][ai]\b[^\n]*ccguard"
             r"|\bufw\s+disable\b|\biptables\s+-f\b|\bsetenforce\s+(0|permissive)\b"
-            r"|spctl\s+--master-disable|csrutil\s+disable"
+            r"|spctl\s+--(?:master|global)-disable|csrutil\s+disable"
             # Kill / stop / restart / unload the EDR sensor itself.
             r"|(pkill|killall|kill)\b[^\n]*\b(falcon|crowdstrike|osquery|auditd|sentinelone)\b"
             r"|systemctl\s+(stop|disable|restart|mask)\s+\S*(falcon|crowdstrike|defender|auditd|osquery)"
@@ -422,15 +433,26 @@ CATALOG: tuple[Signal, ...] = (
         "c2.reverse_shell",
         "T1071.001",
         _p(
-            # Mirror of the enforce hard-deny rule (kept in sync): /dev/tcp|udp only
-            # in a redirection (not as a bare arg), nc/ncat -e/--exec/--sh-exec,
-            # socat EXEC:/SYSTEM:, and inline-interpreter socket→shell gated on -c/-e.
-            r"([<>&]{1,3}\s*/dev/(?:tcp|udp)/"
-            r"|\b(?:nc|ncat)\b[^\n]*\s(?:-e\b|--exec\b|--sh-exec\b|--lua-exec\b)"
-            r"|mkfifo\b[^\n]*\|\s*n?cat?\b"
-            r"|socat\b[^\n]*\b(?:exec|system):|bash\s+-i\b[^\n]*>&|sh\s+-i\b[^\n]*>&"
-            r"|(python[0-9.]*|perl|ruby)\b[^\n]*\s-[ce]\b[^\n]*socket"
-            r"[^\n]*(/bin/(sh|bash)|dup2|pty\.spawn|subprocess))"
+            # Mirror of the enforce hard-deny rule (kept in sync). Red-team-hardened:
+            # /dev/tcp host/port shape, nc/ncat/netcat -e/--exec, socat EXEC:/SYSTEM:,
+            # gawk /inet/, node/php/lua/perl/ruby socket→shell, python socket→shell
+            # (inline or heredoc), pty.spawn shell upgrade.
+            r"(/dev/(?:tcp|udp)/[^/\s]+/\d+"
+            r"|\b(?:nc|ncat|netcat)\b[^\n]*\s(?:-e\b|--exec\b|--sh-exec\b|--lua-exec\b)"
+            r"|mkfifo\b[^\n]*\|\s*(?:n?cat?|openssl\s+s_client|socat)\b"
+            r"|socat\b[^\n]*\b(?:exec|system):|(?:ba)?sh\s+-i\b[^\n]*>&"
+            r"|\bg?awk\b[^\n]*/inet/(?:tcp|udp)/"
+            r"|\bnode\b[^\n]*(?:net\.(?:connect|createconnection)|require\(['\"]net['\"]\))"
+            r"[^\n]*(?:child_process|spawn|exec)"
+            r"|\bphp\b[^\n]*(?:fsockopen|pfsockopen|stream_socket_client)"
+            r"[^\n]*(?:proc_open|shell_exec|`|/bin/|exec)"
+            r"|\blua[0-9.]*\b[^\n]*socket[^\n]*(?:io\.popen|os\.execute)"
+            r"|\b(?:perl|ruby)\b[^\n]*(?:socket|tcpsocket|fsockopen|io::socket)"
+            r"[^\n]*(?:exec|/bin/(?:sh|bash)|io\.popen|->open|system)"
+            r"|socket[^\n]*\.connect\([^\n]*(?:os\.dup2|pty\.spawn"
+            r"|os\.system\(['\"]?(?:/bin/)?(?:sh|bash)"
+            r"|subprocess\.\w+\(\s*\[?['\"](?:/bin/)?(?:sh|bash))"
+            r"|pty\.spawn\(\s*\(?\s*['\"]?(?:/bin/)?(?:sh|bash)\b)"
         ),
         "Reverse shell — interactive C2 channel",
     ),
