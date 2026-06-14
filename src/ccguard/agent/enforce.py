@@ -142,10 +142,21 @@ def _host_match(host: str, pattern: str) -> bool:
 _HARD_DENY_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
     (
         re.compile(
-            r"/dev/tcp/|/dev/udp/|\bnc\b[^\n]*-e\s*/|\bncat\b[^\n]*-e\b"
-            r"|mkfifo\b[^\n]*\|\s*n?cat?\b|socat\b[^\n]*exec"
+            # /dev/tcp|udp is a reverse shell ONLY inside a redirection — so anchor
+            # on an adjacent redirect char. This drops the FP where the path is a
+            # mere argument (`grep /dev/tcp/ docs`, `cat notes | grep /dev/tcp/`).
+            r"[<>&]{1,3}\s*/dev/(?:tcp|udp)/"
+            # nc/ncat shell-exec: -e AND the long forms --exec/--sh-exec/--lua-exec
+            r"|\b(?:nc|ncat)\b[^\n]*\s(?:-e\b|--exec\b|--sh-exec\b|--lua-exec\b)"
+            r"|mkfifo\b[^\n]*\|\s*n?cat?\b"
+            # socat shell-exec: EXEC: and SYSTEM: address types (require the colon)
+            r"|socat\b[^\n]*\b(?:exec|system):"
             r"|bash\s+-i\b[^\n]*>&|sh\s+-i\b[^\n]*>&"
-            r"|(python[0-9.]*|perl|ruby)\b[^\n]*socket[^\n]*(/bin/(sh|bash)|exec|subprocess)",
+            # inline-interpreter reverse shell: require an inline -c/-e flag AND a
+            # socket→shell primitive, so a benign mention (`python x.py # socket
+            # subprocess`) does not hard-block.
+            r"|(?:python[0-9.]*|perl|ruby)\b[^\n]*\s-[ce]\b[^\n]*socket"
+            r"[^\n]*(?:dup2|/bin/(?:sh|bash)|pty\.spawn|subprocess)",
             re.IGNORECASE,
         ),
         "hard.reverse_shell",

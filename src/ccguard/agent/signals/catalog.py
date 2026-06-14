@@ -422,11 +422,15 @@ CATALOG: tuple[Signal, ...] = (
         "c2.reverse_shell",
         "T1071.001",
         _p(
-            r"(/dev/tcp/|/dev/udp/|\bnc\b[^\n]*-e\s*/|\bncat\b[^\n]*-e\b"
+            # Mirror of the enforce hard-deny rule (kept in sync): /dev/tcp|udp only
+            # in a redirection (not as a bare arg), nc/ncat -e/--exec/--sh-exec,
+            # socat EXEC:/SYSTEM:, and inline-interpreter socket→shell gated on -c/-e.
+            r"([<>&]{1,3}\s*/dev/(?:tcp|udp)/"
+            r"|\b(?:nc|ncat)\b[^\n]*\s(?:-e\b|--exec\b|--sh-exec\b|--lua-exec\b)"
             r"|mkfifo\b[^\n]*\|\s*n?cat?\b"
-            r"|socat\b[^\n]*exec|bash\s+-i\b[^\n]*>&|sh\s+-i\b[^\n]*>&"
-            # inline-interpreter reverse shells (python/perl/ruby socket→shell)
-            r"|(python[0-9.]*|perl|ruby)\b[^\n]*socket[^\n]*(/bin/(sh|bash)|exec|subprocess))"
+            r"|socat\b[^\n]*\b(?:exec|system):|bash\s+-i\b[^\n]*>&|sh\s+-i\b[^\n]*>&"
+            r"|(python[0-9.]*|perl|ruby)\b[^\n]*\s-[ce]\b[^\n]*socket"
+            r"[^\n]*(/bin/(sh|bash)|dup2|pty\.spawn|subprocess))"
         ),
         "Reverse shell — interactive C2 channel",
     ),
