@@ -36,8 +36,13 @@
 ---
 
 ## Прогресс (14.06)
-- ✅ **A.1+A.2** (`98965ee`) — explainer + карточка-история для moat-алерта.
+- ✅ **A.1+A.2** (`98965ee`) — explainer + карточка-история для moat-алерта (скрин снят).
 - ✅ **B.1+B.2+B.5** (`544674a`) — `hard_deny` tier: reverse shell + отключение ccguard/EDR блочатся ИЗ КОРОБКИ (даже в observe). FP≈0.
+- ✅ **B.3** (`5375186`) — single-command cred-exfil hard-block (cred-файл = payload egress'а; FP-safe by construction).
+- ✅ **C.1** (`7149417`) — benign-корпус (77 dev-команд) + CI-гард: 0 ложных hard-блоков. Страховка блок-яруса.
 - ✅ **C.7** (`f78f1ce`) — `exec.lolbin_download` (certutil/bitsadmin/mshta).
 
-**Следующее:** B.3 (single-command cred-exfil hard-block — нужна аккуратная FP-калибровка корпусом) · A.3/A.4 (синтетические события триггера) · C.1 (benign-корпус) · C.2-C.5 (ещё техники).
+**Веха:** ccguard теперь НЕ только смотрит — он БЛОКИРУЕТ 3 однозначно-злые вещи из коробки (reverse shell · отключение защиты · угон ключей), с FP-страховкой. Камера → охранник.
+**B.4 (curl|bash external) НЕ берём в hard** — легит-инсталлеры (docker/rustup) делают так; остаётся block-severity (флипается в observe).
+
+**Следующее:** A.3/A.4 (синтетические события триггера → таймлайн/risk) · B.6 (Write-ветка enforce, но нужен hook-matcher на Write) · C.2-C.6 (ещё техники + ROT13).
