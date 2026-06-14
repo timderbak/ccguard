@@ -566,13 +566,16 @@ CATALOG: tuple[Signal, ...] = (
             # benign base rate; the value is correlation (clipboard → egress).
             # Writes stay quiet: pbcopy is excluded, xclip needs a trailing -o,
             # and xsel requires an ``o`` (output) flag — the ``b`` board flag
-            # alone (e.g. ``xsel -ib``, a WRITE) must not fire.
+            # alone (e.g. ``xsel -ib``, a WRITE) must not fire. osascript reads
+            # ``the clipboard`` / ``get the clipboard``; ``set the clipboard to``
+            # (a WRITE) is excluded by the ``(?<!set\s)`` lookbehind.
             r"(?<![\w./-])(?:pbpaste|wl-paste|get-clipboard)(?![\w-])"
             r"|(?<![\w./-])xclip\b[^\n]*\s(?:-o|--output)(?![\w])"
             r"|(?<![\w./-])xsel\b[^\n]*(?:--output|\s-\S*o(?![\w]))"
+            r"|(?<![\w./-])osascript\b[^\n]*(?<!set\s)\bthe\s+clipboard\b"
             r"|pyperclip\.paste"
         ),
-        "Clipboard scrape (pbpaste / xclip -o / xsel -o / wl-paste / Get-Clipboard) — collection",
+        "Clipboard scrape (pbpaste / xclip -o / xsel -o / wl-paste / osascript / Get-Clipboard) — collection",
     ),
     # --- Coverage expansion (audit-driven, low-FP, data-driven auto-stage) --
     Signal(
@@ -615,6 +618,21 @@ CATALOG: tuple[Signal, ...] = (
             r"(\b(txt|null|any)\b|[a-z2-7]{16,}\.[a-z0-9.-]+|\b[0-9a-f]{16,}\.)"
         ),
         "DNS-tool query with tunnel markers (TXT/NULL/ANY or encoded label) — DNS exfil",
+    ),
+    Signal(
+        "persist.scheduled_task",
+        "T1053",
+        # Scheduler-based persistence variants not covered by persist.cron:
+        # systemd timer, Windows schtasks/Register-ScheduledTask, one-shot `at`.
+        # `at` is anchored to COMMAND position (start / after a separator) so
+        # `echo "meet at 10:30"` and `cat backup.timer` stay quiet.
+        _p(
+            r"\bsystemctl\b[^\n]*\benable\b[^\n]*\.timer"
+            r"|\bschtasks\b[^\n]*/create"
+            r"|\bregister-scheduledtask\b"
+            r"|(?:^|[;&|\n])\s*at\s+(now\b|[0-9]{1,2}:[0-9]{2}\b|noon\b|midnight\b)"
+        ),
+        "Scheduled-task persistence (systemd timer / schtasks / at)",
     ),
     Signal(
         "egress.icmp_tunnel",
