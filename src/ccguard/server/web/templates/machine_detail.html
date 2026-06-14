@@ -334,6 +334,26 @@
                             </li>
                             {% endfor %}
                         </ol>
+                        {% elif f.explainer.kind == 'ai_trigger_escalation' %}
+                        <p class="text-sm text-slate-700 mb-2">{{ f.explainer.narrative }}</p>
+                        <div class="flex items-center gap-2 flex-wrap cc-mono text-xs">
+                            <span class="flex flex-col rounded-lg ring-1 ring-amber-500/30 bg-amber-50 px-2.5 py-1.5">
+                                <span class="text-[9px] uppercase tracking-wide text-amber-700">AI-триггер</span>
+                                <span class="text-slate-800">{{ f.explainer.trigger_rule }}</span>
+                                <span class="text-[10px] text-slate-400">{{ f.explainer.trigger_at[:16]|replace('T',' ') if f.explainer.trigger_at else "" }}</span>
+                            </span>
+                            <span class="text-slate-400 shrink-0">→ через {{ "%.1f"|format(f.explainer.gap_hours) }}ч →</span>
+                            <span class="flex flex-col rounded-lg ring-1 ring-red-500/30 bg-red-50 px-2.5 py-1.5">
+                                <span class="text-[9px] uppercase tracking-wide text-red-700">Эскалация{% if f.explainer.escalation.stage %} · {{ f.explainer.escalation.stage }}{% endif %}</span>
+                                {% if f.explainer.escalation.attack_url %}
+                                <a href="{{ f.explainer.escalation.attack_url }}" target="_blank" rel="noopener noreferrer" class="text-emerald-700 hover:underline">{{ f.explainer.escalation.signal_id }}</a>
+                                {% else %}
+                                <span class="text-slate-800">{{ f.explainer.escalation.signal_id }}</span>
+                                {% endif %}
+                                <span class="text-[10px] text-slate-400">{{ f.explainer.escalation.ts[:16]|replace('T',' ') if f.explainer.escalation.ts else "" }}</span>
+                            </span>
+                        </div>
+                        <p class="cc-mono text-[11px] text-slate-400 mt-1.5">Связь cause→effect, которую классический EDR не строит · окно {{ "%.0f"|format(f.explainer.window_hours) }}ч</p>
                         {% endif %}
                     </div>
                 </details>

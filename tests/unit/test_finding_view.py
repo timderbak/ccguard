@@ -137,3 +137,47 @@ def test_slow_chain_finding_gets_stage_explainer():
 def test_slow_chain_without_stages_degrades_to_passthrough():
     rows = build_explainable_findings([_fr("ioa.slow_chain", {"distinct_count": 3})])
     assert rows[0]["explainer"] is None  # no stages → no breakdown
+
+
+def test_ai_trigger_escalation_gets_explainer():
+    payload = {
+        "trigger_rule": "mcp.rug_pull.description_changed",
+        "trigger_at": "2026-06-14T00:00:00+00:00",
+        "escalation_stage": "exfiltration",
+        "escalation_signal": "egress.http_client",
+        "escalation_at": "2026-06-14T10:00:00+00:00",
+        "gap_hours": 10.0,
+        "window_hours": 72.0,
+        "narrative": "AI-origin trigger then exfil 10h later.",
+    }
+    rows = build_explainable_findings([_fr("ioa.ai_trigger_escalation", payload, severity="critical")])
+    exp = rows[0]["explainer"]
+    assert exp is not None
+    assert exp["kind"] == "ai_trigger_escalation"
+    assert exp["trigger_rule"] == "mcp.rug_pull.description_changed"
+    assert exp["gap_hours"] == 10.0
+    assert exp["escalation"]["signal_id"] == "egress.http_client"
+    assert exp["escalation"]["attack_url"]  # catalog signal → resolves
+    assert exp["escalation"]["stage"] == "exfiltration"
+
+
+def test_ai_trigger_escalation_via_ioa_finding_has_no_attack_url():
+    # escalation can be an ioa.* rule (not a catalog signal) — shown as-is
+    payload = {
+        "trigger_rule": "skill.drift.text",
+        "trigger_at": "2026-06-14T00:00:00+00:00",
+        "escalation_stage": "correlated_chain",
+        "escalation_signal": "ioa.exfil_sequence",
+        "escalation_at": "2026-06-14T05:00:00+00:00",
+        "gap_hours": 5.0,
+        "window_hours": 72.0,
+        "narrative": "x",
+    }
+    exp = build_explainable_findings([_fr("ioa.ai_trigger_escalation", payload)])[0]["explainer"]
+    assert exp["escalation"]["signal_id"] == "ioa.exfil_sequence"
+    assert exp["escalation"]["attack_url"] is None
+
+
+def test_ai_trigger_malformed_payload_degrades_to_passthrough():
+    rows = build_explainable_findings([_fr("ioa.ai_trigger_escalation", {"narrative": "x"})])
+    assert rows[0]["explainer"] is None  # no trigger_rule/escalation_signal → no breakdown

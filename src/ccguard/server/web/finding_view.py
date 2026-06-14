@@ -17,6 +17,9 @@ from ccguard.agent.signals.catalog import CATALOG
 from ccguard.server.services.risk_constants import RISK_RULE_ID
 from ccguard.server.services.sequence_constants import SEQUENCE_RULE_ID
 from ccguard.server.services.slow_chain_constants import SLOW_CHAIN_RULE_ID
+from ccguard.server.services.supply_chain_escalation_service import (
+    RULE_ID as AI_TRIGGER_RULE_ID,
+)
 
 _SIGNAL_TO_TECHNIQUE: dict[str, str] = {s.id: s.attack_technique for s in CATALOG}
 
@@ -113,8 +116,35 @@ def _slow_chain_explainer(payload: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _ai_trigger_explainer(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Break down ``ioa.ai_trigger_escalation``: the AI-origin TRIGGER (a finding
+    rule_id, not a catalog signal) linked to the endpoint ESCALATION on the same
+    machine — the cause→effect a classic EDR cannot draw."""
+    trigger_rule = payload.get("trigger_rule")
+    escalation_signal = payload.get("escalation_signal")
+    if not trigger_rule or not escalation_signal:
+        return None
+    return {
+        "kind": "ai_trigger_escalation",
+        "trigger_rule": str(trigger_rule),
+        "trigger_at": payload.get("trigger_at"),
+        # escalation_signal may be a catalog signal (attack_url resolves) OR an
+        # ioa.* rule_id (no catalog technique → attack_url None, shown as-is).
+        "escalation": _signal_card(str(escalation_signal))
+        | {"stage": payload.get("escalation_stage"), "ts": payload.get("escalation_at")},
+        "gap_hours": float(payload.get("gap_hours", 0.0) or 0.0),
+        "window_hours": float(payload.get("window_hours", 0.0) or 0.0),
+        "narrative": str(payload.get("narrative", "")),
+    }
+
+
 def _explainer_for(rule_id: str, payload_json: str) -> dict[str, Any] | None:
-    if rule_id not in (RISK_RULE_ID, SEQUENCE_RULE_ID, SLOW_CHAIN_RULE_ID):
+    if rule_id not in (
+        RISK_RULE_ID,
+        SEQUENCE_RULE_ID,
+        SLOW_CHAIN_RULE_ID,
+        AI_TRIGGER_RULE_ID,
+    ):
         return None
     if not payload_json:
         return None
@@ -128,6 +158,8 @@ def _explainer_for(rule_id: str, payload_json: str) -> dict[str, Any] | None:
         return _risk_explainer(payload)
     if rule_id == SEQUENCE_RULE_ID:
         return _sequence_explainer(payload)
+    if rule_id == AI_TRIGGER_RULE_ID:
+        return _ai_trigger_explainer(payload)
     return _slow_chain_explainer(payload)
 
 
