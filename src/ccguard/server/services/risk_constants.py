@@ -57,6 +57,7 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "persist.windows_run_key": 3.0,
     "persist.autostart": 3.0,
     "persist.scheduled_task": 3.0,  # systemd-timer / schtasks / at — same tier as cron
+    "persist.git_hooks": 3.0,  # core.hooksPath / .git/hooks drop — runs on next git op
     "persist.global_pkg_install": 2.0,  # noisy on dev boxes, lower weight
     "exec.code_eval_inline": 2.0,
     "exec.base64_decode": 3.0,  # rarely benign in tool context

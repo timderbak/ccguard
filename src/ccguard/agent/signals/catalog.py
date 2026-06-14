@@ -44,8 +44,9 @@ CATALOG: tuple[Signal, ...] = (
     Signal(
         "cred.read.ssh",
         "T1552.004",
-        _p(r"(\.ssh/|\bid_rsa\b|\bid_ed25519\b)"),
-        "Access to SSH private keys",
+        # red-team: + id_ecdsa and gpg secret-key export (private-key material).
+        _p(r"(\.ssh/|\bid_rsa\b|\bid_ed25519\b|\bid_ecdsa\b|gpg\b[^\n]*--export-secret-keys?)"),
+        "Access to SSH/GPG private keys",
     ),
     Signal(
         "cred.read.dotenv",
@@ -130,7 +131,8 @@ CATALOG: tuple[Signal, ...] = (
     Signal(
         "persist.shell_rc",
         "T1546.004",
-        _p(r"\.(bashrc|zshrc|bash_profile|profile)\b"),
+        # red-team: + zshenv/zprofile/zlogin/bash_login (all sourced at shell start)
+        _p(r"\.(bashrc|zshrc|zshenv|zprofile|zlogin|bash_profile|bash_login|profile)\b"),
         "Modification of shell startup files",
     ),
     Signal(
@@ -234,7 +236,13 @@ CATALOG: tuple[Signal, ...] = (
     Signal(
         "cred.env.api_key",
         "T1552.001",
-        _p(r"\$\{?(?:openai_|anthropic_|github_|aws_|gcp_)\w*(?:api_key|token|secret)\b|\$\{?(?:api_key|access_token|secret_key)\b"),
+        # red-team: $AWS_SECRET_ACCESS_KEY evaded — `secret` was not at a word
+        # boundary (followed by `_access_key`). Widened suffix set + more prefixes.
+        _p(
+            r"\$\{?(?:openai_|anthropic_|github_|gh_|aws_|gcp_|azure_)\w*"
+            r"(?:api_key|token|secret|access_key|key|password|passwd)\b"
+            r"|\$\{?(?:api_key|access_token|secret_key|secret_access_key)\b"
+        ),
         "Reads sensitive env var (API key / token / secret)",
     ),
     Signal(
@@ -666,9 +674,20 @@ CATALOG: tuple[Signal, ...] = (
             r"\bsystemctl\b[^\n]*\benable\b[^\n]*\.timer"
             r"|\bschtasks\b[^\n]*/create"
             r"|\bregister-scheduledtask\b"
+            # red-team: transient timer via `systemd-run --on-calendar/--on-active`
+            r"|systemd-run\b[^\n]*--on-(?:calendar|active|boot|unit-active|startup)"
             r"|(?:^|[;&|\n])\s*at\s+(now\b|[0-9]{1,2}:[0-9]{2}\b|noon\b|midnight\b)"
         ),
-        "Scheduled-task persistence (systemd timer / schtasks / at)",
+        "Scheduled-task persistence (systemd timer / schtasks / systemd-run / at)",
+    ),
+    Signal(
+        "persist.git_hooks",
+        "T1546",
+        # red-team: git-hooks persistence — point core.hooksPath at an attacker
+        # dir, or drop an executable straight into a .git/hooks/ path. The hook
+        # runs on the next git operation (commit/checkout/...).
+        _p(r"\bgit\s+config\b[^\n]*\bcore\.hookspath\b|/\.git/hooks/\S"),
+        "Git-hooks persistence (core.hooksPath redirect / .git/hooks drop)",
     ),
     Signal(
         "egress.icmp_tunnel",
