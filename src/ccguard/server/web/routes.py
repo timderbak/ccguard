@@ -1862,6 +1862,29 @@ def _policy_with_pi_form_overrides(session: Session, form: dict[str, str]):
     return policy_obj
 
 
+# Packaged starter policy (observe-mode, sensible defaults) — bundled inside the
+# package so it is always present at runtime, unlike the repo-root examples/ dir.
+_DEFAULT_POLICY_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "default_policy.yaml"
+)
+
+
+def _render_no_policy_page(request: Request, *, user: str) -> HTMLResponse:
+    """Graceful empty-state for a fresh instance with no published policy —
+    instead of a raw 503 JSON. Offers a one-click 'load starter policy' CTA."""
+    return templates.TemplateResponse(
+        request,
+        "policy_empty.html",
+        {
+            "user": user,
+            "csrf_token": _csrf_for(request),
+            "has_default": _DEFAULT_POLICY_PATH.exists(),
+            "active_tab": "rules",
+        },
+        status_code=200,
+    )
+
+
 def _render_rules_page(
     request: Request,
     *,
@@ -1881,7 +1904,7 @@ def _render_rules_page(
     draft = get_draft(session)
     source = draft if draft is not None else current
     if source is None:
-        raise HTTPException(status_code=503, detail="no policy in DB (run bootstrap first)")
+        return _render_no_policy_page(request, user=user)
     policy_obj = policy_override if policy_override is not None else validate_yaml(source.yaml_text)
     diff_lines = (
         diff_policies(current.yaml_text, draft.yaml_text)
@@ -1915,6 +1938,37 @@ def policy_editor(
     return _render_rules_page(request, user=user, session=session)
 
 
+@router.post("/policy/bootstrap-default", response_class=HTMLResponse)
+def policy_bootstrap_default(
+    request: Request,
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Publish the bundled starter policy on a fresh instance (one-click from the
+    empty-state). No-op (just redirect) if a policy already exists."""
+    from ccguard.server.db.models import PolicyVersion
+    from ccguard.server.services.policy_service import get_current_published
+
+    if get_current_published(session) is None:
+        if not _DEFAULT_POLICY_PATH.exists():
+            raise HTTPException(status_code=500, detail="bundled default policy missing")
+        text = _DEFAULT_POLICY_PATH.read_text()
+        data = yaml.safe_load(text) or {}
+        revision = int(data.get("meta", {}).get("revision", 1))
+        session.add(
+            PolicyVersion(
+                revision=revision,
+                status="published",
+                yaml_text=text,
+                created_by=f"bootstrap:{user}",
+                published_at=datetime.now(UTC),
+            )
+        )
+        session.commit()
+    return RedirectResponse(url="/policy", status_code=303)
+
+
 def _render_mandatory_page(
     request: Request,
     *,
@@ -1934,7 +1988,7 @@ def _render_mandatory_page(
     draft = get_draft(session)
     source = draft if draft is not None else current
     if source is None:
-        raise HTTPException(status_code=503, detail="no policy in DB (run bootstrap first)")
+        return _render_no_policy_page(request, user=user)
     policy_obj = validate_yaml(source.yaml_text)
     diff_lines = (
         diff_policies(current.yaml_text, draft.yaml_text)

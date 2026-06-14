@@ -26,8 +26,9 @@ def test_policy_editor_renders_chip_pill_scaffolding(monkeypatch, tmp_path) -> N
     client, sid = _login(monkeypatch, tmp_path)
     try:
         r = client.get("/policy", cookies={"ccg_session": sid})
-        # Policy may 503 in tests without seeded policy — accept either.
-        if r.status_code == 503:
+        # Without a seeded policy the route renders a graceful empty-state
+        # (previously a raw 503) — skip the editor-scaffolding assertions then.
+        if r.status_code == 503 or 'data-testid="policy-empty-state"' in r.text:
             return
         assert r.status_code == 200
         body = r.text

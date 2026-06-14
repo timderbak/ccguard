@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}ccguard — политика{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+    <h2 class="text-2xl text-white cc-display">Политика</h2>
+</div>
+
+<div class="cc-card p-8 max-w-2xl" data-testid="policy-empty-state">
+    <div class="cc-eyebrow" style="color:#ff8aa0">Политика ещё не опубликована</div>
+    <p class="text-sm text-slate-300 mt-3 leading-relaxed">
+        На этом инстансе пока нет опубликованной политики, поэтому агенты работают
+        с пустым набором правил. Загрузите стартовую политику — безопасный
+        <b class="text-white">observe</b>-набор (логирует, ничего не блокирует), —
+        а затем правьте её под себя в редакторе.
+    </p>
+
+    {% if has_default %}
+    <form method="post" action="/policy/bootstrap-default" class="mt-5">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit"
+                class="cc-sev cc-sev-block px-4 py-2 text-sm"
+                data-testid="bootstrap-default-btn"
+                onclick="return confirm('Опубликовать стартовую политику (observe-режим)? Её можно изменить или откатить позже.')">
+            Загрузить стартовую политику
+        </button>
+    </form>
+    <p class="text-xs text-slate-500 mt-3">
+        Эквивалент: положить YAML в <code class="cc-mono">CCGUARD_POLICY_PATH</code> и перезапустить сервер.
+    </p>
+    {% else %}
+    <p class="text-sm text-slate-400 mt-5">
+        Бандл стартовой политики недоступен. Положите YAML-политику в путь
+        <code class="cc-mono">CCGUARD_POLICY_PATH</code> и перезапустите сервер
+        (пример — <code class="cc-mono">examples/policy.example.yaml</code>).
+    </p>
+    {% endif %}
+</div>
+{% endblock %}
