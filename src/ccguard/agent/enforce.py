@@ -19,6 +19,7 @@ import yaml
 from ccguard.agent import read_pi_scan as read_pi_scan_mod
 from ccguard.agent.audit import make_audit_logger, write_audit
 from ccguard.agent.bash_url_parser import extract_urls_from_command
+from ccguard.agent.signals.cred_exfil import detect_cred_exfil
 from ccguard.agent.findings_hook.buffer import emit_finding
 from ccguard.agent.network_utils import detect_ip_as_host, is_private_ip
 from ccguard.agent.prompt_injection_engine import ScanResult
@@ -182,6 +183,20 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
             return EnforceDecision(
                 permission="deny", reason=reason, rule_id=rid, hard_deny=True
             )
+    # Single-command credential exfil: read a cred store AND send it out in one
+    # command (cred file is the egress payload). FP-safe → hard-block before the
+    # secret leaves the machine.
+    if detect_cred_exfil(search_text):
+        return EnforceDecision(
+            permission="deny",
+            reason=(
+                "Чтение секрет-стора и отправка его наружу в одной команде "
+                "(угон ключей). Заблокировано из коробки — секрет не должен "
+                "покинуть машину."
+            ),
+            rule_id="hard.cred_exfil",
+            hard_deny=True,
+        )
 
     # P1 / Dangerous Bash Patterns: проверяем СНАЧАЛА — у этих правил есть
     # «почему опасно» и «что делать», и они должны побеждать always_deny /
