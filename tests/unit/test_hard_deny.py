@@ -215,3 +215,80 @@ def test_revshell_signal_mirrors_enforce():
     for cmd in REVSHELL_FP_NOW_ALLOWED:
         sigs = set(extract_signals("Bash", {"command": cmd}))
         assert "c2.reverse_shell" not in sigs, f"signal FP: {cmd!r}"
+
+
+# --- anti-tamper: agent cannot disable its own ccguard protection -------------
+def _edit(tool, file_path, *, old_string="", new_string="", content="") -> EnforceHookInput:
+    ti = {"file_path": file_path}
+    if tool == "Write":
+        ti["content"] = content
+    else:
+        ti["old_string"] = old_string
+        ti["new_string"] = new_string
+    return EnforceHookInput(hook_event_name="PreToolUse", tool_name=tool, tool_input=ti)
+
+
+ANTITAMPER_BASH = [
+    "rm ~/.ccguard/bin/ccguard-enforce",
+    "rm -f ~/.ccguard/policy.yaml",
+    "mv ~/.ccguard/config.yaml /tmp/x",
+    "chattr +i ~/.claude/hooks/ccguard-enforce",
+    "shred -u ~/.ccguard/bin/ccguard-audit",
+    "> /opt/ccguard/bin/ccguard-enforce-bin",
+    "systemctl --user stop ccguard.service",
+    "jq 'del(.hooks)' ~/.claude/settings.json > /tmp/s && mv /tmp/s ~/.claude/settings.json",
+    "sed -i '/ccguard/d' ~/.claude/settings.json",
+    "pkill -f ccguard-enforce",
+]
+ANTITAMPER_BASH_BENIGN = [
+    "rm -rf node_modules",
+    "chmod +x scripts/run.sh",
+    "mv dist/app.js dist/app.min.js",
+    "echo 'export PATH=$PATH:/opt/bin' >> ~/.zshrc",
+    "jq '.scripts' package.json",
+    "cat ~/.claude/settings.json",
+    "systemctl --user restart myapp.service",
+    "truncate -s 0 build.log",
+]
+
+
+def test_antitamper_bash_hard_blocked_even_in_observe():
+    for cmd in ANTITAMPER_BASH:
+        d = decide(_bash(cmd), _observe())
+        assert d.permission == "deny" and d.hard_deny, f"tamper NOT blocked: {cmd!r}"
+        assert d.rule_id == "hard.disable_security"
+
+
+def test_antitamper_bash_benign_not_blocked():
+    for cmd in ANTITAMPER_BASH_BENIGN:
+        d = decide(_bash(cmd), _observe())
+        assert not d.hard_deny, f"FALSE tamper-block: {cmd!r} → {d.rule_id}"
+
+
+def test_antitamper_write_ccguard_config_hard_blocked():
+    for tgt in ["/Users/x/.ccguard/policy.yaml", "~/.ccguard/config.yaml",
+                "/Users/x/.ccguard/bin/ccguard-enforce", "/opt/ccguard/bin/ccguard-audit"]:
+        d = decide(_edit("Write", tgt, content="x"), _observe())
+        assert d.permission == "deny" and d.hard_deny, f"self-write NOT blocked: {tgt}"
+        assert d.rule_id == "hard.ccguard_self_tamper"
+
+
+def test_antitamper_edit_removing_ccguard_hook_hard_blocked():
+    d = decide(_edit("Edit", "/Users/x/.claude/settings.json",
+                     old_string='{"matcher":"Bash","hooks":[{"command":"ccguard-enforce"}]}',
+                     new_string='{}'), _observe())
+    assert d.permission == "deny" and d.hard_deny
+    assert d.rule_id == "hard.ccguard_hook_tamper"
+
+
+def test_antitamper_benign_settings_edit_allowed():
+    # adding an MCP server (no ccguard in the touched region) must pass
+    d = decide(_edit("Edit", "/Users/x/.claude/settings.json",
+                     old_string='"mcpServers": {}',
+                     new_string='"mcpServers": {"fs": {"command": "npx"}}'), _observe())
+    assert not d.hard_deny
+
+
+def test_antitamper_benign_write_project_config_allowed():
+    d = decide(_edit("Write", "/Users/x/project/config.yaml", content="key: val"), _observe())
+    assert not d.hard_deny

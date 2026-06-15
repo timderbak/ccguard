@@ -182,7 +182,19 @@ _HARD_DENY_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
         re.compile(
             r"disableallhooks|\bccguard\s+(uninstall|disable|stop|remove)\b"
             r"|\b(uninstall|remove)\s+ccguard\b"
-            r"|(pkill|killall|kill)\b[^\n]*\b(falcon|crowdstrike|osquery|auditd|sentinelone)\b",
+            # anti-tamper: rm/mv/chattr/shred/truncate/redirect-overwrite of the
+            # ccguard hook shim or its own config — never legitimate from the agent.
+            r"|(?:rm|rmdir|mv|chattr|shred|truncate|unlink|chmod)\b[^\n]*"
+            r"(?:\.ccguard[/\\]|ccguard-(?:enforce|audit))"
+            r"|>\s*[^\n|]*ccguard-(?:enforce|audit)\b"
+            # strip the ccguard hook out of the Claude settings via jq/sed, or
+            # delete the hooks block wholesale (which removes the ccguard hook)
+            r"|(?:jq|sed)\b[^\n]*ccguard[^\n]*\.claude[/\\]settings"
+            r"|(?:jq|sed)\b[^\n]*\.claude[/\\]settings[^\n]*ccguard"
+            r"|jq\b[^\n]*del\(\s*\.hooks"
+            r"|systemctl\s+(?:--user\s+)?(?:stop|disable|mask)\s+\S*ccguard"
+            r"|launchctl\s+(?:unload|bootout|remove)\b[^\n]*ccguard"
+            r"|(pkill|killall|kill)\b[^\n]*\b(falcon|crowdstrike|osquery|auditd|sentinelone|ccguard)\b",
             re.IGNORECASE,
         ),
         "hard.disable_security",
@@ -206,15 +218,29 @@ _HARD_DENY_WRITE_TARGET: re.Pattern[str] = re.compile(
     r"(?:^|[/\\])\.ssh[/\\]authorized_keys2?$", re.IGNORECASE
 )
 
+# anti-tamper: ccguard's OWN internals — the agent has no legitimate reason to
+# write its policy/config/shim (that is admin-console territory). FP≈0.
+_HARD_DENY_CCGUARD_TARGET: re.Pattern[str] = re.compile(
+    r"(?:^|[/\\])\.ccguard[/\\](?:policy|config)\.ya?ml$"
+    r"|ccguard-(?:enforce|audit)(?:-bin)?$",
+    re.IGNORECASE,
+)
+# Claude settings file that carries the PreToolUse hook entries.
+_CLAUDE_SETTINGS: re.Pattern[str] = re.compile(
+    r"(?:^|[/\\])\.claude[/\\]settings(?:\.local)?\.json$", re.IGNORECASE
+)
+
 
 def _decide_write(tool_input: dict) -> EnforceDecision:
-    """Write/Edit hard-deny: block writes to ~/.ssh/authorized_keys out of the
-    box (even in observe). Everything else passes through — file writes are not
-    otherwise gated on the hot path."""
+    """Write/Edit hard-deny (blocks even in observe): attacker-key persistence
+    (~/.ssh/authorized_keys) and ANTI-TAMPER — the agent disabling its own
+    protection by editing ccguard's config/shim or stripping the ccguard hook out
+    of the Claude settings. Everything else passes through."""
     fp = tool_input.get("file_path")
     if not isinstance(fp, str) or not fp:
         return EnforceDecision(permission="allow", reason="no file_path")
-    if _HARD_DENY_WRITE_TARGET.search(fp.strip()):
+    target = fp.strip()
+    if _HARD_DENY_WRITE_TARGET.search(target):
         return EnforceDecision(
             permission="deny",
             reason=(
@@ -225,6 +251,39 @@ def _decide_write(tool_input: dict) -> EnforceDecision:
             rule_id="hard.ssh_authorized_keys_write",
             hard_deny=True,
         )
+    if _HARD_DENY_CCGUARD_TARGET.search(target):
+        return EnforceDecision(
+            permission="deny",
+            reason=(
+                "Правка собственного конфига/шима ccguard — попытка снять защиту "
+                "(anti-tamper). Заблокировано из коробки: ccguard настраивается "
+                "только через консоль, не командой агента."
+            ),
+            rule_id="hard.ccguard_self_tamper",
+            hard_deny=True,
+        )
+    # Editing the Claude settings.json in a way that touches the ccguard hook
+    # entry = removing/neutering enforcement. Precise: a generic config edit is
+    # allowed; only one whose touched region mentions ccguard is blocked.
+    if _CLAUDE_SETTINGS.search(target):
+        # Precise: a generic settings edit is fine; only one whose REMOVED region
+        # (old_string) mentions ccguard while the replacement doesn't is tamper.
+        # A full Write overwrite can't be told from a legit fresh config, so it is
+        # NOT blocked here (documented residual — same-user architectural limit).
+        old = tool_input.get("old_string")
+        new = tool_input.get("new_string")
+        old_has = isinstance(old, str) and "ccguard" in old.lower()
+        edit_removes = old_has and not (isinstance(new, str) and "ccguard" in new.lower())
+        if edit_removes:
+            return EnforceDecision(
+                permission="deny",
+                reason=(
+                    "Изменение Claude settings.json, удаляющее/меняющее ccguard-хук "
+                    "(снятие enforcement). Заблокировано из коробки (anti-tamper)."
+                ),
+                rule_id="hard.ccguard_hook_tamper",
+                hard_deny=True,
+            )
     return EnforceDecision(permission="allow", reason="ok")
 
 
