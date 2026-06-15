@@ -171,7 +171,16 @@ _HARD_DENY_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
             r"|os\.system\(['\"]?(?:/bin/)?(?:sh|bash)"
             r"|subprocess\.\w+\(\s*\[?['\"](?:/bin/)?(?:sh|bash))"
             # pty.spawn of a shell — the classic reverse-shell TTY upgrade
-            r"|pty\.spawn\(\s*\(?\s*['\"]?(?:/bin/)?(?:sh|bash)\b",
+            r"|pty\.spawn\(\s*\(?\s*['\"]?(?:/bin/)?(?:sh|bash)\b"
+            # GTFOBins / cheat-sheet additions (mirror of c2.reverse_shell)
+            r"|\btelnet\b[^\n]*\|[^\n]*(?:/bin/)?(?:ba)?sh[^\n]*\|[^\n]*\btelnet\b"
+            r"|mkfifo\b[^\n]*\|\s*telnet"
+            r"|\bxterm\b[^\n]*-display\s+\d{1,3}(?:\.\d{1,3}){3}:"
+            r"|(?:new-object\s+)?(?:system\.)?net\.sockets\.tcpclient"
+            r"|\bpowercat\b[^\n]*-l\b[^\n]*-ep\b|\bpowercat\b[^\n]*\s-e\s"
+            r"|net\.Dial\(\s*['\"]tcp['\"][^\n]*exec\.Command\(\s*['\"]?(?:/bin/)?(?:ba)?sh"
+            r"|exec\.Command\(\s*['\"](?:/bin/)?(?:ba)?sh[^\n]*net\.Dial"
+            r"|TcpStream::connect[^\n]*(?:from_raw_fd|Command::new\(\s*['\"](?:/bin/)?(?:ba)?sh)",
             re.IGNORECASE,
         ),
         "hard.reverse_shell",

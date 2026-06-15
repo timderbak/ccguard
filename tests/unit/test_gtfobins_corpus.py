@@ -69,11 +69,32 @@ _BENIGN = [
     "sudo mount /dev/sdb1 /mnt",
     "sudo apt-get update",
     "sudo apt-get install -y nginx",
+    # Windows LOLBins — benign admin/dev use
+    "rundll32.exe shell32.dll,Control_RunDLL desk.cpl",
+    "rundll32 printui.dll,PrintUIEntry",
+    "msbuild MyApp.sln",
+    "msbuild MyApp.csproj /p:Configuration=Release",
+    "installutil MyWindowsService.exe",
+    "wmic process list brief",
+    "wmic logicaldisk get size,freespace",
+    "powershell -File C:\\scripts\\backup.ps1",
+    "Invoke-WebRequest -OutFile pkg.zip https://repo/x",
+    "msiexec /i C:\\Installers\\VendorApp.msi",
+    "msiexec /x {GUID} /qn",
+    # reverse-shell benign lookalikes (client/download/listener — not a revshell)
+    "telnet smtp.example.com 25",
+    "telnet localhost 6379",
+    "xterm -e 'vim file'",
+    "New-Object System.Net.WebClient",
+    "New-Object System.Net.Sockets.TcpListener",
+    "powercat -c 127.0.0.1 -p 7002",
+    'net.Dial("tcp","db:5432")',
+    'TcpStream::connect("db:5432")',
 ]
 
 
 @pytest.mark.parametrize("cmd", _BENIGN)
 def test_gtfobins_benign_stays_quiet(cmd: str) -> None:
     fired = set(extract_signals("Bash", {"command": cmd}))
-    assert "exec.shell_spawn" not in fired, f"FP shell_spawn: {cmd!r}"
-    assert "system.sudo_shell" not in fired, f"FP sudo_shell: {cmd!r}"
+    for sig in ("exec.shell_spawn", "system.sudo_shell", "exec.windows_lolbin", "c2.reverse_shell"):
+        assert sig not in fired, f"FP {sig}: {cmd!r} → {sorted(fired)}"

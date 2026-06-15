@@ -517,7 +517,17 @@ CATALOG: tuple[Signal, ...] = (
             r"|socket[^\n]*\.connect\([^\n]*(?:os\.dup2|pty\.spawn"
             r"|os\.system\(['\"]?(?:/bin/)?(?:sh|bash)"
             r"|subprocess\.\w+\(\s*\[?['\"](?:/bin/)?(?:sh|bash))"
-            r"|pty\.spawn\(\s*\(?\s*['\"]?(?:/bin/)?(?:sh|bash)\b)"
+            r"|pty\.spawn\(\s*\(?\s*['\"]?(?:/bin/)?(?:sh|bash)\b"
+            # GTFOBins / cheat-sheet additions: telnet double-pipe, xterm remote
+            # -display, PowerShell TCPClient, powercat -l -ep, Go/Rust socket+exec.
+            r"|\btelnet\b[^\n]*\|[^\n]*(?:/bin/)?(?:ba)?sh[^\n]*\|[^\n]*\btelnet\b"
+            r"|mkfifo\b[^\n]*\|\s*telnet"
+            r"|\bxterm\b[^\n]*-display\s+\d{1,3}(?:\.\d{1,3}){3}:"
+            r"|(?:new-object\s+)?(?:system\.)?net\.sockets\.tcpclient"
+            r"|\bpowercat\b[^\n]*-l\b[^\n]*-ep\b|\bpowercat\b[^\n]*\s-e\s"
+            r"|net\.Dial\(\s*['\"]tcp['\"][^\n]*exec\.Command\(\s*['\"]?(?:/bin/)?(?:ba)?sh"
+            r"|exec\.Command\(\s*['\"](?:/bin/)?(?:ba)?sh[^\n]*net\.Dial"
+            r"|TcpStream::connect[^\n]*(?:from_raw_fd|Command::new\(\s*['\"](?:/bin/)?(?:ba)?sh))"
         ),
         "Reverse shell — interactive C2 channel",
     ),
@@ -757,6 +767,33 @@ CATALOG: tuple[Signal, ...] = (
             r"|\bregsvr32\b[^\n]*/i:\s*https?://"
         ),
         "Download-cradle via LOLBin (certutil/bitsadmin/mshta/regsvr32) — remote payload fetch+exec",
+    ),
+    Signal(
+        "exec.windows_lolbin",
+        "T1218",
+        # LOLBAS proxy-execution / AWL-bypass — a signed Windows binary abused to
+        # run attacker code. Each alternative is the abuse-specific marker (not the
+        # bare binary): rundll32 script: URIs, installutil /U log-suppression,
+        # wmic process call create, msiexec remote/DLL, cmstp /ni /s, conhost
+        # --headless, scriptrunner -appvscript, pcalua -a, wuauclt DLL-provider,
+        # powershell IEX download-cradle. Benign admin use (wmic process list,
+        # msiexec /i local.msi, rundll32 shell32,Control_RunDLL) stays quiet.
+        _p(
+            r"\brundll32\b[^\n]*(?:javascript:|vbscript:|url\.dll\s*,\s*(?:OpenURL|FileProtocolHandler)"
+            r"|,\s*RunHTMLApplication|GetObject\(\s*['\"]?script:|shell32\.dll\s*,\s*ShellExec_RunDLL)"
+            r"|\binstallutil\b[^\n]*/LogToConsole=false[^\n]*/U\b"
+            r"|\bwmic\b[^\n]*process\s+call\s+create"
+            r"|\bmsiexec\b[^\n]*(?:/q\w*|/quiet)[^\n]*/i\s+https?://|\bmsiexec\b[^\n]*/y\s+\S+\.dll"
+            r"|\bcmstp\b[^\n]*/ni\b[^\n]*/s\b"
+            r"|\bconhost\b[^\n]*--headless\s+\S"
+            r"|\bscriptrunner\b[^\n]*-appvscript"
+            r"|\bpcalua\b[^\n]*\s-a\s"
+            r"|\bwuauclt\b[^\n]*/UpdateDeploymentProvider"
+            r"|\b(?:powershell|pwsh)\b[^\n]*(?:IEX|Invoke-Expression)[^\n]*"
+            r"(?:New-Object\s+Net\.WebClient|DownloadString|\biwr\b|Invoke-WebRequest)"
+            r"|\bmsbuild\b[^\n]*\.xml\b"
+        ),
+        "Windows LOLBAS proxy-execution / AWL-bypass (rundll32/installutil/wmic/msiexec/cmstp/...)",
     ),
     # --- Action signals (ТЗ-02 staging middle link) ----------------------
     # These are ACTION signals, not content-regex signals: emission is gated on

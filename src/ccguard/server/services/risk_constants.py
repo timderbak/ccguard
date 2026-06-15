@@ -119,4 +119,5 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "egress.dns_tool": 3.0,
     "egress.icmp_tunnel": 3.0,
     "exec.lolbin_download": 4.0,  # download-cradle LOLBin, rarely benign
+    "exec.windows_lolbin": 4.0,  # LOLBAS proxy-exec / AWL-bypass
 }

