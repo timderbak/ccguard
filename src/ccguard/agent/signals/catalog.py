@@ -129,6 +129,38 @@ CATALOG: tuple[Signal, ...] = (
         "Piping/decoding into a shell or language interpreter (stdin code)",
     ),
     Signal(
+        "exec.shell_spawn",
+        "T1059",
+        # GTFOBins "100 ways to get a shell" — a legit binary driven to spawn a
+        # shell via its abuse-specific invocation (NOT the bare binary). Each
+        # alternative is the FP-distinguishing token: -exec <shell>, tar exec
+        # side-channels, editor/-debugger -c/-ex shell-out, exec-wrapper → bare
+        # shell, awk system(), ssh ProxyCommand shell, sed e-command, make
+        # $(shell), the `!sh` bang-escape (less/ed/ftp/vim), man -H<shell>, pager
+        # → shell. Benign use of the same binaries (tar czf, find -name, awk
+        # '{print}', vim -c 'wq', gdb -ex bt) stays quiet.
+        _p(
+            r"\bfind\b[^\n]*\s-(?:exec(?:dir)?|ok)\s+(?:/bin/|/usr/bin/)?(?:ba|z|da|k|a)?sh\b"
+            r"|\btar\b[^\n]*(?:--checkpoint-action=exec|--to-command|--use-compress-program|\s-I\s)[^\n]*(?:/bin/|/usr/bin/)?(?:ba|z|da|k|a)?sh\b"
+            r"|\b(?:vi|vim|view|nvim|rvim|ex)\b[^\n]*(?:\s-c\s|\s\+)[^\n]*(?::!|:\s*shell|:\s*ter|set\s+shell=|os\.system|os\.execute)"
+            r"|\bgdb\b[^\n]*\s-(?:ex|iex|x|batch)\b[^\n]*(?:!\s*/?(?:bin/)?\w*sh|shell\s|os\.(?:system|execl|execv))"
+            r"|\b(?:env|nice|nohup|stdbuf|setarch|ionice|taskset|setsid|rlwrap|aa-exec|chrt)\b[^\n]*\s(?:/bin/|/usr/bin/)?(?:ba|z|da|k|a)?sh\b(?:\s+-[ipl]+\b|\s*$|\s*[;|&])"
+            r"|\bxargs\b[^\n]*-a\s*/dev/null[^\n]*(?:/bin/|/usr/bin/)?(?:ba|z|da|k|a)?sh\b"
+            r"|\b(?:g|m|n)?awk\b[^\n]*(?:system\(|print\s*\|\s*['\"]?(?:/bin/)?(?:ba)?sh|\|\s*['\"]?(?:/bin/)?(?:ba)?sh)"
+            r"|\bssh\b[^\n]*-o\s*(?:ProxyCommand|LocalCommand)=[^\n]*(?:;\s*(?:/bin/)?(?:ba)?sh|(?:/bin/)(?:ba|da)?sh)"
+            r"|\bsed\b[^\n]*['\"][^'\"\n]*\b\d*\s*e\s+(?:exec\s+)?(?:/bin/)?(?:ba)?sh"
+            r"|\bmake\b[^\n]*(?:--eval|-f\s*-|-f\s*/dev/stdin)[^\n]*\$\(\s*shell\s"
+            r"|(?:^|\n)\s*!\s*(?:/bin/|/usr/bin/)?(?:ba|z|da)?sh\b"
+            r"|\bman\b[^\n]*\s-H\s*(?:/bin/)?(?:ba)?sh"
+            r"|(?:PAGER|GIT_PAGER)=['\"]?[^'\"\n]*sh\b[^'\"\n]*\bgit\b|\bgit\b[^\n]*\score\.pager=['\"]?[^'\"\n]*sh"
+            r"|LESSOPEN=['\"]?\s*\|?\s*(?:/bin/)?(?:ba)?sh"
+            r"|\bnmap\b[^\n]*--interactive"
+            r"|\bmount\b[^\n]*-o\s+bind[^\n]*/bin/(?:ba)?sh"
+            r"|\bapt(?:-get)?\b[^\n]*-o\s*\S*(?:Pre|Post)-Invoke\S*="
+        ),
+        "Shell spawn via LOLBin breakout (GTFOBins: find/tar/vim/gdb/awk/env/ssh/sed/make/pager)",
+    ),
+    Signal(
         "persist.shell_rc",
         "T1546.004",
         # red-team: + zshenv/zprofile/zlogin/bash_login (all sourced at shell start)
@@ -366,6 +398,21 @@ CATALOG: tuple[Signal, ...] = (
         "T1548.003",
         _p(r"NOPASSWD\s*:\s*ALL|sudo\s+-n\s+\w+"),
         "Sudo without password — privilege escalation primitive",
+    ),
+    Signal(
+        "system.sudo_shell",
+        "T1548.003",
+        # GTFOBins-style privesc: sudo to a bare shell / su, or a sudo-specific
+        # hook (apt Pre-Invoke, mount -o bind <shell>). The `sudo <gtfobin>
+        # <shell-escape>` forms are caught by exec.shell_spawn on the escape; this
+        # adds the privilege-escalation stage when sudo is the vehicle. The
+        # shell/-s/-i must be a bare interactive shell — `sudo vim`/`sudo apt
+        # install` stay quiet.
+        _p(
+            r"\bsudo\b[^\n]*(?:\s(?:/bin/|/usr/bin/)?(?:ba|z|da|k)?sh\b(?:\s|$|;)"
+            r"|\bsu\b|\s-[is]\b|/bin/(?:ba)?sh)"
+        ),
+        "Sudo → interactive shell / su (privilege escalation)",
     ),
     Signal(
         "system.hosts_edit",

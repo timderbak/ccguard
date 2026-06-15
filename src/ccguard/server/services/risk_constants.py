@@ -23,6 +23,7 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "cred.read.dotenv": 3.0,
     "egress.network_tool": 4.0,
     "exec.pipe_to_shell": 4.0,
+    "exec.shell_spawn": 4.0,  # GTFOBins LOLBin shell breakout
     "persist.shell_rc": 3.0,
     "persist.cron": 3.0,
     "discovery.recon": 1.0,
@@ -71,6 +72,7 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "egress.cloud_cli": 4.0,
     "system.permissive_chmod": 3.0,
     "system.sudo_nopasswd": 4.0,  # privilege escalation primitive
+    "system.sudo_shell": 4.0,  # sudo → shell = GTFOBins privesc
     "system.hosts_edit": 4.0,
     "discovery.network_scan": 2.0,
     "discovery.secret_grep": 4.0,

@@ -1,0 +1,152 @@
+{
+ "_comment": "GTFOBins/LOLBAS enrichment — shell-spawn + sudo privesc LOLBin breakouts. CI guard: each must fire its target_signal. Sourced from gtfobins.github.io via research workflow.",
+ "cases": [
+  {
+   "command": "find . -exec /bin/sh \\; -quit",
+   "target_signal": "exec.shell_spawn",
+   "_class": "shell_spawn",
+   "intent": "find with `-exec` (or `-execdir`/`-ok`) whose argument is a shell (/bin/sh, /bin/bash, sh, bash) rather than a real pred",
+   "benign": "`find . -name '*.py'`, `find . -type f -exec grep -l TODO {} \\;`, `find . -exec chmod 644 {} +`, `find /var/log -mtime +"
+  },
+  {
+   "command": "tar cf /dev/null /dev/null --checkpoint=1 --checkpoint-action=exec=/bin/sh",
+   "target_signal": "exec.shell_spawn",
+   "_class": "shell_spawn",
+   "intent": "GNU tar with `--checkpoint-action=exec=<cmd>` or `--to-command=<cmd>` or `-I '<cmd>'` (use-compress-program), where the ",
+   "benign": "`tar czf build.tgz dist/`, `tar xf release.tar.gz -C /opt`, `tar --checkpoint=1000 --checkpoint-action=dot -cf big.tar d"
+  },
+  {
+   "command": "vi -c ':!/bin/sh' /dev/null",
+   "target_signal": "exec.shell_spawn",
+   "_class": "shell_spawn",
+   "intent": "vi/vim/view/rvim launched in batch with `-c` (or `+`) running an ex command that shells out: `:!<cmd>`, `:shell`, `:term",
+   "benign": "`vim file.py` (interactive edit, no -c), `vim -c 'set ft=python' notes.txt`, `vim -c 'wq' file` (scripted save), `vim -e"
+  },
+  {
+   "command": "gdb -nx -ex '!/bin/sh' -ex quit",
+   "target_signal": "exec.shell_spawn",
+   "_class": "shell_spawn",
+   "intent": "gdb driven by `-ex`/`-iex`/`-batch`/`-x` to run an inline command that shells out: `-ex '!cmd'` (shell escape), `-ex 'sh",
+   "benign": "`gdb -batch -ex 'bt' ./core`, `gdb -p 1234 -batch -ex 'thread apply all bt'`, `gdb --args ./prog arg1` (debug a program)"
+  },
+  {
+   "command": "env /bin/sh",
+   "target_signal": "exec.shell_spawn",
+   "_class": "shell_spawn",
+   "intent": "A pure exec-wrapper (env / nice / nohup / stdbuf / setarch / ionice / taskset / timeout / time / rlwrap / aa-exec / star",
+   "benign": "`env NODE_ENV=prod node app.js`, `env -i PATH=/usr/bin make`, `nice -n 19 npm run build`, `nohup ./server &`, `stdbuf -o"
+  },
+  {
+   "command": "xargs -a /dev/null /bin/sh",
+   "target_signal": "exec.shell_spawn",
+   "_class": "shell_spawn",
+   "intent": "xargs run with an EMPTY input source (`-a /dev/null`, or `echo '' | xargs ... -r` defeated, or `xargs ... /bin/sh` with ",
+   "benign": "`find . -name '*.o' | xargs rm`, `cat urls.txt | xargs -n1 curl`, `ls *.jpg | xargs -P4 convert`, `xargs -I{} mv {} done"
+  },
+  {
+   "command": "gawk 'BEGIN {system(\"/bin/sh\")}'",
+   "target_signal": "exec.shell_spawn",
+   "_class": "shell_spawn",
+   "intent": "awk/gawk/mawk program whose action calls `system(\"/bin/sh\")` or opens a shell via `print | \"/bin/sh\"` / `\"cmd\" | getline",
+   "benign": "`awk '{print $1}' f`, `awk -F, '{sum+=$3} END{print sum}' data.csv`, `awk 'NR>1' file`, `ps aux | awk '/python/{print $2"
+  },
+  {
+   "command": "ssh -o ProxyCommand=';/bin/sh 0<&2 1>&2' x",
+   "target_signal": "exec.shell_spawn",
+   "_class": "shell_spawn",
+   "intent": "ssh abused for LOCAL shell execution (not a remote login) via `-o ProxyCommand=<cmd>`, `-o LocalCommand=<cmd>` with `-o ",
+   "benign": "`ssh user@host`, `ssh -i ~/.ssh/id_ed25519 deploy@prod`, `ssh -o ProxyJump=bastion web01`, `ssh -o ProxyCommand='cloudfl"
+  },
+  {
+   "command": "ed\n!/bin/sh\nq",
+   "target_signal": "exec.shell_spawn",
+   "_class": "shell_spawn",
+   "intent": "Interactive line tools that expose a `!command` shell escape, driven non-interactively: `ed` / `ex` / `nmap --interactiv",
+   "benign": "`sqlite3 app.db 'SELECT * FROM users'`, `sqlite3 db .schema`, `nmap -sV -p443 host` (normal scan, no --interactive), `ft"
+  },
+  {
+   "command": "sudo find . -exec /bin/sh \\; -quit",
+   "target_signal": "exec.shell_spawn",
+   "_class": "privesc",
+   "intent": "sudo + find with -exec spawning a shell (/bin/sh, /bin/bash, or an interactive interpreter) instead of a real file opera",
+   "benign": "sudo find /var/log -name '*.log' -mtime +30 -delete   (or  sudo find . -name '*.pyc' -exec rm {} \\;) — legit admin searc"
+  },
+  {
+   "command": "sudo vim -c ':!/bin/sh'",
+   "target_signal": "exec.shell_spawn",
+   "_class": "privesc",
+   "intent": "sudo + vim/vi/view/rvim launched with a -c (or +) command that shell-escapes: :!sh, :!/bin/bash, :py import os;os.system",
+   "benign": "sudo vim /etc/nginx/nginx.conf   (or  sudo vim -c 'wq' file) — opening a root-owned config to edit; no :! / :py / :lua /"
+  },
+  {
+   "command": "sudo awk 'BEGIN {system(\"/bin/sh\")}'",
+   "target_signal": "exec.shell_spawn",
+   "_class": "privesc",
+   "intent": "sudo + awk/gawk/mawk/nawk whose program calls system(\"/bin/sh\") (or pipes \"cmd\" | \"/bin/sh\" / opens /inet/tcp). Standalo",
+   "benign": "sudo awk '{print $1}' /var/log/auth.log   (or  awk -F: '{print $1}' /etc/passwd) — field extraction; the program has no "
+  },
+  {
+   "command": "sudo less /etc/profile\n!/bin/sh",
+   "target_signal": "exec.shell_spawn",
+   "_class": "privesc",
+   "intent": "sudo + a pager (less/more/most) driven to a shell: the !cmd bang-escape (!/bin/sh) or the env-trick LESSOPEN='/bin/sh -s",
+   "benign": "sudo less /var/log/syslog   (or  sudo less /etc/sudoers) — paging a root-owned file to read it; no '!' bang command and "
+  },
+  {
+   "command": "sudo man -H/bin/sh man",
+   "target_signal": "exec.shell_spawn",
+   "_class": "privesc",
+   "intent": "sudo + man with the -H<cmd> browser hook pointing at a shell (man '-H/bin/sh #' man), or man driving its pager to a !she",
+   "benign": "sudo man sudoers   (or  man tar) — reading a manual page; no -H/<shell> hook and the pager is not bang-escaped."
+  },
+  {
+   "command": "sudo env /bin/sh",
+   "target_signal": "exec.shell_spawn",
+   "_class": "privesc",
+   "intent": "sudo env invoked with a shell/interpreter as its command argument (env /bin/sh, env /bin/bash, env sh -p). env's job is ",
+   "benign": "sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y nginx   (or  env NODE_ENV=production npm run build) — env use"
+  },
+  {
+   "command": "sudo tar xf /dev/null -I '/bin/sh -c \"/bin/sh 0<&2 1>&2\"'",
+   "target_signal": "exec.shell_spawn",
+   "_class": "privesc",
+   "intent": "sudo + tar with a process-spawning flag: --to-command=/bin/sh, --checkpoint-action=exec=/bin/sh (with --checkpoint=1), o",
+   "benign": "sudo tar -xzf /tmp/release.tgz -C /opt/app   (or  sudo tar czf backup.tgz /etc) — ordinary extract/create; no --to-comma"
+  },
+  {
+   "command": "sudo gdb -nx -ex '!/bin/sh' -ex quit",
+   "target_signal": "exec.shell_spawn",
+   "_class": "privesc",
+   "intent": "sudo + gdb driven to a shell via -ex: -ex '!/bin/sh' (bang-escape), -ex 'shell /bin/sh', or -ex 'python import os; os.sy",
+   "benign": "sudo gdb -p 4321   (or  sudo gdb --args ./server --config c.yaml) — attaching to / launching a process for real debuggin"
+  },
+  {
+   "command": "sudo mount -o bind /bin/sh /bin/mount\nsudo mount",
+   "target_signal": "exec.shell_spawn",
+   "_class": "privesc",
+   "intent": "sudo mount -o bind <shell> <trusted-suid-or-path> — bind-mounting /bin/sh over a binary that is later run privileged (e.",
+   "benign": "sudo mount -o bind /mnt/data /var/www/data   (or  sudo mount /dev/sdb1 /mnt) — a real filesystem/bind mount of a data pa"
+  },
+  {
+   "command": "sudo apt-get update -o APT::Update::Pre-Invoke::=/bin/sh",
+   "target_signal": "exec.shell_spawn",
+   "_class": "privesc",
+   "intent": "sudo + apt/apt-get with an -o config override that injects a hook command: APT::Update::Pre-Invoke / DPkg::Pre-Invoke (o",
+   "benign": "sudo apt-get update   (or  sudo apt-get install -y nginx,  sudo apt -o Acquire::http::Proxy=http://proxy:3128 update) — "
+  },
+  {
+   "command": "awk 'BEGIN{system(\"/bin/sh\")}'",
+   "target_signal": "exec.shell_spawn",
+   "_class": "shell_spawn",
+   "intent": "awk/gawk/mawk program whose BEGIN block calls system(\"/bin/sh\") (or system(\"/bin/bash -p\")) to spawn a shell — a sudo/SU",
+   "benign": "awk -F, '{sum+=$3} END{print sum}' data.csv — field aggregation; no system()/shell call."
+  },
+  {
+   "command": "vim -c ':py import os; os.system(\"/bin/sh\")'",
+   "target_signal": "exec.shell_spawn",
+   "_class": "shell_spawn",
+   "intent": "vim/view/ex driven non-interactively to spawn a shell or run code: `vim -c ':!/bin/sh'`, `vim -c ':py import os; os.syst",
+   "benign": "vim -c ':wq' notes.txt or `vim -es -c ':%s/old/new/g' -c ':wq' file` — scripted edit/substitute-and-save; -c present but"
+  }
+ ]
+}
