@@ -48,6 +48,13 @@ _QUOTED_LITERAL = re.compile(r"'([^']*)'|\"([^\"]*)\"")
 # ANSI-C / printf string bodies: $'...'  or  printf [-v x] '...' / "..."
 _ANSI_C = re.compile(r"\$'([^']*)'|printf\s+(?:-v\s+\w+\s+)?['\"]([^'\"]*)['\"]")
 _C_ESCAPE = re.compile(r"\\x[0-9a-fA-F]{2}|\\[0-7]{1,3}")
+# Interpreter-aware (python -c / node -e / ...) char-code assembly: a bracketed
+# integer list (map(chr,[..]) / bytes([..]) / [..]) or JS String.fromCharCode(..).
+_INT_LIST = re.compile(r"\[\s*(\d{1,7}(?:\s*,\s*\d{1,7}){2,})\s*\]")
+_FROMCHARCODE = re.compile(r"fromCharCode\s*\(\s*([\d,\s]+)\)", re.IGNORECASE)
+_CHR_CHAIN = re.compile(r"(?:chr\(\s*\d{1,7}\s*\)\s*[+,]?\s*){3,}")
+# String concatenation of literals: 'a'+'b'+'c' (py/js) or 'a'.'b' (php).
+_CONCAT = re.compile(r"(['\"])(?:(?!\1).){0,200}\1(?:\s*[.+]\s*(['\"])(?:(?!\2).){0,200}\2){1,30}")
 
 
 @dataclass(frozen=True)
@@ -365,6 +372,51 @@ def _charmap_decode(statements: list[str]) -> list[str]:
     return out
 
 
+def _decode_intlist(nums: list[int]) -> str:
+    """Decode a list of code points to text IFF it looks like a char-code array
+    (>=80% in the printable+ws range) — so a benign int list (versions, ids)
+    that happens to decode is gated out before it reaches the junk filter."""
+    nums = nums[:512]
+    if len(nums) < 3:
+        return ""
+    printable = sum(1 for n in nums if 9 <= n <= 126)
+    if printable / len(nums) < 0.8:
+        return ""
+    try:
+        return "".join(chr(n) for n in nums if 0 <= n < 0x110000)
+    except (ValueError, OverflowError):
+        return ""
+
+
+def _decode_interpreter(text: str) -> list[str]:
+    """Interpreter-aware de-obfuscation WITHOUT executing anything: assemble the
+    string that inline interpreter code (``python -c`` / ``node -e`` / ``php -r``
+    / ...) builds from char codes or concatenation, so the hidden command token
+    surfaces. Pure string transforms; outputs are junk-filtered by the caller —
+    can only ADD a candidate to the search surface, never forge a benign signal."""
+    out: list[str] = []
+    for rx in (_INT_LIST, _FROMCHARCODE):
+        for m in rx.finditer(text):
+            s = _decode_intlist([int(x) for x in re.findall(r"\d+", m.group(1))])
+            if _looks_like_command(s):
+                out.append(s)
+            if len(out) >= _MAX_BLOBS:
+                return out
+    for m in _CHR_CHAIN.finditer(text):
+        s = _decode_intlist([int(x) for x in re.findall(r"\d+", m.group(0))])
+        if _looks_like_command(s):
+            out.append(s)
+    # string concatenation: join adjacent quoted literals across + / .
+    for m in _CONCAT.finditer(text):
+        lits = re.findall(r"(['\"])((?:(?!\1).)*)\1", m.group(0))
+        joined = "".join(v for _q, v in lits)
+        if _looks_like_command(joined):
+            out.append(joined)
+        if len(out) >= _MAX_BLOBS:
+            break
+    return out
+
+
 def _extract_urls(fragments: list[str]) -> list[str]:
     out: list[str] = []
     for st in fragments:
@@ -409,6 +461,10 @@ def normalize_command(raw: object) -> NormalizedCommand:
         charmap_blobs = _charmap_decode(expanded)
         if charmap_blobs:
             blobs = (blobs + charmap_blobs)[:_MAX_BLOBS]
+        # interpreter-aware de-obfuscation (char-codes / concat in python -c etc.)
+        interp_blobs = _decode_interpreter(decode_surface)
+        if interp_blobs:
+            blobs = (blobs + interp_blobs)[:_MAX_BLOBS]
         urls = _extract_urls([*expanded, *blobs])
         text = "\n".join([raw, denoised, unescaped, *expanded, *blobs])
         return NormalizedCommand(

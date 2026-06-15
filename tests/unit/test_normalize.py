@@ -194,3 +194,30 @@ def test_benign_tr_and_rev_usage_stays_clean():
         sigs = set(extract_signals("Bash", {"command": benign}))
         assert "egress.network_tool" not in sigs, f"FP on {benign!r}"
         assert "exec.pipe_to_shell" not in sigs, f"FP on {benign!r}"
+
+
+def test_interpreter_charcode_assembly_decodes():
+    # python: ''.join(map(chr,[...])) hiding `curl ...`
+    cmd = "python3 -c \"import os;os.system(''.join(map(chr,[99,117,114,108,32,49,48,46,48,46,48,46,53,47,120])))\""
+    sigs = set(extract_signals("Bash", {"command": cmd}))
+    assert "egress.network_tool" in sigs
+
+
+def test_interpreter_fromcharcode_decodes():
+    cmd = 'node -e "eval(String.fromCharCode(99,117,114,108,32,49,48,46,48,46,48,46,53))"'
+    sigs = set(extract_signals("Bash", {"command": cmd}))
+    assert "egress.network_tool" in sigs
+
+
+def test_interpreter_decode_benign_int_array_stays_clean():
+    # a JSON int array that decodes to junk must not forge a dangerous signal
+    for benign in [
+        "curl -d '{\"ids\":[101,102,103,104]}' https://api.github.com/x",
+        "python3 -c 'print([1,2,3,4,5])'",
+        "node -e 'console.log([72,73])'",
+    ]:
+        sigs = set(extract_signals("Bash", {"command": benign}))
+        assert "exec.pipe_to_shell" not in sigs or "curl" in benign  # no forged exec
+        # the decoded junk ('efgh' etc.) must not fabricate a reverse shell / cred read
+        assert "c2.reverse_shell" not in sigs
+        assert "cred.read.aws" not in sigs
