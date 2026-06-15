@@ -822,6 +822,127 @@ CATALOG: tuple[Signal, ...] = (
         ),
         "Inhibit recovery — delete shadow copies / snapshots / backups (ransomware-prep)",
     ),
+    # --- ATT&CK coverage-gap batch 2: cloud/container, cred-memory, defense,
+    # persistence, AI-frontier (sourced from a coverage-gap workflow) ----------
+    Signal(
+        "container.privileged",
+        "T1611",
+        # Container escape / host takeover: privileged container, host-root bind
+        # mount (-v /:/host), SYS_ADMIN cap, host PID ns, host chroot, or a
+        # privileged k8s manifest. A normal `docker run img` / `-v ./x:/app` quiet.
+        _p(
+            r"\bdocker\b[^\n]*\brun\b[^\n]*(?:--privileged|--cap-add[= ]\s*SYS_ADMIN|--pid[= ]host|-v\s+/:/|--volume[= ]/:/)"
+            r"|\bchroot\s+/host\b|securityContext[^\n]*privileged:\s*true|\bhostPID:\s*true|\bhostPath:"
+        ),
+        "Privileged container / host-mount / k8s privileged pod — container escape",
+    ),
+    Signal(
+        "collection.kubectl_cp",
+        "T1530",
+        # Copy data OUT of a pod (pod:/path as the SOURCE). `kubectl cp ./x pod:/`
+        # (copy IN) does not match.
+        _p(r"\bkubectl\s+cp\s+\S+:/"),
+        "kubectl cp out of a pod — data collection from a container",
+    ),
+    Signal(
+        "impact.cloud_destroy",
+        "T1485",
+        # Destructive cloud ops: remove a bucket, terminate instances, delete a
+        # VM / resource group / DB, terraform auto-destroy. Read/list/plan quiet.
+        _p(
+            r"\baws\s+s3\s+rb\b[^\n]*--force|\baws\s+ec2\s+terminate-instances\b"
+            r"|\bgcloud\s+compute\s+instances\s+delete\b|\bterraform\s+destroy\b[^\n]*-auto-approve"
+            r"|\baz\s+group\s+delete\b|\baws\s+rds\s+delete-db-instance\b[^\n]*--skip-final"
+        ),
+        "Destructive cloud operation (bucket/instance/DB/resource-group delete)",
+    ),
+    Signal(
+        "persist.cloud_iam",
+        "T1098",
+        # Cloud-account persistence: mint an access key / login profile, attach a
+        # policy, add to a group. List/get (read) does not match.
+        _p(
+            r"\baws\s+iam\s+(?:create-access-key|create-login-profile|attach-user-policy|attach-role-policy|add-user-to-group)\b"
+            r"|\bgcloud\s+iam\s+service-accounts\s+keys\s+create\b"
+        ),
+        "Cloud IAM persistence (create key / attach policy / add to group)",
+    ),
+    Signal(
+        "defense.disable_firewall",
+        "T1562.004",
+        _p(
+            r"\bufw\b[^\n]*\bdisable\b|\bnft\b[^\n]*flush\s+ruleset"
+            r"|\bsystemctl\s+(?:stop|disable|mask)\s+\S*(?:firewalld|ufw)\b|\bpfctl\s+-d\b|\bsetenforce\s+0\b"
+        ),
+        "Disable host firewall (ufw/firewalld/nft/pf/SELinux) — impair defenses",
+    ),
+    Signal(
+        "defense.masquerade",
+        "T1036.005",
+        # Place a binary at a system-daemon name/path (sshd/cron/systemd/...) —
+        # hiding malware in plain sight. Normal install to a real name is quiet.
+        _p(
+            r"\b(?:cp|mv|ln\s+-s\w*|install)\b[^\n]*\s/(?:usr/(?:local/)?s?bin|s?bin)"
+            r"/(?:sshd|crond?|systemd|init|agetty|kthreadd|kworker)\b"
+        ),
+        "Masquerade — binary placed at a system-daemon name (sshd/cron/systemd)",
+    ),
+    Signal(
+        "discovery.privesc_enum",
+        "T1083",
+        # SUID/capabilities enumeration — classic privesc recon.
+        _p(r"\bfind\b[^\n]*-perm\b[^\n]*(?:-0?4000|-u\s*[=+]\s*s|/4000)|\bgetcap\s+-r\s+/"),
+        "SUID / capabilities enumeration (privilege-escalation recon)",
+    ),
+    Signal(
+        "cred.dump.memory",
+        "T1003.007",
+        # Dump credentials from process memory: gdb/gcore memory dump, /proc/<pid>/
+        # mem or environ, or a known harvester (lazagne/mimipenguin).
+        _p(
+            r"\bgdb\b[^\n]*dump\s+memory|\bgcore\b\s+\d|/proc/\d+/(?:mem|environ)\b"
+            r"|/proc/self/environ|\b(?:lazagne|mimipenguin|mimipy)\b"
+        ),
+        "Credential dump from process memory (gdb/gcore/proc-mem/lazagne)",
+    ),
+    Signal(
+        "cred.scan.secrets",
+        "T1552.001",
+        # Hunt private-key / AWS-secret material across the filesystem.
+        _p(
+            r"\b(?:grep|rg|egrep)\b[^\n]*(?:BEGIN[^\n]{0,25}?PRIVATE\s+KEY"
+            r"|AKIA[0-9A-Z]{8,}|aws_secret_access_key)"
+        ),
+        "Filesystem scan for private-key / secret material",
+    ),
+    Signal(
+        "persist.account",
+        "T1136.001",
+        # Create / elevate a local account: useradd into sudo/wheel/admin/docker,
+        # uid 0, usermod -aG sudo, net user /add, passwd root. A service account
+        # (`useradd -r -s /bin/false`) does not match.
+        _p(
+            r"\b(?:useradd|adduser)\b[^\n]*(?:-G\s*\S*(?:sudo|wheel|admin|docker)|-u\s*0\b)"
+            r"|\busermod\b[^\n]*-a?G\s*\S*(?:sudo|wheel|admin|docker|root)"
+            r"|\bnet\s+user\b[^\n]*/add|\bpasswd\s+root\b"
+        ),
+        "Local account creation / privilege grant (useradd sudo / usermod -aG / passwd root)",
+    ),
+    Signal(
+        "ai.context_poison",
+        "ATLAS.AML.T0051",
+        # AI-AGENT-SPECIFIC (the moat): plant instructions into a file the agent
+        # treats as AUTHORITY and re-reads (CLAUDE.md/AGENTS.md/.cursorrules/...),
+        # or smuggle an injection into a PR/issue body a later agent will read.
+        _p(
+            r"(?:echo|printf|cat|tee)\b[^\n]*>>?\s*[^\n]*"
+            r"(?:CLAUDE\.md|AGENTS\.md|GEMINI\.md|\.cursorrules|copilot-instructions)"
+            r"|\bgh\s+(?:pr|issue)\s+(?:create|comment|edit)\b[^\n]*--body[^\n]*"
+            r"(?:ignore\s+(?:all\s+)?previous|disregard\s+(?:all\s+)?(?:above|previous)"
+            r"|system\s*:|you\s+must\s|new\s+instructions)"
+        ),
+        "AI context poisoning — inject instructions into an agent-authority file / PR-issue body",
+    ),
     Signal(
         "egress.icmp_tunnel",
         "T1095",

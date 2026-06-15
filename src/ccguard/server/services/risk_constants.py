@@ -101,6 +101,18 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "impact.cryptomining": 5.0,  # resource hijacking
     "impact.disk_wipe": 5.0,  # irreversible host destruction
     "impact.inhibit_recovery": 5.0,  # ransomware-prep
+    "impact.cloud_destroy": 5.0,  # destructive cloud op
+    # ATT&CK coverage-gap batch 2
+    "container.privileged": 4.0,  # container escape / host takeover
+    "collection.kubectl_cp": 4.0,
+    "persist.cloud_iam": 4.0,
+    "defense.disable_firewall": 4.0,
+    "defense.masquerade": 4.0,
+    "discovery.privesc_enum": 2.0,  # recon, noisier
+    "cred.dump.memory": 5.0,
+    "cred.scan.secrets": 4.0,
+    "persist.account": 4.0,
+    "ai.context_poison": 4.0,  # AI-origin trigger (moat)
 
     # P2: revived kill-chain stages. Blinding the EDR and reverse shells are
     # top-tier and almost never benign; remote-exec (ssh) is noisier on dev

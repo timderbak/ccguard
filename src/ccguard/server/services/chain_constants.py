@@ -41,6 +41,7 @@ _SIGNAL_STAGE_RULES: tuple[tuple[str, str], ...] = (
     # initial-access: indirect prompt injection (AML.T0051) + supply-chain entry
     # (T1195 / AML.T0010 / ASI04 are all initial-access in the seed).
     ("content.read.external", "initial-access"),
+    ("ai.", "initial-access"),  # AI context/memory poisoning = AI-origin entry
     ("pkg.publish", "initial-access"),
     ("pkg.install", "initial-access"),  # untrusted git/URL install = supply-chain entry
     # credential-access: secret reads + cloud-metadata + secret discovery
@@ -48,6 +49,7 @@ _SIGNAL_STAGE_RULES: tuple[tuple[str, str], ...] = (
     ("recon.cloud_metadata", "credential-access"),
     ("discovery.secret_grep", "credential-access"),
     ("cred.read.", "credential-access"),
+    ("cred.", "credential-access"),  # cred.dump.* / cred.scan.* / cred.env.* — all cred-access
     # discovery: host/network recon (T1033 / T1046) — no scenario uses it today,
     # but classified for completeness so it never mis-buckets.
     ("discovery.network_scan", "discovery"),
