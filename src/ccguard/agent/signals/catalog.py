@@ -774,6 +774,55 @@ CATALOG: tuple[Signal, ...] = (
         "Git-hooks persistence (core.hooksPath redirect / .git/hooks drop)",
     ),
     Signal(
+        "impact.cryptomining",
+        "T1496",
+        # Resource hijacking: a stratum pool connection, a known miner binary
+        # invoked as a command (anchored, not in a path/doc/package name), a
+        # miner-specific flag, or a named cryptojacking implant (kdevtmpfsi/
+        # kinsing/sysrv — never a legit filename, matched anywhere).
+        _p(
+            r"\bstratum\+(?:tcp|ssl|tcps)://|--donate-level\b|--coin\s+\w|--nicehash\b"
+            r"|\b(?:kdevtmpfsi|kinsing|sysrv|dbused|diicot)\b"
+            r"|(?<![\w/.\-])(?:xmrig|minerd|cpuminer(?:-multi)?|ethminer|xmr-stak|t-rex"
+            r"|lolminer|phoenixminer|nbminer|teamredminer|gminer|cgminer|ccminer)\b(?![-\w.])"
+        ),
+        "Cryptomining / resource hijacking (stratum pool, miner binary, miner flag, known implant)",
+    ),
+    Signal(
+        "impact.disk_wipe",
+        "T1561.002",
+        # Irreversible host destruction: mkfs with a force flag or onto a WHOLE
+        # disk (not a fresh-USB partition), the always-wipe tools wipefs/
+        # blkdiscard/sgdisk, zeroing a raw block device, or shred /dev. A USB
+        # format (`mkfs /dev/sdb1`) and ISO-to-USB (`dd if=x.iso of=/dev/sdb`)
+        # stay quiet.
+        _p(
+            r"\bmkfs(?:\.\w+)?\b[^\n]*\s-[fF]\b[^\n]*/dev/(?:sd[a-z]|nvme\d|vd[a-z]|xvd[a-z]|mmcblk\d)\w*"
+            r"|\bmkfs(?:\.\w+)?\b\s[^\n]*/dev/(?:sd[a-z]|vd[a-z]|xvd[a-z])(?![0-9])"
+            r"|\b(?:wipefs|blkdiscard|sgdisk)\b\s[^\n]*/dev/(?:sd[a-z]|nvme\d|vd[a-z]|xvd[a-z]|mmcblk\d)\w*"
+            r"|(?:cat\s+/dev/(?:zero|urandom)\s*>|dd\s+if=/dev/(?:zero|urandom)[^\n]*of=)\s*/dev/(?:sd[a-z]|nvme\d|vd[a-z]|mmcblk\d)\w*"
+            r"|(?:^|[;&|]|\bsudo\s)\s*>\s*/dev/(?:sd[a-z]|nvme\d)\w*"
+            r"|\bshred\b[^\n]*\s/dev/(?:sd[a-z]|nvme\d)\w*"
+        ),
+        "Disk wipe — mkfs/wipefs/blkdiscard/zero/shred against a raw block device",
+    ),
+    Signal(
+        "impact.inhibit_recovery",
+        "T1490",
+        # Destroy backups / recovery points (ransomware-prep): delete VSS shadow
+        # copies, disable Windows recovery, recursively destroy zfs/btrfs
+        # snapshots, timeshift --delete-all, rm -rf the backup dirs. Listing /
+        # single-snapshot rotation stays quiet (gated on delete-all / -r).
+        _p(
+            r"\bvssadmin\b[^\n]*\bdelete\b[^\n]*shadow|\bwmic\b[^\n]*shadowcopy\s+delete"
+            r"|\bbcdedit\b[^\n]*recoveryenabled\s+no|\bwbadmin\b[^\n]*\bdelete\b"
+            r"|\bzfs\s+destroy\b[^\n]*\s-r\b|\bbtrfs\s+subvolume\s+delete\b"
+            r"|\btimeshift\b[^\n]*--delete-all"
+            r"|\brm\s+-rf?\b[^\n]*(?:/var/backups|/\.snapshots|/snapshots)\b"
+        ),
+        "Inhibit recovery — delete shadow copies / snapshots / backups (ransomware-prep)",
+    ),
+    Signal(
         "egress.icmp_tunnel",
         "T1095",
         # ICMP covert channel: ping with a hex payload, or hping/nping. A normal

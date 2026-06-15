@@ -398,3 +398,375 @@ indicators:
     tactic: benign
     weight: 0.0
     description: "Virtualenv — normal dev work"
+
+  # =========================================================================
+  # source: threat-intel curated IOC pack (exfil sinks / tunnels / mining pools)
+  # =========================================================================
+  - indicator_type: suspicious_host
+    value: "rentry.co"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "controlc.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "ghostbin.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "termbin.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "sprunge.us"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "paste.rs"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "dpaste.org"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "justpaste.it"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "file.io"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "anonfiles.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "gofile.io"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "catbox.moe"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "bashupload.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "oshi.at"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "temp.sh"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "uguu.se"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "ufile.io"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "filebin.net"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "tmpfiles.org"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "krakenfiles.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1567
+    tactic: exfiltration
+    weight: 4.0
+    description: "Anon file-drop / paste — exfil канал"
+  - indicator_type: suspicious_host
+    value: "webhook.site"
+    value_kind: exact
+    source: threat-intel
+    technique: T1071.001
+    tactic: command-and-control
+    weight: 4.0
+    description: "OOB / webhook-capture — exfil/SSRF"
+  - indicator_type: suspicious_host
+    value: "requestcatcher.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1071.001
+    tactic: command-and-control
+    weight: 4.0
+    description: "OOB / webhook-capture — exfil/SSRF"
+  - indicator_type: suspicious_host
+    value: "beeceptor.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1071.001
+    tactic: command-and-control
+    weight: 4.0
+    description: "OOB / webhook-capture — exfil/SSRF"
+  - indicator_type: suspicious_host
+    value: "interact.sh"
+    value_kind: exact
+    source: threat-intel
+    technique: T1071.001
+    tactic: command-and-control
+    weight: 4.0
+    description: "OOB / webhook-capture — exfil/SSRF"
+  - indicator_type: suspicious_host
+    value: "oast.fun"
+    value_kind: exact
+    source: threat-intel
+    technique: T1071.001
+    tactic: command-and-control
+    weight: 4.0
+    description: "OOB / webhook-capture — exfil/SSRF"
+  - indicator_type: suspicious_host
+    value: "burpcollaborator.net"
+    value_kind: exact
+    source: threat-intel
+    technique: T1071.001
+    tactic: command-and-control
+    weight: 4.0
+    description: "OOB / webhook-capture — exfil/SSRF"
+  - indicator_type: suspicious_host
+    value: "hookbin.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1071.001
+    tactic: command-and-control
+    weight: 4.0
+    description: "OOB / webhook-capture — exfil/SSRF"
+  - indicator_type: suspicious_host
+    value: "smee.io"
+    value_kind: exact
+    source: threat-intel
+    technique: T1071.001
+    tactic: command-and-control
+    weight: 4.0
+    description: "OOB / webhook-capture — exfil/SSRF"
+  - indicator_type: suspicious_host
+    value: "ngrok.io"
+    value_kind: exact
+    source: threat-intel
+    technique: T1572
+    tactic: command-and-control
+    weight: 3.0
+    description: "Tunnel / expose — reverse-access/exfil"
+  - indicator_type: suspicious_host
+    value: "trycloudflare.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1572
+    tactic: command-and-control
+    weight: 3.0
+    description: "Tunnel / expose — reverse-access/exfil"
+  - indicator_type: suspicious_host
+    value: "loca.lt"
+    value_kind: exact
+    source: threat-intel
+    technique: T1572
+    tactic: command-and-control
+    weight: 3.0
+    description: "Tunnel / expose — reverse-access/exfil"
+  - indicator_type: suspicious_host
+    value: "localtunnel.me"
+    value_kind: exact
+    source: threat-intel
+    technique: T1572
+    tactic: command-and-control
+    weight: 3.0
+    description: "Tunnel / expose — reverse-access/exfil"
+  - indicator_type: suspicious_host
+    value: "serveo.net"
+    value_kind: exact
+    source: threat-intel
+    technique: T1572
+    tactic: command-and-control
+    weight: 3.0
+    description: "Tunnel / expose — reverse-access/exfil"
+  - indicator_type: suspicious_host
+    value: "localhost.run"
+    value_kind: exact
+    source: threat-intel
+    technique: T1572
+    tactic: command-and-control
+    weight: 3.0
+    description: "Tunnel / expose — reverse-access/exfil"
+  - indicator_type: suspicious_host
+    value: "bore.pub"
+    value_kind: exact
+    source: threat-intel
+    technique: T1572
+    tactic: command-and-control
+    weight: 3.0
+    description: "Tunnel / expose — reverse-access/exfil"
+  - indicator_type: suspicious_host
+    value: "pagekite.me"
+    value_kind: exact
+    source: threat-intel
+    technique: T1572
+    tactic: command-and-control
+    weight: 3.0
+    description: "Tunnel / expose — reverse-access/exfil"
+  - indicator_type: suspicious_host
+    value: "pool.minexmr.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1496
+    tactic: impact
+    weight: 5.0
+    description: "Майнинг-пул (resource hijacking)"
+  - indicator_type: suspicious_host
+    value: "supportxmr.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1496
+    tactic: impact
+    weight: 5.0
+    description: "Майнинг-пул (resource hijacking)"
+  - indicator_type: suspicious_host
+    value: "nanopool.org"
+    value_kind: exact
+    source: threat-intel
+    technique: T1496
+    tactic: impact
+    weight: 5.0
+    description: "Майнинг-пул (resource hijacking)"
+  - indicator_type: suspicious_host
+    value: "moneroocean.stream"
+    value_kind: exact
+    source: threat-intel
+    technique: T1496
+    tactic: impact
+    weight: 5.0
+    description: "Майнинг-пул (resource hijacking)"
+  - indicator_type: suspicious_host
+    value: "hashvault.pro"
+    value_kind: exact
+    source: threat-intel
+    technique: T1496
+    tactic: impact
+    weight: 5.0
+    description: "Майнинг-пул (resource hijacking)"
+  - indicator_type: suspicious_host
+    value: "2miners.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1496
+    tactic: impact
+    weight: 5.0
+    description: "Майнинг-пул (resource hijacking)"
+  - indicator_type: suspicious_host
+    value: "nicehash.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1496
+    tactic: impact
+    weight: 5.0
+    description: "Майнинг-пул (resource hijacking)"
+  - indicator_type: suspicious_host
+    value: "f2pool.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1496
+    tactic: impact
+    weight: 5.0
+    description: "Майнинг-пул (resource hijacking)"
+  - indicator_type: suspicious_host
+    value: "ethermine.org"
+    value_kind: exact
+    source: threat-intel
+    technique: T1496
+    tactic: impact
+    weight: 5.0
+    description: "Майнинг-пул (resource hijacking)"
+  - indicator_type: suspicious_host
+    value: "c3pool.com"
+    value_kind: exact
+    source: threat-intel
+    technique: T1496
+    tactic: impact
+    weight: 5.0
+    description: "Майнинг-пул (resource hijacking)"

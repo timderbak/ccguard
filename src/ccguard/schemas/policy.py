@@ -228,6 +228,63 @@ def _default_suspicious_host_rules() -> list[SuspiciousHostRule]:
             ),
         ]
     )
+
+    # --- Curated IOC pack: exfil sinks, file-drops, tunnels, OOB-capture, mining
+    # pools. Durable, FP-safe hosts an AI-agent exfil / cryptojacking would use.
+    # paste / file-drop / anon-upload — block (exfil drop, extends pastebin set)
+    file_drop_hosts = [
+        "rentry.co", "controlc.com", "ghostbin.com", "termbin.com", "sprunge.us",
+        "paste.rs", "dpaste.org", "bpa.st", "justpaste.it", "write.as", "privatebin.net",
+        "file.io", "anonfiles.com", "gofile.io", "*.gofile.io", "catbox.moe", "litterbox.catbox.moe",
+        "bashupload.com", "oshi.at", "temp.sh", "x0.at", "uguu.se", "ufile.io",
+        "filebin.net", "tmpfiles.org", "krakenfiles.com", "easyupload.io",
+    ]
+    for host in file_drop_hosts:
+        rules.append(SuspiciousHostRule(
+            id="egress/file-drop", pattern=host, type="glob", severity="block",
+            title="Anon file-drop / paste сервис",
+            reason="Анонимные file-drop и paste-сервисы — типичный канал exfiltration данных.",
+            remediation="Если ресурс нужен по делу — добавь в network.allowlist_hosts. Иначе откажи.",
+        ))
+    # OOB / webhook-capture — block (attacker inspectors, almost never legit egress)
+    oob_hosts = [
+        "webhook.site", "*.requestbin.com", "*.requestbin.net", "requestcatcher.com",
+        "*.pipedream.net", "beeceptor.com", "*.interact.sh", "*.oast.fun", "*.oast.pro",
+        "*.oast.live", "*.oast.site", "*.burpcollaborator.net", "hookbin.com", "smee.io",
+    ]
+    for host in oob_hosts:
+        rules.append(SuspiciousHostRule(
+            id="egress/oob-capture", pattern=host, type="glob", severity="block",
+            title="Out-of-band / webhook-capture сервис",
+            reason="Сервисы перехвата запросов (webhook.site / requestbin / interactsh) — каналы OOB-эксфильтрации и SSRF-подтверждения.",
+            remediation="Легитимного повода слать данные агентом сюда почти нет. Откажи.",
+        ))
+    # tunnel / expose — warn (dual-use: devs legitimately tunnel localhost)
+    tunnel_hosts = [
+        "*.ngrok.io", "*.ngrok-free.app", "*.trycloudflare.com", "*.loca.lt",
+        "localtunnel.me", "serveo.net", "localhost.run", "*.lhr.life", "bore.pub", "pagekite.me",
+    ]
+    for host in tunnel_hosts:
+        rules.append(SuspiciousHostRule(
+            id="egress/tunnel", pattern=host, type="glob", severity="warn",
+            title="Tunnel / expose сервис",
+            reason="Сервисы проброса (ngrok / cloudflared / localtunnel) бывают легитимны в dev, но также — канал reverse-access / exfil.",
+            remediation="Если это твой dev-туннель — добавь в allowlist. Иначе разберись, кто его поднял.",
+        ))
+    # cryptomining pools — block (never legitimate from a dev endpoint)
+    mining_hosts = [
+        "*.minexmr.com", "pool.minexmr.com", "*.supportxmr.com", "*.nanopool.org",
+        "*.moneroocean.stream", "*.hashvault.pro", "*.2miners.com", "*.nicehash.com",
+        "*.f2pool.com", "ethermine.org", "*.c3pool.com", "xmrpool.eu", "*.zergpool.com",
+    ]
+    for host in mining_hosts:
+        rules.append(SuspiciousHostRule(
+            id="egress/mining-pool", pattern=host, type="glob", severity="block",
+            title="Майнинг-пул",
+            reason="Подключение к пулу криптомайнинга — resource hijacking (T1496); на dev-эндпоинте легитимного повода нет.",
+            remediation="Найди процесс-майнер и удали. Это признак компрометации.",
+        ))
+
     return rules
 
 
