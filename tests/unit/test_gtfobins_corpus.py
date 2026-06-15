@@ -90,11 +90,25 @@ _BENIGN = [
     "powercat -c 127.0.0.1 -p 7002",
     'net.Dial("tcp","db:5432")',
     'TcpStream::connect("db:5432")',
+    # file-read / exfil benign lookalikes
+    "od -A x -t x1z build/output.o",
+    "hexdump -C image.png | head",
+    "cat /etc/hostname",
+    "gpg --verify sha256sums.txt.asc",
+    "gpg --decrypt backup.gpg > restored.tar",
+    "python3 -m http.server 8080 --bind 127.0.0.1",
+    "python3 -m http.server --bind localhost 9000",
+    "php -S 127.0.0.1:8000",
 ]
+
+_NEW_SIGS = (
+    "exec.shell_spawn", "system.sudo_shell", "exec.windows_lolbin",
+    "c2.reverse_shell", "cred.read.shadow", "egress.adhoc_server",
+)
 
 
 @pytest.mark.parametrize("cmd", _BENIGN)
 def test_gtfobins_benign_stays_quiet(cmd: str) -> None:
     fired = set(extract_signals("Bash", {"command": cmd}))
-    for sig in ("exec.shell_spawn", "system.sudo_shell", "exec.windows_lolbin", "c2.reverse_shell"):
+    for sig in _NEW_SIGS:
         assert sig not in fired, f"FP {sig}: {cmd!r} → {sorted(fired)}"

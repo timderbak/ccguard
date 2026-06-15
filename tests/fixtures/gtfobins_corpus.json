@@ -273,6 +273,48 @@
    "_class": "reverse_shell",
    "intent": "Rust reverse shell: `TcpStream::connect(host:port)` then the raw socket fd is handed to `Command::new(\"/bin/sh\")` via `S",
    "benign": "TcpStream::connect(\"db:5432\")? (normal client), let stream = TcpStream::connect(addr).await? (async network code). A Tcp"
+  },
+  {
+   "command": "od -An -c -w999 /etc/shadow",
+   "target_signal": "cred.read.shadow",
+   "_class": "file_read",
+   "intent": "GTFOBins file-read/exfil",
+   "benign": ""
+  },
+  {
+   "command": "cat /etc/shadow | grep root",
+   "target_signal": "cred.read.shadow",
+   "_class": "file_read",
+   "intent": "GTFOBins file-read/exfil",
+   "benign": ""
+  },
+  {
+   "command": "gpg --output - --decrypt ~/.password-store/aws.gpg",
+   "target_signal": "cred.read.os_keychain",
+   "_class": "file_read",
+   "intent": "GTFOBins file-read/exfil",
+   "benign": ""
+  },
+  {
+   "command": "python3 -m http.server 8000",
+   "target_signal": "egress.adhoc_server",
+   "_class": "exfil",
+   "intent": "GTFOBins file-read/exfil",
+   "benign": ""
+  },
+  {
+   "command": "php -S 0.0.0.0:80",
+   "target_signal": "egress.adhoc_server",
+   "_class": "exfil",
+   "intent": "GTFOBins file-read/exfil",
+   "benign": ""
+  },
+  {
+   "command": "python3 -m uploadserver 8000 --directory ~/.aws",
+   "target_signal": "egress.adhoc_server",
+   "_class": "exfil",
+   "intent": "GTFOBins file-read/exfil",
+   "benign": ""
   }
  ]
 }

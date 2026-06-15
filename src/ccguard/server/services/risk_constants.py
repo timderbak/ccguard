@@ -19,9 +19,11 @@ DEFAULT_HALF_LIFE_HOURS: float = 6.0
 
 DEFAULT_WEIGHTS: dict[str, float] = {
     "cred.read.aws": 5.0,
+    "cred.read.shadow": 5.0,  # /etc/shadow = OS credential dumping
     "cred.read.ssh": 5.0,
     "cred.read.dotenv": 3.0,
     "egress.network_tool": 4.0,
+    "egress.adhoc_server": 3.0,  # pull-exfil server (non-loopback)
     "exec.pipe_to_shell": 4.0,
     "exec.shell_spawn": 4.0,  # GTFOBins LOLBin shell breakout
     "persist.shell_rc": 3.0,

@@ -319,8 +319,21 @@ CATALOG: tuple[Signal, ...] = (
             r"\b(security\s+(find-(generic|internet)-password|dump-keychain)"
             r"|secret-tool\s+(lookup|search)|keyring\s+get"
             r"|pass\s+show|gopass\s+show)\b"
+            # GTFOBins: gpg-decrypt the pass password-store (read the secret store)
+            r"|\bgpg2?\b[^\n]*(?:-d\b|--decrypt\b)[^\n]*(?:\.)?password-store"
         ),
-        "OS-native credential store read (macOS Keychain / Linux keyring / pass)",
+        "OS-native credential store read (macOS Keychain / Linux keyring / pass / gpg pass-store)",
+    ),
+    Signal(
+        "cred.read.shadow",
+        "T1003.008",
+        # Reading /etc/shadow (or piping/redirecting it) — OS credential dumping.
+        # od/xxd/strings forms reconstruct the hashes; gated on the /etc/shadow path.
+        _p(
+            r"(?<![\w.-])(?:cat|less|more|head|tail|od|xxd|hexdump|hd|strings|nl|tac|cp|base64|base32)"
+            r"\b[^\n]*/etc/shadow\b|/etc/shadow\b[^\n]*(?:\||>)"
+        ),
+        "Read of /etc/shadow — OS credential (password hash) dumping",
     ),
     Signal(
         "persist.launchd",
@@ -708,6 +721,20 @@ CATALOG: tuple[Signal, ...] = (
             r"[^\n]*(\bgit\+https?://|\bgit\+ssh|\bhttps?://|\bgit@)"
         ),
         "Package install from an untrusted git/URL source — supply-chain entry",
+    ),
+    Signal(
+        "egress.adhoc_server",
+        "T1071.001",
+        # Pull-exfil: stand up an ad-hoc HTTP/upload server (python -m http.server /
+        # uploadserver, php -S, ruby httpd, busybox httpd) on a NON-loopback bind —
+        # an attacker then fetches files out. A localhost-bound preview server
+        # (--bind 127.0.0.1 / php -S localhost:) is excluded.
+        _p(
+            r"(?:python[0-9.]*\s+-m\s+(?:http\.server|uploadserver)"
+            r"|php\s+-S\s|ruby\s+-run\s+-e\s+httpd|busybox\s+httpd|\bhttp-server\b)"
+            r"(?![^\n]*(?:127\.0\.0\.1|localhost|::1))"
+        ),
+        "Ad-hoc HTTP/upload server on a non-loopback bind — pull-exfil channel",
     ),
     Signal(
         "egress.dns_tool",
