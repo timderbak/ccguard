@@ -4,7 +4,7 @@ Sibling of :mod:`ccguard.server.services.mcp_baseline_service`; same overall
 pattern (composite fingerprint, slot-based lookup, accept-flow), different
 identity composition.
 
-Design: ``docs/superpowers/specs/2026-06-01-hooks-tofu-baseline-design.md``
+Design: git history (design doc removed)
 """
 
 from __future__ import annotations

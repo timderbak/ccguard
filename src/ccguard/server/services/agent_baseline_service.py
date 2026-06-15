@@ -11,7 +11,7 @@ file_hash. Severity matrix:
   * drift, tools contain Bash/Write/Edit/NotebookEdit → block (agent.rug_pull.dangerous)
   * drift, only safe tools (or no tools)             → warn  (agent.drift.text)
 
-Design: docs/superpowers/specs/2026-06-02-skills-agents-baseline-design.md
+Design: git history (design doc removed)
 """
 
 from __future__ import annotations

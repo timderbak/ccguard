@@ -635,7 +635,7 @@ class PromptInjectionConfig(SchemaBase):
     #     strings in security tests, etc.) are annoying.
     #   read_pi_mask — when True, the PostToolUse hook attempts to mask the
     #     tool_response (best-effort; depends on Claude Code accepting
-    #     hookSpecificOutput.updatedToolResponse — see docs/HOOKS_PROTOCOL.md).
+    #     hookSpecificOutput.updatedToolResponse — Claude Code PostToolUse hook protocol).
     #     Default False; today this is a no-op pending upstream support.
     read_pi_block: bool = False
     read_pi_mask: bool = False

@@ -3,7 +3,7 @@
 The ``e2e`` suite needs a live stack (``docker compose up -d server``, agent
 container, reachable URLs). In a plain ``uv run pytest`` / headless / CI-without-
 docker run those tests can't connect and fail with ConnectError / missing
-fixtures — noise, not product bugs (see docs/TEST_AUDIT.md).
+fixtures — noise, not product bugs (historical test-audit, removed).
 
 So we skip every ``e2e``-marked test UNLESS ``CCGUARD_E2E=1`` is set. The tests
 are preserved and run unchanged in the real e2e environment; they just stop

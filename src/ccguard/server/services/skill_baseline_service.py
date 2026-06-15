@@ -10,7 +10,7 @@ dir_hash. Severity matrix:
   * content drift, has scripts   → block (skill.rug_pull.content)
   * content drift, text-only     → warn  (skill.drift.text)
 
-Design: docs/superpowers/specs/2026-06-02-skills-agents-baseline-design.md
+Design: git history (design doc removed)
 """
 
 from __future__ import annotations
