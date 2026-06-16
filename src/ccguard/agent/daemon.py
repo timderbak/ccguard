@@ -245,6 +245,7 @@ def _send_heartbeat_best_effort(cfg: object, machine_id: str) -> None:
             agent_version=getattr(cfg, "agent_version", None),
             hooks_intact=_hb.check_hooks_intact(settings_path),
             expected_interval_sec=interval,
+            hooks_hash=_hb.compute_hooks_hash(settings_path),
         )
         _hb.send_heartbeat(
             server_url=cfg.server.url, token=cfg.server.token, payload=payload

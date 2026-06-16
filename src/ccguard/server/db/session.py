@@ -105,6 +105,8 @@ _MACHINE_HEARTBEAT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("expected_interval_sec", "ALTER TABLE machine ADD COLUMN expected_interval_sec INTEGER"),
     ("hooks_intact", "ALTER TABLE machine ADD COLUMN hooks_intact BOOLEAN"),
     ("silent_since", "ALTER TABLE machine ADD COLUMN silent_since TIMESTAMP"),
+    ("hooks_hash", "ALTER TABLE machine ADD COLUMN hooks_hash TEXT"),
+    ("hooks_hash_baseline", "ALTER TABLE machine ADD COLUMN hooks_hash_baseline TEXT"),
 )
 _TOOL_USE_SESSION_INDEX_DDL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS ix_tooluseevent_session_id "

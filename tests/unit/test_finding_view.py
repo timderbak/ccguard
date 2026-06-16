@@ -192,6 +192,9 @@ def test_humanize_rule_exact_and_prefix():
     # prefix
     assert humanize_rule("mcp.rug_pull.tools_changed") == "Подмена MCP-сервера (rug-pull)"
     assert humanize_rule("sensor.hooks_removed") == "Security-хук удалён (агент ослеплён)"
+    # C2: exact labels win over the generic sensor. prefix
+    assert humanize_rule("sensor.hook_drift") == "Дрейф конфигурации hook (repoint/подмена шима)"
+    assert humanize_rule("sensor.silent") == "Сенсор замолчал (агент мёртв/заглушен)"
     assert humanize_rule("prompt_injection.base64_encoded_prompt") == "Prompt injection"
     assert humanize_rule("dangerous.exfil/curl-pipe-bash") == "Опасная команда"
     # ioa.chain.* beats the generic ioa. prefix (more specific first)

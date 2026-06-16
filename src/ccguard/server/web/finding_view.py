@@ -33,6 +33,8 @@ _RULE_LABELS_EXACT: dict[str, str] = {
     SLOW_CHAIN_RULE_ID: "Медленная kill-chain (растянута на дни)",
     SEQUENCE_RULE_ID: "Цепочка кражи → вынос",
     RISK_RULE_ID: "Повышенный риск активности",
+    "sensor.hook_drift": "Дрейф конфигурации hook (repoint/подмена шима)",
+    "sensor.silent": "Сенсор замолчал (агент мёртв/заглушен)",
 }
 _RULE_LABELS_PREFIX: tuple[tuple[str, str], ...] = (
     ("ioa.chain.", "Kill-chain цепочка"),

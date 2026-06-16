@@ -10,6 +10,7 @@ the daemon).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -47,12 +48,49 @@ def check_hooks_intact(settings_path: Path) -> bool | None:
     return False
 
 
+def compute_hooks_hash(settings_path: Path) -> str | None:
+    """Stable hash of the ccguard hook CONFIG (event + matcher + command) across
+    settings.json. Detects drift the substring check misses — e.g. the hook
+    repointed to a decoy/no-op shim whose path still contains ``ccguard``.
+    Returns a sha256 hex digest, or None when undeterminable (missing/malformed)
+    or when no ccguard hook is present (removal is reported by
+    :func:`check_hooks_intact` as False, not by the hash)."""
+    try:
+        if not settings_path.exists():
+            return None
+        data = json.loads(settings_path.read_text())
+    except Exception:  # noqa: BLE001 — unknown, not "removed"
+        return None
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    if not isinstance(hooks, dict):
+        return None
+    entries: list[tuple[str, str, str]] = []
+    for event_name, event_entries in hooks.items():
+        if not isinstance(event_entries, list):
+            continue
+        for entry in event_entries:
+            if not isinstance(entry, dict):
+                continue
+            matcher = entry.get("matcher", "")
+            matcher = matcher if isinstance(matcher, str) else ""
+            for h in entry.get("hooks", []):
+                cmd = h.get("command", "") if isinstance(h, dict) else ""
+                if isinstance(cmd, str) and "ccguard" in cmd:
+                    entries.append((str(event_name), matcher, cmd))
+    if not entries:
+        return None
+    entries.sort()
+    blob = json.dumps(entries, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
 def build_heartbeat(
     *,
     machine_id: str,
     agent_version: str | None,
     hooks_intact: bool | None,
     expected_interval_sec: int | None,
+    hooks_hash: str | None = None,
 ) -> dict[str, Any]:
     """Build the heartbeat payload — liveness metadata only, never raw activity."""
     return {
@@ -60,6 +98,7 @@ def build_heartbeat(
         "agent_version": agent_version,
         "hooks_intact": hooks_intact,
         "expected_interval_sec": expected_interval_sec,
+        "hooks_hash": hooks_hash,
     }
 
 

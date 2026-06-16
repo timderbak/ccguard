@@ -31,6 +31,11 @@ class Machine(SQLModel, table=True):
     expected_interval_sec: int | None = None  # agent-declared heartbeat cadence
     hooks_intact: bool | None = None  # last self-check: ccguard hook still installed?
     silent_since: datetime | None = None  # open silence episode (dedup); NULL = active
+    # C2: hook-config hash attestation. ``hooks_hash`` = last reported hash of the
+    # ccguard hook config; ``hooks_hash_baseline`` = TOFU-pinned expected hash.
+    # Drift between them raises sensor.hook_drift (catches decoy-shim repoint).
+    hooks_hash: str | None = None
+    hooks_hash_baseline: str | None = None
 
 
 class InventorySnapshot(SQLModel, table=True):

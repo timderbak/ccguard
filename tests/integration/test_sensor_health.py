@@ -119,6 +119,34 @@ def test_normal_interval_unaffected_by_clamp(client, auth_headers) -> None:
     assert state == "stale"
 
 
+# --- C2: hook-config hash drift (TOFU-pinned) --------------------------------
+
+
+def test_hook_hash_tofu_pin_then_drift_emits_finding(client, auth_headers) -> None:
+    """First-seen hash is TOFU-pinned silently; a later DIFFERENT hash (e.g. the
+    hook repointed to a decoy shim — invisible to hooks_intact) emits one
+    sensor.hook_drift, and repeats of the drifted value are deduped."""
+    engine = client.app.state.engine  # type: ignore[attr-defined]
+    _hb(client, auth_headers, hooks_hash="HASH_A")  # TOFU baseline — no finding
+    assert _findings(engine, "sensor.hook_drift") == []
+    _hb(client, auth_headers, hooks_hash="HASH_A")  # unchanged — no finding
+    assert _findings(engine, "sensor.hook_drift") == []
+    _hb(client, auth_headers, hooks_hash="HASH_B")  # drift!
+    assert len(_findings(engine, "sensor.hook_drift")) == 1
+    _hb(client, auth_headers, hooks_hash="HASH_B")  # same drifted value — no dup
+    assert len(_findings(engine, "sensor.hook_drift")) == 1
+
+
+def test_hook_hash_none_does_not_pin_or_drift(client, auth_headers) -> None:
+    """A heartbeat with no hooks_hash (legacy agent / undeterminable) must
+    neither pin a baseline nor emit drift."""
+    engine = client.app.state.engine  # type: ignore[attr-defined]
+    _hb(client, auth_headers)  # no hooks_hash
+    assert _findings(engine, "sensor.hook_drift") == []
+    with Session(engine) as s:
+        assert s.get(Machine, "m1").hooks_hash_baseline is None
+
+
 # --- AC5: hooks_intact=false → strong finding --------------------------------
 
 

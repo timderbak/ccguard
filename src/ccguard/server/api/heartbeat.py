@@ -78,6 +78,35 @@ async def post_heartbeat(
             )
         )
 
+    # C2: hook-config hash drift. TOFU-pin the first hash we ever see; thereafter
+    # a hash that differs from the pinned baseline (e.g. the hook repointed to a
+    # decoy shim — invisible to the hooks_intact substring check) raises one
+    # sensor.hook_drift per transition to a new value. None = undeterminable /
+    # legacy agent → never pins, never drifts.
+    if hb.hooks_hash is not None:
+        prev_hash = machine.hooks_hash
+        if machine.hooks_hash_baseline is None:
+            machine.hooks_hash_baseline = hb.hooks_hash  # first sight → pin
+        elif hb.hooks_hash != machine.hooks_hash_baseline and hb.hooks_hash != prev_hash:
+            session.add(
+                FindingRecord(
+                    machine_id=hb.machine_id,
+                    inventory_id=None,
+                    rule_id="sensor.hook_drift",
+                    severity="warn",
+                    discovered_at=now,
+                    payload_json=json.dumps(
+                        {
+                            "reason": "ccguard hook config changed from its first-seen baseline",
+                            "baseline_hash": machine.hooks_hash_baseline,
+                            "current_hash": hb.hooks_hash,
+                            "agent_version": machine.agent_version,
+                        }
+                    ),
+                )
+            )
+        machine.hooks_hash = hb.hooks_hash
+
     # Recovery: the machine was in an open silence episode and just came back.
     if was_silent_since is not None:
         silent_min = (now - _aware(was_silent_since)).total_seconds() / 60.0

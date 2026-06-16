@@ -18,3 +18,7 @@ class HeartbeatIn(SchemaBase):
     hooks_intact: bool | None = None
     # Agent-declared heartbeat cadence so the server knows when it's overdue.
     expected_interval_sec: int | None = Field(default=None, ge=1, le=86400)
+    # C2: stable hash of the ccguard hook CONFIG (event+matcher+command). The
+    # server TOFU-pins it and raises sensor.hook_drift on change — catches a
+    # repoint to a decoy shim that hooks_intact (substring check) can't see.
+    hooks_hash: str | None = Field(default=None, max_length=128)
