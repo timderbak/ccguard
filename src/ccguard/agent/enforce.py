@@ -296,18 +296,14 @@ def _decide_write(tool_input: dict) -> EnforceDecision:
     return EnforceDecision(permission="allow", reason="ok")
 
 
-def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
-    pol = policy.commands
+def _bash_hard_deny(search_text: str) -> EnforceDecision | None:
+    """Never-legitimate Bash actions that block regardless of policy/mode.
 
-    # P1: de-obfuscate ONCE. Deny-path matchers (dangerous / destructive /
-    # network / always_deny / denylist) search the normalized text so
-    # base64/$IFS/var-indirection bypasses are closed. The allowlist check
-    # deliberately stays on the RAW command — normalization must never loosen
-    # an allow rule. normalize_command is fail-open (returns raw on any error).
-    norm = normalize_command(command)
-    search_text = command + "\n" + norm.text
-
-    # Hard-deny tier FIRST: never-legitimate actions block regardless of mode.
+    Shared by :func:`_decide_bash` (normal path) and :func:`_hard_deny_only`
+    (policy-unavailable path) so the two can never diverge. ``search_text`` is
+    the raw command joined with its de-obfuscated form. Needs no policy — the
+    rules are module constants — which is exactly why it can run even when the
+    policy failed to load (A1)."""
     for rx, rid, reason in _HARD_DENY_RULES:
         if rx.search(search_text):
             return EnforceDecision(
@@ -327,6 +323,26 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
             rule_id="hard.cred_exfil",
             hard_deny=True,
         )
+    return None
+
+
+def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
+    pol = policy.commands
+
+    # P1: de-obfuscate ONCE. Deny-path matchers (dangerous / destructive /
+    # network / always_deny / denylist) search the normalized text so
+    # base64/$IFS/var-indirection bypasses are closed. The allowlist check
+    # deliberately stays on the RAW command — normalization must never loosen
+    # an allow rule. normalize_command is fail-open (returns raw on any error).
+    norm = normalize_command(command)
+    search_text = command + "\n" + norm.text
+
+    # Hard-deny tier FIRST: never-legitimate actions block regardless of mode.
+    # Shared with the policy-unavailable path via _bash_hard_deny (A1) so the
+    # two can never diverge.
+    hard = _bash_hard_deny(search_text)
+    if hard is not None:
+        return hard
 
     # P1 / Dangerous Bash Patterns: проверяем СНАЧАЛА — у этих правил есть
     # «почему опасно» и «что делать», и они должны побеждать always_deny /
@@ -429,6 +445,30 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
         reason="ok",
         warning_signals=warning_signals,
     )
+
+
+def _hard_deny_only(payload: EnforceHookInput) -> EnforceDecision | None:
+    """Policy-independent hard-deny tier for the policy-unavailable path.
+
+    Returns a hard-deny decision when a never-legitimate action is detected
+    (reverse shell / single-command cred-exfil / anti-tamper / attacker-key
+    persistence), else ``None``. Mirrors the hard-deny branches of
+    :func:`decide` but needs no :class:`Policy`, so corrupting/removing the
+    policy file can no longer silently disable these blocks (A1)."""
+    if payload.hook_event_name != "PreToolUse":
+        return None
+    tool = payload.tool_name
+    ti = payload.tool_input
+    if tool == "Bash":
+        cmd = ti.get("command", "")
+        if not isinstance(cmd, str):
+            return None
+        norm = normalize_command(cmd)
+        return _bash_hard_deny(cmd + "\n" + norm.text)
+    if tool in _WRITE_TOOLS:
+        decision = _decide_write(ti)
+        return decision if decision.hard_deny else None
+    return None
 
 
 def _decide_mcp(tool_name: str, policy: Policy) -> EnforceDecision:
@@ -803,6 +843,25 @@ def run_enforce(
     policy = _load_policy(str(policy_path))
     if policy is None:
         fp = _fingerprint(payload.tool_input)
+        # A1: the never-legitimate hard-deny tier needs no policy, so run it even
+        # when the policy is unavailable. Otherwise corrupting/removing the
+        # policy file would silently disable anti-tamper / reverse-shell /
+        # cred-exfil blocks — a clean fail-open bypass of the whole hard tier.
+        hard = _hard_deny_only(payload)
+        if hard is not None:
+            write_audit(
+                audit_logger,
+                AuditEntry(
+                    timestamp=now,
+                    tool_name=payload.tool_name,
+                    decision="deny",
+                    rule_id=hard.rule_id,
+                    reason=hard.reason,
+                    fail_open=False,
+                    tool_input_fingerprint=fp,
+                ),
+            )
+            return 0, render_hook_response(hard)
         if block_fail_mode == "closed":
             decision = EnforceDecision(
                 permission="deny",

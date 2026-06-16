@@ -247,6 +247,74 @@ def test_run_enforce_fail_closed_when_policy_missing(tmp_path: Path) -> None:
     assert entries[0].fail_open is False
 
 
+def test_hard_deny_survives_missing_policy(tmp_path: Path) -> None:
+    """A1: when the policy is unavailable, the never-legitimate hard-deny tier
+    must STILL fire — even under the default fail-open mode. Corrupting/removing
+    the policy must not silently disable anti-tamper / reverse-shell / cred-exfil
+    blocks (those rules need no policy)."""
+    audit_path = tmp_path / "audit.log"
+    stdin_text = json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "rm -rf ~/.ccguard/bin/ccguard-enforce"},
+        }
+    )
+    rc, out = run_enforce(
+        stdin_text, tmp_path / "missing.yaml", audit_path, block_fail_mode="open"
+    )
+    assert rc == 0
+    data = json.loads(out)
+    assert data["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "hard.disable_security" in data["hookSpecificOutput"]["permissionDecisionReason"]
+
+    entries = read_audit_entries(audit_path)
+    assert entries[0].decision == "deny"
+    assert entries[0].fail_open is False
+    assert entries[0].rule_id == "hard.disable_security"
+
+
+def test_write_hard_deny_survives_missing_policy(tmp_path: Path) -> None:
+    """A1: the Write/Edit hard-deny tier (attacker-key persistence) also fires
+    on the policy-unavailable path."""
+    audit_path = tmp_path / "audit.log"
+    stdin_text = json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Write",
+            "tool_input": {"file_path": "~/.ssh/authorized_keys", "content": "ssh-rsa AAAA..."},
+        }
+    )
+    rc, out = run_enforce(
+        stdin_text, tmp_path / "missing.yaml", audit_path, block_fail_mode="open"
+    )
+    assert rc == 0
+    data = json.loads(out)
+    assert data["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert "hard.ssh_authorized_keys_write" in data["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+def test_benign_still_fails_open_when_policy_missing(tmp_path: Path) -> None:
+    """A1 guard: a benign command on the policy-unavailable path must keep the
+    existing fail-open behavior — the hard-deny tier must not over-fire."""
+    audit_path = tmp_path / "audit.log"
+    stdin_text = json.dumps(
+        {
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": "git status && ls -la ~/.ccguard"},
+        }
+    )
+    rc, out = run_enforce(
+        stdin_text, tmp_path / "missing.yaml", audit_path, block_fail_mode="open"
+    )
+    assert rc == 0
+    assert out == ""
+    entries = read_audit_entries(audit_path)
+    assert entries[0].fail_open is True
+    assert entries[0].decision == "allow"
+
+
 def test_run_enforce_invalid_stdin_fail_open(tmp_path: Path) -> None:
     policy_path = tmp_path / "policy.yaml"
     _write_policy(policy_path)
