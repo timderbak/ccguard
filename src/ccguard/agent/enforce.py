@@ -191,11 +191,13 @@ _HARD_DENY_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
         re.compile(
             r"disableallhooks|\bccguard\s+(uninstall|disable|stop|remove)\b"
             r"|\b(uninstall|remove)\s+ccguard\b"
-            # anti-tamper: rm/mv/chattr/shred/truncate/redirect-overwrite of the
-            # ccguard hook shim or its own config — never legitimate from the agent.
-            r"|(?:rm|rmdir|mv|chattr|shred|truncate|unlink|chmod)\b[^\n]*"
-            r"(?:\.ccguard[/\\]|ccguard-(?:enforce|audit))"
-            r"|>\s*[^\n|]*ccguard-(?:enforce|audit)\b"
+            # anti-tamper: destroying/overwriting the ccguard hook shim, its own
+            # config, or its whole home dir — never legitimate from the agent.
+            # A2: + cp/tee/dd/install (indirect overwrite) and the whole-dir form
+            # (`rm -rf ~/.ccguard`, no trailing slash) via the \.ccguard\b anchor.
+            r"|(?:rm|rmdir|mv|chattr|shred|truncate|unlink|chmod|cp|tee|dd|install)\b[^\n]*"
+            r"(?:\.ccguard\b|ccguard-(?:enforce|audit))"
+            r"|>\s*[^\n|]*(?:\.ccguard\b|ccguard-(?:enforce|audit))"
             # strip the ccguard hook out of the Claude settings via jq/sed, or
             # delete the hooks block wholesale (which removes the ccguard hook)
             r"|(?:jq|sed)\b[^\n]*ccguard[^\n]*\.claude[/\\]settings"
