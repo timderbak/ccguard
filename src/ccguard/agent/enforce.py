@@ -238,6 +238,30 @@ _HARD_DENY_CCGUARD_TARGET: re.Pattern[str] = re.compile(
 _CLAUDE_SETTINGS: re.Pattern[str] = re.compile(
     r"(?:^|[/\\])\.claude[/\\]settings(?:\.local)?\.json$", re.IGNORECASE
 )
+# A3: `disableAllHooks: true` in Claude settings disables EVERY hook at once
+# (incl. ccguard's PreToolUse enforce + PostToolUse audit). Never legitimate
+# from the agent. Matched ONLY inside settings*.json content (FP-safe — does not
+# self-block a doc/fixture that merely mentions the key).
+_DISABLE_ALL_HOOKS: re.Pattern[str] = re.compile(
+    r'"disableAllHooks"\s*:\s*true', re.IGNORECASE
+)
+
+
+def _new_write_content(tool_input: dict) -> str:
+    """The text a Write/Edit/MultiEdit tool is WRITING (the added/replacement
+    content, not the removed region). Used to inspect the resulting file for
+    tamper markers."""
+    parts: list[str] = []
+    for key in ("content", "new_string"):
+        v = tool_input.get(key)
+        if isinstance(v, str):
+            parts.append(v)
+    edits = tool_input.get("edits")
+    if isinstance(edits, list):
+        for e in edits:
+            if isinstance(e, dict) and isinstance(e.get("new_string"), str):
+                parts.append(e["new_string"])
+    return "\n".join(parts)
 
 
 def _decide_write(tool_input: dict) -> EnforceDecision:
@@ -275,6 +299,19 @@ def _decide_write(tool_input: dict) -> EnforceDecision:
     # entry = removing/neutering enforcement. Precise: a generic config edit is
     # allowed; only one whose touched region mentions ccguard is blocked.
     if _CLAUDE_SETTINGS.search(target):
+        # A3: disabling ALL hooks at once is never legitimate from the agent —
+        # it neuters ccguard's enforce + audit hooks in one write.
+        if _DISABLE_ALL_HOOKS.search(_new_write_content(tool_input)):
+            return EnforceDecision(
+                permission="deny",
+                reason=(
+                    "Запись disableAllHooks:true в Claude settings.json гасит ВСЕ "
+                    "хуки разом (включая enforcement и audit ccguard). Заблокировано "
+                    "из коробки (anti-tamper)."
+                ),
+                rule_id="hard.ccguard_disableallhooks",
+                hard_deny=True,
+            )
         # Precise: a generic settings edit is fine; only one whose REMOVED region
         # (old_string) mentions ccguard while the replacement doesn't is tamper.
         # A full Write overwrite can't be told from a legit fresh config, so it is

@@ -292,3 +292,43 @@ def test_antitamper_benign_settings_edit_allowed():
 def test_antitamper_benign_write_project_config_allowed():
     d = decide(_edit("Write", "/Users/x/project/config.yaml", content="key: val"), _observe())
     assert not d.hard_deny
+
+
+# --- A3: disableAllHooks:true via Write/Edit kills ALL hooks at once -----------
+DISABLEALLHOOKS_SETTINGS = [
+    "/Users/x/.claude/settings.json",
+    "~/.claude/settings.json",
+    "/Users/x/.claude/settings.local.json",
+    ".claude/settings.json",  # project-scoped in a repo
+]
+
+
+def test_antitamper_disableallhooks_write_hard_blocked():
+    for tgt in DISABLEALLHOOKS_SETTINGS:
+        d = decide(_edit("Write", tgt, content='{"disableAllHooks": true}'), _observe())
+        assert d.permission == "deny" and d.hard_deny, f"disableAllHooks NOT blocked: {tgt!r}"
+        assert d.rule_id == "hard.ccguard_disableallhooks"
+
+
+def test_antitamper_disableallhooks_edit_hard_blocked():
+    d = decide(_edit("Edit", "/Users/x/.claude/settings.json",
+                     old_string='{"hooks": {}}',
+                     new_string='{"hooks": {}, "disableAllHooks": true}'), _observe())
+    assert d.permission == "deny" and d.hard_deny
+    assert d.rule_id == "hard.ccguard_disableallhooks"
+
+
+def test_antitamper_disableallhooks_false_allowed():
+    # Explicitly setting it to false is not tamper — must pass.
+    d = decide(_edit("Write", "/Users/x/.claude/settings.json",
+                     content='{"disableAllHooks": false}'), _observe())
+    assert not d.hard_deny
+
+
+def test_antitamper_disableallhooks_in_doc_not_blocked():
+    # Documenting the attack (content contains the marker) in a NON-settings
+    # file must NOT self-block — scoped to .claude/settings*.json only.
+    d = decide(_edit("Write", "/Users/x/docs/ATTACKS.md",
+                     content='Attackers write `{"disableAllHooks": true}` to disable hooks.'),
+               _observe())
+    assert not d.hard_deny
