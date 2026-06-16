@@ -43,6 +43,14 @@ FIRST_TICK_DELAY_SECONDS: int = 30
 TICK_INTERVAL_HOURS: int = 1
 RESCAN_ALL_JOB_ID: str = "llm-rescan-all"
 
+# C1 (part 2): a dead-man switch is only as fast as how often it sweeps. The
+# full correlation tick is hourly — too slow to notice a suppressed/dead agent.
+# A dedicated lightweight job runs ONLY the sensor-health silence sweep on a fast
+# cadence so suppression surfaces in ~1 minute, not ~1 hour.
+SENSOR_SWEEP_JOB_ID: str = "sensor-sweep"
+SENSOR_SWEEP_INTERVAL_SECONDS: int = 60
+SENSOR_SWEEP_FIRST_DELAY_SECONDS: int = 60
+
 
 def build_scheduler() -> AsyncIOScheduler:
     """Return a configured AsyncIOScheduler pinned to UTC."""
@@ -79,6 +87,38 @@ def start_scheduler(
         "anomaly scheduler started: first tick at %s UTC, interval %dh",
         next_run.isoformat(),
         TICK_INTERVAL_HOURS,
+    )
+
+
+def register_sensor_sweep(
+    scheduler: AsyncIOScheduler,
+    sweep_callable: Callable[..., object],
+) -> None:
+    """Register the dedicated fast sensor-silence sweep (C1, part 2).
+
+    Adds a second job that runs ONLY ``sensor_health_service.tick`` every
+    :data:`SENSOR_SWEEP_INTERVAL_SECONDS`, independent of the hourly correlation
+    tick, so a suppressed/dead agent is detected within ~1 minute. Idempotent:
+    the silence detector dedups per episode, so running it often is safe.
+
+    Does NOT call ``scheduler.start()`` — the caller starts the scheduler once
+    (via :func:`start_scheduler`); ``add_job`` on a running scheduler schedules
+    the job immediately.
+    """
+    next_run = datetime.now(UTC) + timedelta(seconds=SENSOR_SWEEP_FIRST_DELAY_SECONDS)
+    scheduler.add_job(
+        sweep_callable,
+        trigger=IntervalTrigger(seconds=SENSOR_SWEEP_INTERVAL_SECONDS),
+        id=SENSOR_SWEEP_JOB_ID,
+        replace_existing=True,
+        next_run_time=next_run,
+        coalesce=True,
+        max_instances=1,
+    )
+    log.info(
+        "sensor sweep registered: every %ds (first at %s UTC)",
+        SENSOR_SWEEP_INTERVAL_SECONDS,
+        next_run.isoformat(),
     )
 
 

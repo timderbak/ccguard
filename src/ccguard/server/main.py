@@ -139,6 +139,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.scheduler import (
         build_scheduler,
         is_disabled,
+        register_sensor_sweep,
         shutdown_scheduler,
         start_scheduler,
     )
@@ -262,9 +263,23 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # the event loop stays responsive during ticks.
             await asyncio.to_thread(_tick_job_sync)
 
+        def _sensor_sweep_sync() -> None:
+            # C1 (part 2): dedicated FAST sweep — only the sensor-silence
+            # detector, so a suppressed/dead agent surfaces in ~1 min, not ~1h.
+            # Cheap (one indexed scan) and idempotent (dedup via silent_since).
+            try:
+                with _SessionTick(engine) as s:
+                    sensor_health_tick(s)
+            except Exception:  # noqa: BLE001 — sweep must not crash the loop
+                logger.exception("sensor sweep raised")
+
+        async def _sensor_sweep_job() -> None:
+            await asyncio.to_thread(_sensor_sweep_sync)
+
         scheduler = build_scheduler()
         try:
             start_scheduler(scheduler, _tick_job)
+            register_sensor_sweep(scheduler, _sensor_sweep_job)
             app.state.scheduler = scheduler
         except Exception:
             # WR-01: If start_scheduler raises after partial setup, ensure
