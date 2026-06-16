@@ -29,6 +29,9 @@ log = logging.getLogger(__name__)
 
 _DEFAULT_INTERVAL_SEC = 900.0  # 15 min — mirrors the daemon default cadence
 _DEFAULT_GRACE_MULTIPLIER = 3.0  # silent only after 3 missed intervals (45 min)
+_DEFAULT_MAX_INTERVAL_SEC = 3600.0  # C1: cap on the agent-DECLARED cadence — a
+# compromised agent must not inflate expected_interval_sec (≤86400 per schema)
+# to push silence detection past max×grace. Tunable via sensor.max_interval_sec.
 
 _RULE_SILENT = "sensor.silent"
 
@@ -48,14 +51,23 @@ def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
-def _silence_threshold_sec(session: Session, machine: Machine) -> float:
-    """interval×grace; the machine's own declared interval wins over the default."""
-    interval = float(
+def _effective_interval(session: Session, machine: Machine) -> float:
+    """Heartbeat interval used for liveness math. The agent's declared interval
+    is honored but CLAMPED to ``sensor.max_interval_sec`` so a compromised agent
+    can't inflate it to delay silence detection (C1)."""
+    declared = float(
         machine.expected_interval_sec
         or _f(session, "sensor.expected_interval_sec", _DEFAULT_INTERVAL_SEC)
     )
+    cap = _f(session, "sensor.max_interval_sec", _DEFAULT_MAX_INTERVAL_SEC)
+    return min(declared, cap)
+
+
+def _silence_threshold_sec(session: Session, machine: Machine) -> float:
+    """interval×grace; the machine's declared interval wins over the default but
+    is clamped to the cap (C1)."""
     grace = _f(session, "sensor.grace_multiplier", _DEFAULT_GRACE_MULTIPLIER)
-    return interval * grace
+    return _effective_interval(session, machine) * grace
 
 
 def lifecycle_state(
@@ -65,10 +77,7 @@ def lifecycle_state(
     if machine.last_heartbeat_at is None:
         return "unknown"  # legacy / never reported — not alertable
     now = now or datetime.now(UTC)
-    interval = float(
-        machine.expected_interval_sec
-        or _f(session, "sensor.expected_interval_sec", _DEFAULT_INTERVAL_SEC)
-    )
+    interval = _effective_interval(session, machine)
     grace = _f(session, "sensor.grace_multiplier", _DEFAULT_GRACE_MULTIPLIER)
     quiet = (now - _aware(machine.last_heartbeat_at)).total_seconds()
     if quiet > interval * grace:

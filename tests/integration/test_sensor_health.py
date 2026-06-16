@@ -90,6 +90,35 @@ def test_within_grace_is_stale_not_silent(client, auth_headers) -> None:
     assert _findings(engine, "sensor.silent") == []
 
 
+# --- C1: server clamps an attacker-inflated heartbeat interval ----------------
+
+
+def test_inflated_interval_clamped_server_side(client, auth_headers) -> None:
+    """A compromised agent must not delay silence detection by declaring an
+    absurd heartbeat interval. expected_interval_sec=86400 (24h, the schema max)
+    is clamped to sensor.max_interval_sec, so a 5h-silent machine is still
+    detected silent (without the clamp it would read 'active' for ~72h)."""
+    engine = client.app.state.engine  # type: ignore[attr-defined]
+    _hb(client, auth_headers, expected_interval_sec=86400)  # attacker-inflated 24h
+    _set_heartbeat_age(engine, "m1", minutes_ago=300)  # 5h silent
+    with Session(engine) as s:
+        state = sensor_health_service.lifecycle_state(s, s.get(Machine, "m1"))
+        sensor_health_service.tick(s)
+    assert state == "silent"
+    assert len(_findings(engine, "sensor.silent")) == 1
+
+
+def test_normal_interval_unaffected_by_clamp(client, auth_headers) -> None:
+    """C1 guard: a normal declared interval (well under the cap) is unchanged —
+    a 20-min pause on a 15-min cadence is still 'stale', not silent."""
+    engine = client.app.state.engine  # type: ignore[attr-defined]
+    _hb(client, auth_headers, expected_interval_sec=900)
+    _set_heartbeat_age(engine, "m1", minutes_ago=20)
+    with Session(engine) as s:
+        state = sensor_health_service.lifecycle_state(s, s.get(Machine, "m1"))
+    assert state == "stale"
+
+
 # --- AC5: hooks_intact=false → strong finding --------------------------------
 
 
