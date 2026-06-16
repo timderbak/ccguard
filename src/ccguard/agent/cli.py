@@ -120,6 +120,41 @@ def uninstall(
 
 
 @app.command()
+def harden(
+    apply: bool = typer.Option(
+        False, "--apply", help="run the hardening now (requires root/sudo)"
+    ),
+) -> None:
+    """Hardened tier (privilege boundary): pin the ccguard hooks in Claude Code's
+    root-owned managed-settings.json and make the shim/policy root-owned +
+    immutable, so a same-user agent can't remove the hook or swap the shim.
+
+    Prints a reviewable bash script — run it with root on the endpoint
+    (``ccguard harden | sudo bash``). ``--apply`` runs it now (needs root)."""
+    import subprocess
+    import sys as _sys
+
+    from ccguard.agent import harden as harden_module
+
+    plat = _sys.platform
+    if harden_module.managed_settings_path(plat) is None:
+        typer.echo(f"hardened tier not supported on platform {plat!r}", err=True)
+        raise typer.Exit(code=2)
+    plan = harden_module.harden_plan(
+        platform=plat,
+        enforce_shim=install_module.shim_path(),
+        audit_shim=install_module.audit_shim_path(),
+        policy_path=default_config_dir() / "policy.yaml",
+    )
+    script = harden_module.render_script(plan)
+    if not apply:
+        typer.echo(script)
+        return
+    proc = subprocess.run(["bash", "-c", script])  # noqa: S603 — operator-invoked
+    raise typer.Exit(code=proc.returncode)
+
+
+@app.command()
 def enforce() -> None:
     """Точка входа хука (Claude Code вызывает с stdin). НЕ для ручного использования."""
     sys.exit(enforce_main_cli())

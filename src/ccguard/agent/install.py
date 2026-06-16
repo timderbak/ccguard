@@ -40,8 +40,12 @@ def _project_settings_path(project_dir: Path) -> Path:
 
 
 def _managed_settings_path() -> Path:
-    # Linux. Для других OS — отдельный вопрос; MVP сосредоточен на Linux.
-    return Path("/etc/claude-code/managed-settings.json")
+    # Platform-aware (confirmed against Claude Code v2.1.178). Single-sourced in
+    # harden._MANAGED_PATHS; lazy import avoids the install<->harden cycle.
+    from ccguard.agent.harden import managed_settings_path
+
+    p = managed_settings_path(sys.platform)
+    return Path(p) if p else Path("/etc/claude-code/managed-settings.json")
 
 
 def settings_path_for_scope(scope: Scope, project_dir: Path | None = None) -> Path:
