@@ -471,6 +471,40 @@
 </section>
 {% endif %}
 
+<section data-testid="enforce-blocks" class="bg-white rounded-xl shadow p-5 mt-6 ring-1 ring-red-200">
+    <h3 class="font-semibold mb-3 flex items-center gap-2 text-red-700">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>
+        Заблокированные действия (enforce){% if enforce_blocks %} ({{ enforce_blocks|length }}){% endif %}
+    </h3>
+    <p class="text-xs text-slate-500 mb-4">
+        Что PreToolUse-хук ccguard заблокировал на этой машине за 7 дней (жёсткие блоки anti-tamper + опасные команды). «Fail-open» — хук не смог оценить (политика недоступна) и пропустил: это дыра, а не блок.
+    </p>
+    {% if enforce_blocks %}
+    <ul class="space-y-2">
+    {% for b in enforce_blocks %}
+        <li data-testid="enforce-block-row" class="border border-slate-200 rounded-lg p-3">
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+                {% if b.fail_open %}
+                <span class="font-mono text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 ring-1 text-amber-700 bg-amber-50 ring-amber-300">Fail-open · пропущено</span>
+                {% else %}
+                <span class="font-mono text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5 ring-1 text-red-700 bg-red-50 ring-red-300">Заблокировано</span>
+                {% endif %}
+                <span class="text-xs text-slate-800 font-semibold">{% if b.rule_id %}{{ humanize_rule(b.rule_id) }}{% else %}Enforce-решение{% endif %}</span>
+                <span class="cc-mono text-[11px] text-slate-400">{{ b.tool_name }}</span>
+                {% if b.rule_id %}<span class="cc-mono text-[11px] text-slate-400">{{ b.rule_id }}</span>{% endif %}
+                <span class="cc-mono text-[10px] text-slate-400 ml-auto">{{ b.received_at.isoformat(timespec="minutes") }}</span>
+            </div>
+            {% if b.reason %}
+            <p class="text-sm text-slate-700">{{ b.reason }}</p>
+            {% endif %}
+        </li>
+    {% endfor %}
+    </ul>
+    {% else %}
+    <p data-testid="enforce-blocks-empty" class="text-sm text-slate-400">Заблокированных действий не зафиксировано — защита активна, вредоносных команд не поймано.</p>
+    {% endif %}
+</section>
+
 <section class="bg-white rounded-xl shadow p-5 mt-6">
     <h3 class="font-semibold mb-3 flex items-center gap-2 text-slate-800">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4 text-slate-400"><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/><circle cx="12" cy="12" r="10"/></svg>

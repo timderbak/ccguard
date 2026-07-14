@@ -636,7 +636,7 @@ def machine_detail(
         get_user_scores_today,
     )
     from ccguard.server.web.finding_view import build_explainable_findings
-    from ccguard.server.services import mcp_baseline_service
+    from ccguard.server.services import enforce_block_service, mcp_baseline_service
     from ccguard.server.services.network_findings import (
         recent_network_cards_for_machine,
     )
@@ -874,12 +874,25 @@ def machine_detail(
             status_by_name[name] = "red"
         elif c["severity"] == "warn" and status_by_name.get(name) != "red":
             status_by_name[name] = "amber"
+    # Tier 3: surface the enforce-block stream (deny + fail_open) so anti-tamper
+    # hard.* blocks are visible. rule_id is humanized in the template.
+    enforce_blocks = [
+        {
+            "rule_id": b.rule_id,
+            "reason": b.reason,
+            "tool_name": b.tool_name,
+            "received_at": b.received_at,
+            "fail_open": b.fail_open,
+        }
+        for b in enforce_block_service.list_recent_blocks(session, machine_id, days=7)
+    ]
     return templates.TemplateResponse(
         request,
         "machine_detail.html",
         {
             "user": user,
             "machine": machine,
+            "enforce_blocks": enforce_blocks,
             "inventory": get_latest_inventory_json(session, machine_id),
             "findings": build_explainable_findings(findings),
             "risk_series": risk_series,
