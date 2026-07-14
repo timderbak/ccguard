@@ -35,6 +35,18 @@ _RULE_LABELS_EXACT: dict[str, str] = {
     RISK_RULE_ID: "Повышенный риск активности",
     "sensor.hook_drift": "Дрейф конфигурации hook (repoint/подмена шима)",
     "sensor.silent": "Сенсор замолчал (агент мёртв/заглушен)",
+    # POSITIVE event — must win over the generic 'sensor.' prefix (its opposite).
+    "sensor.recovered": "Сенсор восстановился (агент снова на связи)",
+    # Hard-deny tier (always-on blocks) — the current strategic focus. Exact
+    # labels; any future hard.* falls back to the 'hard.' prefix below.
+    "hard.fs_wipe": "Тотальное удаление корня/дома (rm -rf /) — заблокировано",
+    "hard.reverse_shell": "Reverse shell (C2-канал) — заблокирован",
+    "hard.cred_exfil": "Угон секретов (чтение + вынос одной командой) — заблокирован",
+    "hard.disable_security": "Попытка отключить ccguard/EDR — заблокирована",
+    "hard.ssh_authorized_keys_write": "Attacker-ключ в authorized_keys (SSH-персистентность) — заблокирован",
+    "hard.ccguard_self_tamper": "Правка конфига/шима ccguard (anti-tamper) — заблокирована",
+    "hard.ccguard_disableallhooks": "disableAllHooks — гашение всех хуков — заблокировано",
+    "hard.ccguard_hook_tamper": "Удаление ccguard-хука из settings — заблокировано",
 }
 _RULE_LABELS_PREFIX: tuple[tuple[str, str], ...] = (
     ("ioa.chain.", "Kill-chain цепочка"),
@@ -54,6 +66,8 @@ _RULE_LABELS_PREFIX: tuple[tuple[str, str], ...] = (
     ("prompt_injection.", "Prompt injection"),
     ("llm.scan", "Семантическая инъекция (LLM-вердикт)"),
     ("dangerous.", "Опасная команда"),
+    # Fallback for any hard-deny rule not exactly labelled above.
+    ("hard.", "Жёсткий блок (критическая атака)"),
 )
 
 

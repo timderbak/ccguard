@@ -12,7 +12,7 @@ import hashlib
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlmodel import Session, select
 
 from ccguard.server.api.deps import get_policy_loader, get_session, require_token
@@ -62,7 +62,17 @@ def get_policy(
     session: Session = Depends(get_session),
     _token: str = Depends(require_token),
 ) -> dict[str, object] | Response:
-    policy, base_etag = loader.load_with_etag(session)
+    try:
+        policy, base_etag = loader.load_with_etag(session)
+    except FileNotFoundError as exc:
+        # Fresh, unconfigured instance (empty DB + no bootstrap file). Degrade
+        # gracefully with a 503 instead of a 500 — the agent treats this as "no
+        # policy yet" and keeps its cached policy; an admin loads a starter policy
+        # via the /policy web empty-state (POST /policy/bootstrap-default).
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="no policy configured yet — publish one via the console",
+        ) from exc
     overrides = _load_signal_overrides(session)
     # Stage 5b: admin can flip enforcement_mode via /settings without editing
     # policy YAML. SettingsRecord override wins over the schema default.

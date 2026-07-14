@@ -212,6 +212,25 @@ _HARD_DENY_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
         "Попытка отключить ccguard / EDR-сенсор (impair defenses). Заблокировано "
         "из коробки — снять защиту можно только через консоль, не командой агента.",
     ),
+    (
+        re.compile(
+            # Writing an attacker key into ~/.ssh/authorized_keys via Bash = SSH
+            # persistence (same outcome as the Write/Edit hard-deny target). Match
+            # ONLY write forms — a redirect whose destination is authorized_keys,
+            # or tee/dd writing to it — so a READ (`cat`/`grep ~/.ssh/authorized_keys`)
+            # and a copy-OUT backup (`cp ~/.ssh/authorized_keys bak`) stay allowed.
+            # `[^\n|;&]*` keeps the redirect target in its own segment (no cross-
+            # command FP). Any path ending in .ssh/authorized_keys[2].
+            r">>?\s*[^\n|;&]*\.ssh[/\\]authorized_keys2?\b"
+            r"|\btee\b[^\n]*\.ssh[/\\]authorized_keys2?\b"
+            r"|\bdd\b[^\n]*\bof=[^\n]*\.ssh[/\\]authorized_keys2?\b",
+            re.IGNORECASE,
+        ),
+        "hard.ssh_authorized_keys_write",
+        "Запись ключа в ~/.ssh/authorized_keys через Bash — установка attacker-"
+        "ключа (SSH-персистентность/бэкдор). Заблокировано из коробки: AI-агенту "
+        "не нужно править authorized_keys.",
+    ),
 )
 
 

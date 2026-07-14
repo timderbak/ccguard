@@ -61,11 +61,10 @@ _DEFAULT_RULE_CASES: list[tuple[str, str, str]] = [
     # hard-deny tier (hard.fs_wipe) BEFORE the policy layer. The policy rule
     # stays as visible documentation + a backup; see the dedicated test below
     # and test_hard_deny.py for the hard-deny behavior.
-    (
-        "dangerous.persistence/ssh-authorized-keys",
-        "echo 'ssh-ed25519 AAA...' >> ~/.ssh/authorized_keys",
-        "cat ~/.ssh/config",
-    ),
+    # NOTE: `dangerous.persistence/ssh-authorized-keys` is intentionally NOT here —
+    # its write form (`echo >> ~/.ssh/authorized_keys`) is now caught by the
+    # always-on hard-deny tier (hard.ssh_authorized_keys_write) BEFORE the policy
+    # layer, matching the Write/Edit path. See the dedicated test below.
     (
         "dangerous.tampering/dotenv-read",
         "cat /etc/myapp/.env",
@@ -134,6 +133,19 @@ def test_rm_rf_root_now_superseded_by_hard_deny() -> None:
     # the (harmless) force-only form still routes to the policy rule
     d2 = decide(_bash("rm -f /"), pol)
     assert d2.rule_id == "dangerous.destructive/rm-rf-root"
+
+
+def test_ssh_authorized_keys_write_now_superseded_by_hard_deny() -> None:
+    """Writing a key into ~/.ssh/authorized_keys via Bash used to be a policy-tier
+    dangerous rule (flips in observe). It is now promoted to the always-on
+    hard-deny tier (hard.ssh_authorized_keys_write), matching the Write/Edit path.
+    Reading the file is unaffected (no write) and stays allowed."""
+    pol = _policy()
+    d = decide(_bash("echo 'ssh-ed25519 AAA attacker' >> ~/.ssh/authorized_keys"), pol)
+    assert d.permission == "deny" and d.hard_deny
+    assert d.rule_id == "hard.ssh_authorized_keys_write"
+    d2 = decide(_bash("cat ~/.ssh/authorized_keys"), pol)  # read — not tamper
+    assert not d2.hard_deny
 
 
 # --- severity semantics ----------------------------------------------------

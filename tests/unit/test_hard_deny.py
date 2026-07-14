@@ -429,6 +429,41 @@ def test_disk_format_is_detect_only_not_hard_deny():
         assert not d.hard_deny, f"disk op wrongly HARD-blocked: {cmd!r} → {d.rule_id}"
 
 
+# --- authorized_keys write via Bash promoted to hard-deny (Write/Bash parity) --
+# Writing an attacker key into ~/.ssh/authorized_keys is SSH-persistence — already
+# hard-blocked on the Write/Edit path. The Bash-redirect form (`echo >> ...`) had
+# only a policy rule (flips in observe / inert on a broken policy). Close the
+# asymmetry: same rule_id hard.ssh_authorized_keys_write, blocks even in observe.
+SSH_KEY_BASH_HARD = [
+    "echo 'ssh-ed25519 AAAAC3Nz attacker' >> ~/.ssh/authorized_keys",
+    "cat attacker.pub > ~/.ssh/authorized_keys",
+    "echo key >> /home/user/.ssh/authorized_keys",
+    "cat k >> /Users/x/.ssh/authorized_keys",
+    "tee -a ~/.ssh/authorized_keys < attacker.pub",
+    "echo key >> ~/.ssh/authorized_keys2",
+]
+SSH_KEY_BASH_FP = [
+    "cat ~/.ssh/authorized_keys",                 # read
+    "grep ed25519 ~/.ssh/authorized_keys",        # read
+    "ls -la ~/.ssh/authorized_keys",              # stat
+    "cp ~/.ssh/authorized_keys /backup/keys.bak",  # copy OUT (backup), not into
+    "echo done > /var/log/ssh_authorized_keys.log",  # different file, no .ssh/
+]
+
+
+def test_ssh_authorized_keys_bash_hard_blocked_even_in_observe():
+    for cmd in SSH_KEY_BASH_HARD:
+        d = _decide_bash(cmd, _observe())
+        assert d.permission == "deny" and d.hard_deny, f"authkeys write NOT blocked: {cmd!r}"
+        assert d.rule_id == "hard.ssh_authorized_keys_write", f"{cmd!r} -> {d.rule_id}"
+
+
+def test_ssh_authorized_keys_bash_read_not_blocked():
+    for cmd in SSH_KEY_BASH_FP:
+        d = _decide_bash(cmd, _observe())
+        assert not d.hard_deny, f"FALSE block on authkeys read/backup: {cmd!r} -> {d.rule_id}"
+
+
 def test_disk_wipe_still_raises_detect_signal():
     # DETECT lives on even though PREV (hard-deny) does not: a whole-disk wipe
     # still raises the impact.disk_wipe audit signal for the risk engine.

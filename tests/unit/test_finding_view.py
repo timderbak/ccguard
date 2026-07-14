@@ -204,3 +204,25 @@ def test_humanize_rule_exact_and_prefix():
 def test_humanize_rule_unknown_falls_back_to_raw():
     from ccguard.server.web.finding_view import humanize_rule
     assert humanize_rule("some.brand.new.rule") == "some.brand.new.rule"
+
+
+def test_humanize_rule_sensor_recovered_not_mislabelled():
+    # BUG FIX: sensor.recovered is a POSITIVE event (sensor back online). It must
+    # NOT fall through to the generic 'sensor.' prefix ('security hook removed'),
+    # which is its opposite. Exact label wins.
+    from ccguard.server.web.finding_view import humanize_rule
+    label = humanize_rule("sensor.recovered")
+    assert label != "Security-хук удалён (агент ослеплён)"
+    assert "восстанов" in label.lower()
+
+
+def test_humanize_rule_hard_deny_labels():
+    # hard.* blocks are the current strategic focus — they must render as plain
+    # language in the UI, not raw rule_ids.
+    from ccguard.server.web.finding_view import humanize_rule
+    assert humanize_rule("hard.fs_wipe") != "hard.fs_wipe"
+    assert humanize_rule("hard.cred_exfil") != "hard.cred_exfil"
+    assert humanize_rule("hard.reverse_shell") != "hard.reverse_shell"
+    assert humanize_rule("hard.ssh_authorized_keys_write") != "hard.ssh_authorized_keys_write"
+    # any future hard.* still gets a non-raw label via the prefix fallback
+    assert humanize_rule("hard.some_new_rule") != "hard.some_new_rule"
