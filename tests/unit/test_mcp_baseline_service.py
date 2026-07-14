@@ -34,6 +34,7 @@ def _mcp(
     command: str | None = "npx",
     args: list[str] | None = None,
     url: str | None = None,
+    tools_hash: str | None = None,
 ) -> McpServerEntry:
     """Build an McpServerEntry with auto-computed hashes (mirrors agent)."""
     from ccguard.agent.scan.mcp import _definition_text, _hash_text
@@ -50,6 +51,7 @@ def _mcp(
         description=description,
         description_hash=_hash_text(description),
         definition_hash=_hash_text(_definition_text(command, args, url)),
+        tools_hash=tools_hash,
     )
 
 
@@ -288,9 +290,10 @@ def test_duplicate_entries_same_name_dedup_to_one_baseline() -> None:
 
 def test_accept_baseline_updates_hashes_from_latest_snapshot() -> None:
     """Admin clicks 'Принять baseline' → next snapshot with same content → no finding."""
-    from ccguard.server.db.models import InventorySnapshot
-    from ccguard.schemas import InventoryReport
     from datetime import UTC, datetime
+
+    from ccguard.schemas import InventoryReport
+    from ccguard.server.db.models import InventorySnapshot
 
     engine = _engine()
     # Seed baseline.
@@ -318,6 +321,78 @@ def test_accept_baseline_updates_hashes_from_latest_snapshot() -> None:
         assert updated.description_hash == new_entry.description_hash
 
     # Re-running detection with the same "updated" content → no finding.
+    with Session(engine) as s:
+        findings = svc.update_and_detect(s, "m1", [new_entry])
+        s.commit()
+        assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# tools_changed (critical) must reach the UI query AND be acceptable
+# ---------------------------------------------------------------------------
+
+
+def test_tools_change_emits_critical_finding() -> None:
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("airtable", tools_hash="tools-v1")])
+        s.commit()
+    with Session(engine) as s:
+        findings = svc.update_and_detect(s, "m1", [_mcp("airtable", tools_hash="tools-v2")])
+        s.commit()
+        assert len(findings) == 1
+        assert findings[0].rule_id == svc.RULE_TOOLS
+        assert findings[0].severity == "critical"
+
+
+def test_list_recent_includes_tools_changed_findings() -> None:
+    # BUG: RULE_TOOLS was omitted from the UI query filter, so critical
+    # tools_changed findings never reached the console (invisible + unacceptable).
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("airtable", tools_hash="tools-v1")])
+        s.commit()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("airtable", tools_hash="tools-v2")])
+        s.commit()
+    with Session(engine) as s:
+        recent = svc.list_recent_rug_pull_findings(s, "m1")
+        assert svc.RULE_TOOLS in {f.rule_id for f in recent}, (
+            "tools_changed must reach the UI query"
+        )
+
+
+def test_accept_baseline_also_clears_tools_hash() -> None:
+    # BUG: accept_baseline copied description/definition but NOT tools_hash, so an
+    # accepted tools drift kept re-firing on every subsequent snapshot.
+    from datetime import UTC, datetime
+
+    from ccguard.schemas import InventoryReport
+    from ccguard.server.db.models import InventorySnapshot
+
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("airtable", tools_hash="tools-v1")])
+        s.commit()
+
+    new_entry = _mcp("airtable", tools_hash="tools-v2")
+    inv = InventoryReport(
+        machine_id="m1",
+        timestamp=datetime.now(UTC),
+        agent_version="0.2",
+        os="linux",
+        mcp_servers=[new_entry],
+    )
+    with Session(engine) as s:
+        s.add(InventorySnapshot(machine_id="m1", payload_json=inv.model_dump_json()))
+        s.commit()
+
+    with Session(engine) as s:
+        updated = svc.accept_baseline(s, "m1", "airtable")
+        assert updated is not None
+        assert updated.tools_hash == "tools-v2"
+
+    # After accepting, the same tools content must NOT re-fire.
     with Session(engine) as s:
         findings = svc.update_and_detect(s, "m1", [new_entry])
         s.commit()

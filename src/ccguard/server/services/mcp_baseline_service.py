@@ -20,8 +20,20 @@ Severity ladder (matches the rest of the codebase: info/warn/block/critical):
 
 * ``mcp.rug_pull.description_changed`` → **critical** — description goes
   straight into the LLM context, this is the dangerous case;
+* ``mcp.rug_pull.tools_changed`` → **critical** — the runtime tool list
+  (tools/list) changed; tool descriptions are fed to the LLM too;
 * ``mcp.rug_pull.definition_changed`` → **warn** — command/args/url drift
   is suspicious but not as immediately exploitable (still worth eyeballing).
+
+Coverage — read this before trusting the critical tier. The description/tools
+hashes are only populated when the material is actually available to hash:
+``description`` must be embedded in the MCP spec in the config (some plugins do
+this, most do not), and ``tools`` come either from a config-embedded ``tools``
+array or the OPT-IN HTTP probe (``CCGUARD_MCP_PROBE``, http/sse only). For a
+plain stdio server with no embedded description/tools — the common case — the
+ONLY detectable drift is ``definition_changed`` (warn). The critical tier is not
+a blanket guarantee; it fires only when there is description/tools material to
+diff. See ``tests/unit/test_mcp_realistic_scan.py`` for the honest surface.
 
 Backward compat: payloads from old agents that don't ship hashes are stored
 with ``None`` hashes; the diff logic short-circuits on missing material so
@@ -310,7 +322,7 @@ def list_recent_rug_pull_findings(
         session.exec(
             select(FindingRecord)
             .where(FindingRecord.machine_id == machine_id)
-            .where(FindingRecord.rule_id.in_([RULE_DESCRIPTION, RULE_DEFINITION]))  # type: ignore[attr-defined]
+            .where(FindingRecord.rule_id.in_([RULE_DESCRIPTION, RULE_DEFINITION, RULE_TOOLS]))  # type: ignore[attr-defined]
             .where(FindingRecord.discovered_at >= since)
             .order_by(FindingRecord.discovered_at.desc())  # type: ignore[attr-defined]
         )
@@ -360,6 +372,7 @@ def accept_baseline(
         if spec.get("name") == mcp_name:
             baseline.description_hash = spec.get("description_hash")
             baseline.definition_hash = spec.get("definition_hash")
+            baseline.tools_hash = spec.get("tools_hash")
             desc = spec.get("description")
             if isinstance(desc, str):
                 baseline.description_preview = _preview(desc)
