@@ -344,3 +344,113 @@ def test_antitamper_disableallhooks_in_doc_not_blocked():
                      content='Attackers write `{"disableAllHooks": true}` to disable hooks.'),
                _observe())
     assert not d.hard_deny
+
+
+# --- self-evident total destruction promoted to hard-deny (rm -rf /, mkfs) -----
+# Wiping the whole filesystem or reformatting a raw disk is NEVER a legitimate
+# action from an AI coding agent → hard-deny tier (blocks even in observe), like
+# credential-exfil and EDR-kill already do. The FP line is deliberately narrow:
+# a bare filesystem-root / home wipe and a WHOLE-disk format only. Sensitive-path
+# deletes (`rm -rf /etc/...`), USB-partition formats (`/dev/sdb1`) and ISO burns
+# stay in the policy tier (detect-only in observe).
+FS_WIPE_HARD = [
+    "rm -rf /",
+    "rm -r /",           # recursion alone is catastrophic; -f is not required
+    "rm -Rf /",          # uppercase -R
+    "rm -rf /*",
+    "rm -rf /.",         # path alias for / (adversarial bypass probe)
+    "rm -rf /..",        # path alias for /
+    "rm -rf /*/",        # glob alias for /
+    "rm -fr ~",
+    "rm -rf $HOME",
+    "rm -rf ${HOME}",
+    'rm -rf "$HOME"',    # double-quoted → shell expands to home
+    "rm --recursive --force /",
+    "rm -rf --no-preserve-root /",
+    "sudo rm -rf /",
+    'rm -rf "/"',
+    "/bin/rm -rf /",     # path-qualified rm (bypass probe)
+    "\\rm -rf /",        # backslash-escaped rm (alias bypass)
+    "/bin/rm --no-preserve-root -rf /",
+]
+# Raw-disk formatting/wiping is DETECT-ONLY (the impact.disk_wipe audit signal),
+# NOT hard-deny: it does not meet the hard-deny bar (zero-FP + never-legit).
+# Formatting a disk is routine in many contexts (cloud data volumes, USB/SD
+# provisioning, CI/VM setup) and we cannot statically tell the boot disk from an
+# attached/removable one; and the pattern is trivially bypassed (mke2fs, parted,
+# /dev/disk/by-id, file->disk dd). So these must NOT hard-block.
+DISK_FORMAT_NOT_HARD = [
+    "mkfs.ext4 /dev/sda",
+    "mkfs -t ext4 -F /dev/nvme0n1",
+    "wipefs -a /dev/sda",
+    "blkdiscard /dev/nvme0n1",
+    "dd if=/dev/zero of=/dev/sda bs=1M",
+    "shred /dev/sda",
+    "sgdisk -p /dev/sda",              # read-only inspection — must never block
+    "mkfs.ext4 /dev/sdb1",             # USB partition format — routine
+]
+# Legit developer work that shares a verb/target shape but must NOT hard-block.
+DESTROY_FP_ALLOWED = [
+    "rm -rf node_modules",
+    "rm -rf ~/.cache/pip",
+    "rm -rf /tmp/build",
+    "rm -rf ./dist",
+    "rm -rf /etc/nginx/sites-enabled/default",  # sensitive path, not total wipe → policy tier
+    "rm -f /",                                    # force-only, no -r: harmless no-op → policy tier
+    # find-scoped rm: the bare-root token is find's SEARCH ROOT, not rm's target
+    # (rm acts on {} = the matched subdirs). Must NOT hard-block legit cleanup.
+    "find / -xdev -type d -name __pycache__ -exec rm -rf {} +",
+    "find ~ -type d -name node_modules -prune -exec rm -rf {} +",
+    'find "$HOME" -type d -name .terraform -exec rm -rf {} +',
+    "find / -type d -name .pytest_cache -mtime +30 -exec rm -rf {} \\;",
+    # `--` ends options; a single-quoted '~'/'$HOME' is a LITERAL filename in cwd,
+    # not the home directory (single quotes don't expand) → not a total wipe.
+    "rm -rf -- '~'",
+    "rm -rf -- '$HOME'",
+    "mkfs.ext4 /dev/sdb1",                        # partition format (fresh USB) — legit
+    "dd if=ubuntu.iso of=/dev/sdb bs=4M",         # ISO-to-USB burn — legit
+    "mkfs.ext4 disk.img",                         # loopback image — legit
+]
+
+
+def test_fs_wipe_hard_blocked_even_in_observe():
+    for cmd in FS_WIPE_HARD:
+        d = _decide_bash(cmd, _observe())
+        assert d.permission == "deny" and d.hard_deny, f"fs-wipe NOT hard-blocked: {cmd!r}"
+        assert d.rule_id == "hard.fs_wipe", f"wrong rule_id for {cmd!r}: {d.rule_id}"
+
+
+def test_disk_format_is_detect_only_not_hard_deny():
+    # Disk formatting/wiping must NOT hard-block (DETECT-only decision): it is
+    # legitimate in too many contexts and trivially bypassed. In observe it may
+    # still be a non-hard policy finding, but hard_deny must be False.
+    for cmd in DISK_FORMAT_NOT_HARD:
+        d = _decide_bash(cmd, _observe())
+        assert not d.hard_deny, f"disk op wrongly HARD-blocked: {cmd!r} → {d.rule_id}"
+
+
+def test_disk_wipe_still_raises_detect_signal():
+    # DETECT lives on even though PREV (hard-deny) does not: a whole-disk wipe
+    # still raises the impact.disk_wipe audit signal for the risk engine.
+    from ccguard.agent.signals.extractor import extract_signals
+    sigs = set(extract_signals("Bash", {"command": "mkfs.ext4 /dev/sda"}))
+    assert "impact.disk_wipe" in sigs
+
+
+def test_total_destruction_fp_not_hard_blocked():
+    for cmd in DESTROY_FP_ALLOWED:
+        d = _decide_bash(cmd, _observe())
+        assert not d.hard_deny, f"FALSE hard-block on legit work: {cmd!r} → {d.rule_id}"
+
+
+def test_total_destruction_also_blocks_in_enforce_mode():
+    pol = Policy(meta=PolicyMeta(revision=1, updated_at=datetime.now(UTC)), enforcement_mode="enforce")
+    for cmd in ["rm -rf /", "rm -r ~", "/bin/rm --no-preserve-root -rf /"]:
+        d = decide(_bash(cmd), pol)
+        assert d.permission == "deny" and d.hard_deny, f"NOT blocked in enforce: {cmd!r}"
+
+
+def test_obfuscated_rm_rf_root_hard_blocked():
+    payload = base64.b64encode(b"rm -rf --no-preserve-root /").decode()
+    d = _decide_bash(f"echo {payload} | base64 -d | bash", _observe())
+    assert d.permission == "deny" and d.hard_deny  # de-obfuscated → total wipe surfaces

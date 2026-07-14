@@ -58,6 +58,22 @@ _SENSITIVE_FILE_RES: tuple[re.Pattern[str], ...] = (
 
 _SEGMENT_SPLIT = re.compile(r"[;&|\n]+")
 
+# --- Total, irreversible host destruction (hard-deny tier) ------------------
+# The NARROW subset of destruction that is never legitimate from an AI agent and
+# is blocked out of the box even in observe mode (like credential-exfil and
+# EDR-kill): a recursive delete of the filesystem/home ROOT itself. Everything
+# else — a sensitive-path delete (`rm -rf /etc/...`), and ALL raw-disk wipes
+# (mkfs/wipefs/dd: legitimate in too many contexts and trivially bypassed) —
+# stays out of hard-deny (policy tier / the impact.disk_wipe DETECT signal).
+
+# Bare filesystem root or home root — `rm -rf /`, `/`+glob/alias, `~`, `$HOME`.
+# The root arm accepts only slash/dot/star chars after the leading `/` so path
+# ALIASES that resolve to root (`/`, `//`, `/.`, `/..`, `/*`, `/*/`) all match,
+# while any real component (`/etc`, `/tmp/build`) does NOT — ordinary deletes
+# stay out. Home arms cover `~[/][*]` and `$HOME` / `${HOME}` with an optional
+# trailing slash/glob.
+_ROOT_HOME_TARGET_RE = re.compile(r"^(?:/[/.*]*|~/?\*?|\$\{?HOME\}?/?\*?)$")
+
 
 def _components(path: str) -> set[str]:
     return {c for c in re.split(r"[\\/]", path.lower()) if c not in ("", ".", "..")}
@@ -182,6 +198,75 @@ def detect_destructive(command: str) -> str | None:
             return "overwrite"
         if _is_destructive_db(command):
             return "db"
+        return None
+    except Exception:  # noqa: BLE001 — detection must never break the hot path
+        return None
+
+
+def _cmd_basename(tok: str) -> str:
+    """Command name of a token, ignoring a path prefix, a leading escape
+    backslash and surrounding quotes: `/bin/rm`, `\\rm`, `"rm"` → ``rm``."""
+    return tok.rsplit("/", 1)[-1].lstrip("\\").strip("\"'")
+
+
+def _is_total_fs_wipe(command: str) -> bool:
+    """Recursive ``rm`` of the filesystem/home ROOT (`rm -rf /`, `rm -r ~`,
+    `$HOME`) or any ``rm`` carrying ``--no-preserve-root`` (which only ever
+    targets ``/``). Recursion is what makes a directory target catastrophic;
+    ``-f`` only suppresses prompts, so a force-only `rm -f /` (a harmless no-op)
+    is intentionally NOT caught. A subpath target keeps it out — that is ordinary
+    work (`rm -rf node_modules`, `rm -rf ~/.cache/pip`)."""
+    for seg in _SEGMENT_SPLIT.split(command):
+        toks = seg.split()
+        # `find <root> ... -exec rm -rf {} +` / `... -delete`: the bare-root token
+        # is find's SEARCH ROOT, not rm's target (rm acts on the matched {}). Never
+        # hard-block here — mass-deletion via find stays in the policy tier.
+        if any(_cmd_basename(t) == "find" for t in toks):
+            continue
+        if not any(_cmd_basename(t) == "rm" for t in toks):
+            continue
+        longs = {t.lower() for t in toks if t.startswith("--")}
+        # `--no-preserve-root` has no legitimate use — its only purpose is to let
+        # `rm` delete `/`. Presence alone is a definitive total-wipe signal.
+        if "--no-preserve-root" in longs:
+            return True
+        shortflags = "".join(
+            t[1:] for t in toks if t.startswith("-") and not t.startswith("--")
+        ).lower()
+        recursive = "r" in shortflags or "--recursive" in longs
+        if not recursive:
+            continue
+        for t in toks:
+            if t.startswith("-") or _cmd_basename(t) in ("rm", "sudo"):
+                continue
+            # a single-quoted `~`/`$HOME` is a LITERAL filename (shell does not
+            # expand inside single quotes), not the home directory → not a wipe.
+            single_quoted = len(t) >= 2 and t[0] == "'" and t[-1] == "'"
+            bare = t.strip("\"'")
+            if single_quoted and bare in ("~", "$HOME", "${HOME}"):
+                continue
+            if _ROOT_HOME_TARGET_RE.match(bare):
+                return True
+    return False
+
+
+def detect_total_destruction(command: str) -> str | None:
+    """Category for a command that IRREVERSIBLY destroys the whole host, else None.
+
+    Currently only ``"fs_wipe"`` — a recursive delete of the filesystem/home
+    ROOT (`rm -rf /`, `rm -r ~`, `--no-preserve-root`). This is the narrow,
+    never-legitimate, zero-FP subset the enforce hard-deny tier blocks even in
+    observe mode. A sensitive-path delete (`rm -rf /etc/...`) stays in the policy
+    tier. Raw-disk wipes (mkfs/wipefs/dd) are deliberately NOT here: formatting a
+    disk is legitimate in too many contexts (cloud volumes, USB/SD, CI/VM) and is
+    trivially bypassed, so it is DETECT-only (the ``impact.disk_wipe`` audit
+    signal), never a hard-deny. Never raises.
+    """
+    try:
+        if not isinstance(command, str) or not command:
+            return None
+        if _is_total_fs_wipe(command):
+            return "fs_wipe"
         return None
     except Exception:  # noqa: BLE001 — detection must never break the hot path
         return None

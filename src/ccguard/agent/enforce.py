@@ -24,7 +24,7 @@ from ccguard.agent.findings_hook.buffer import emit_finding
 from ccguard.agent.network_utils import detect_ip_as_host, is_private_ip
 from ccguard.agent.prompt_injection_engine import ScanResult
 from ccguard.agent.prompt_injection_engine import scan as pi_scan
-from ccguard.agent.signals.destructive import detect_destructive
+from ccguard.agent.signals.destructive import detect_destructive, detect_total_destruction
 from ccguard.agent.signals.normalize import normalize_command
 from ccguard.schemas import (
     AuditEntry,
@@ -360,6 +360,24 @@ def _bash_hard_deny(search_text: str) -> EnforceDecision | None:
                 "покинуть машину."
             ),
             rule_id="hard.cred_exfil",
+            hard_deny=True,
+        )
+    # Self-evident total destruction: a recursive delete of the whole
+    # filesystem/home root is never legitimate from an AI agent → hard-block even
+    # in observe (a narrow, zero-FP subset of the policy-tier destructive rules).
+    # Raw-disk wipes (mkfs/wipefs/dd) are intentionally NOT here — they are
+    # legitimate in too many contexts and trivially bypassed, so they stay
+    # DETECT-only (the impact.disk_wipe audit signal).
+    if detect_total_destruction(search_text) is not None:
+        return EnforceDecision(
+            permission="deny",
+            reason=(
+                "Рекурсивное удаление корня файловой системы или домашней "
+                "директории (rm -rf / | ~ | $HOME) — безвозвратная гибель хоста. "
+                "Заблокировано из коробки (независимо от режима) — это действие "
+                "никогда не легитимно для AI-агента."
+            ),
+            rule_id="hard.fs_wipe",
             hard_deny=True,
         )
     return None
