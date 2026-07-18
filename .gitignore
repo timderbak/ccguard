@@ -37,3 +37,6 @@ ccguard.db*
 
 # local dev-server launch config (contains a local admin hash)
 .claude/launch.json
+
+# macOS finder junk
+.DS_Store
