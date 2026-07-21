@@ -32,10 +32,10 @@ detectors:
     rule_ids: ioa.staging_chain
     description: "sequence_service content.read.external flag — untrusted content drives the staging chain (IPI)."
   - detector_key: rug_pull_tofu
-    name: Hook rug-pull (TOFU)
+    name: Rug-pull / TOFU (MCP · hook · skill · agent)
     kind: correlation
-    rule_ids: hook.rug_pull.content,hook.rug_pull.command
-    description: "hook_baseline_service.update_and_detect — trust-on-first-use hook fingerprint drift."
+    rule_ids: mcp.rug_pull.description_changed,mcp.rug_pull.tools_changed,mcp.rug_pull.definition_changed,hook.rug_pull.content,hook.rug_pull.command,skill.rug_pull.content,agent.rug_pull.dangerous
+    description: "{mcp,hook,skill,agent}_baseline_service.update_and_detect — trust-on-first-use: тихий дрейф отпечатка описания/инструментов/скрипта доверенного компонента (rug-pull цепочки поставок)."
   - detector_key: heartbeat_silent
     name: Sensor silence / hooks removed
     kind: correlation
