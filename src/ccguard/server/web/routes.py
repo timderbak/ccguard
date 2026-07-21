@@ -506,6 +506,118 @@ def correlations_page(
     )
 
 
+# Порядок категорий + человекочитаемые метаданные для каталога сигналов.
+# key -> (заголовок, короткое пояснение, icon-ключ из indicators.html).
+_SIGNAL_CATEGORY_META: dict[str, tuple[str, str, str]] = {
+    "cred": ("Доступ к секретам", "чтение ключей, токенов и учётных данных на диске / в env", "key"),
+    "egress": ("Исходящий трафик · вынос", "инструменты и каналы отправки данных наружу", "globe"),
+    "exec": ("Подозрительное исполнение", "пайп в шелл, деобфускация, LOLBin-побеги, inline-код", "terminal"),
+    "persist": ("Закрепление", "автозапуск, cron/systemd/launchd, ключи, git-хуки, IAM", "key"),
+    "discovery": ("Разведка", "инвентаризация хоста, сети, аккаунтов, путей эскалации", "globe"),
+    "defense": ("Сокрытие следов", "отключение защиты, чистка истории и логов, маскировка", "terminal"),
+    "c2": ("Командный канал (C2)", "reverse shell и исходящие туннели удалённого управления", "globe"),
+    "lateral": ("Боковое перемещение", "исполнение команд на других хостах", "globe"),
+    "collection": ("Сбор данных", "стадирование архивов, снимки экрана, буфер, дампы БД", "key"),
+    "impact": ("Разрушение", "майнинг, вайп дисков, удаление бэкапов, деструктивные операции", "terminal"),
+    "container": ("Контейнеры · escape", "примитивы побега из контейнера, привилегированные поды", "terminal"),
+    "pkg": ("Цепочка поставок", "публикация и установка пакетов из недоверенных источников", "globe"),
+    "ai": ("Отравление AI-контекста", "внедрение инструкций в файлы-авторитеты агента", "terminal"),
+    "fs": ("Запись на диск", "стадирование данных; маркеры кэша/VCS гасят ложные срабатывания", "key"),
+    "content": ("Чтение внешнего", "получение недоверенного контента (web / внешний путь)", "globe"),
+    "system": ("Привилегии · система", "chmod/setuid, sudo-эскалация, правка hosts", "terminal"),
+    "cloud": ("Облачный вынос", "запись в облачное хранилище как канал эксфильтрации", "globe"),
+    "recon": ("Разведка облака", "доступ к metadata-эндпоинту инстанса", "globe"),
+    "config": ("Тамперинг конфигурации", "правка настроек AI-агента / MCP", "terminal"),
+}
+
+
+@router.get("/signals", response_class=HTMLResponse)
+def signals_catalog_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Каталог поведенческих сигналов (Behavioral Detection, Stage 1).
+
+    Read-only витрина встроенного ``CATALOG`` из agent-сенсора: каждый сигнал —
+    per-event regex с привязкой к ATT&CK / ATLAS-технике. UI раньше показывал
+    сигналы только по месту (в находках / панели риска); эта страница —
+    browsable-каталог всех детекций-«входов» поведенческого слоя.
+    """
+    from ccguard.agent.signals.catalog import CATALOG
+
+    grouped: dict[str, list[dict]] = {}
+    for sig in CATALOG:
+        cat = sig.id.split(".")[0]
+        grouped.setdefault(cat, []).append({
+            "id": sig.id,
+            "technique": sig.attack_technique,
+            "description": sig.description,
+            "pattern": sig.pattern.pattern,
+        })
+
+    # Категории в осмысленном порядке kill-chain; неизвестные (на случай новых
+    # префиксов) идут в конце по алфавиту.
+    ordered_keys = [k for k in _SIGNAL_CATEGORY_META if k in grouped]
+    ordered_keys += sorted(k for k in grouped if k not in _SIGNAL_CATEGORY_META)
+
+    groups: list[dict] = []
+    for key in ordered_keys:
+        label, desc, icon = _SIGNAL_CATEGORY_META.get(key, (key, "", "dot"))
+        rows = sorted(grouped[key], key=lambda r: r["id"])
+        groups.append({
+            "key": key,
+            "label": label,
+            "desc": desc,
+            "icon": icon,
+            "count": len(rows),
+            "rows": rows,
+        })
+
+    return templates.TemplateResponse(
+        request, "signals_catalog.html",
+        {
+            "user": user,
+            "csrf_token": _csrf_for(request),
+            "groups": groups,
+            "total": len(CATALOG),
+            "cat_count": len(groups),
+        },
+    )
+
+
+@router.get("/finding-rules", response_class=HTMLResponse)
+def finding_rules_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Каталог правил-находок (rule_id registry) — витрина-компаньон к /signals.
+
+    Показывает КАЖДЫЙ rule_id, который порождают движки: находки (FindingRecord,
+    видны на /findings) и enforce-решения (PreToolUse, только в audit.log),
+    сгруппированные по движку-источнику с серьёзностью. Read-only над курируемым
+    реестром ``finding_rules_catalog`` — движки не трогаются.
+    """
+    from ccguard.server.services.finding_rules_catalog import CATALOG, catalog_grouped
+
+    groups = catalog_grouped()
+    findings_total = sum(1 for r in CATALOG if r.kind == "finding")
+    decisions_total = sum(1 for r in CATALOG if r.kind == "decision")
+    return templates.TemplateResponse(
+        request, "finding_rules_catalog.html",
+        {
+            "user": user,
+            "csrf_token": _csrf_for(request),
+            "groups": groups,
+            "total": len(CATALOG),
+            "findings_total": findings_total,
+            "decisions_total": decisions_total,
+            "cat_count": len(groups),
+        },
+    )
+
+
 @router.get("/indicators", response_class=HTMLResponse)
 def indicators_page(
     request: Request,

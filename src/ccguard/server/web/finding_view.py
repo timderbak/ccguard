@@ -181,14 +181,24 @@ def _ai_trigger_explainer(payload: dict[str, Any]) -> dict[str, Any] | None:
     escalation_signal = payload.get("escalation_signal")
     if not trigger_rule or not escalation_signal:
         return None
+    stage = payload.get("escalation_stage")
+    esc_signal = str(escalation_signal)
+    # Тип сущности каждого конца цепочки (устраняет путаницу оператора «из чего
+    # собрана цепочка»): AI-триггер — всегда FindingRecord (rule_id движка).
+    # Эскалация — либо СИГНАЛ события (стадия exfil/C2/impact), либо уже
+    # коррелированная НАХОДКА ioa.* (stage="correlated_chain" в движке).
+    esc_is_finding = stage == "correlated_chain" or esc_signal.startswith("ioa.")
     return {
         "kind": "ai_trigger_escalation",
         "trigger_rule": str(trigger_rule),
+        "trigger_entity": "находка",
         "trigger_at": payload.get("trigger_at"),
         # escalation_signal may be a catalog signal (attack_url resolves) OR an
         # ioa.* rule_id (no catalog technique → attack_url None, shown as-is).
-        "escalation": _signal_card(str(escalation_signal))
-        | {"stage": payload.get("escalation_stage"), "ts": payload.get("escalation_at")},
+        "escalation": _signal_card(esc_signal)
+        | {"stage": stage, "ts": payload.get("escalation_at"),
+           "entity": "находка" if esc_is_finding else "сигнал",
+           "is_finding": esc_is_finding},
         "gap_hours": float(payload.get("gap_hours", 0.0) or 0.0),
         "window_hours": float(payload.get("window_hours", 0.0) or 0.0),
         "narrative": str(payload.get("narrative", "")),

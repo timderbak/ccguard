@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Правила-находки · ccguard{% endblock %}
+{% block content %}
+<style>
+  .frfilter{display:inline-flex;align-items:center;gap:7px;border-radius:10px;padding:7px 12px;cursor:pointer;
+    border:1px solid var(--line);background:var(--card2);color:#b9b2c7;font-size:12px;transition:all .12s}
+  .frfilter:hover{border-color:#ffffff2e;color:#e7e2f0}
+  .frfilter.active{border-color:#a855f7;background:#a855f71f;color:#e9d8ff}
+  .frfilter .n{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#8f88a0}
+  .frfilter.active .n{color:#c9b6ff}
+  .frid{font-family:"IBM Plex Mono",monospace;font-size:12px;color:#e7e2f0}
+  .kindtag{font-family:"IBM Plex Mono",monospace;font-size:8px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;
+    border-radius:4px;padding:1px 6px;white-space:nowrap}
+  .kindtag.k-finding{color:#c9b6ff;background:#a855f714;border:1px solid #a855f733}
+  .kindtag.k-decision{color:#f5b74e;background:#f59e0b14;border:1px solid #f59e0b40}
+  .sev{font-family:"IBM Plex Mono",monospace;font-size:10px;border-radius:6px;padding:1px 6px;white-space:nowrap}
+  .sev.s-critical{color:#ff9a9a;background:#ef444418;border:1px solid #ef444440}
+  .sev.s-block{color:#ffb59a;background:#f9731618;border:1px solid #f9731640}
+  .sev.s-warn{color:#fcd34d;background:#f59e0b14;border:1px solid #f59e0b33}
+  .sev.s-info{color:#9cc8ff;background:#5aa9ff14;border:1px solid #5aa9ff33}
+  .sev.s-other{color:#b9b2c7;background:#ffffff08;border:1px solid #ffffff1a}
+  .eng{font-family:"IBM Plex Mono",monospace;font-size:10px;color:#8f88a0}
+  .grpicon{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none;
+    background:#a855f714;border:1px solid #a855f72e;color:#c9b6ff}
+  .grpicon.dec{background:#f59e0b14;border-color:#f59e0b33;color:#f5b74e}
+  .frrow{border-top:1px solid #ffffff0d}
+  .frrow:hover{background:#ffffff05}
+</style>
+
+<div class="max-w-[1200px] mx-auto" id="frroot">
+  <header class="mb-5">
+    <p class="cc-eyebrow">Детект · правила-находки</p>
+    <h1 class="text-3xl text-white mt-1">Правила-находки <span class="text-slate-500 text-xl">{{ total }}</span></h1>
+    <p class="text-sm text-slate-400 mt-1.5 max-w-3xl">Реестр всех <span class="frid">rule_id</span>, которые порождают движки — компаньон к странице «Сигналы» (сигналы = входы, правила = выходы). Две природы: <span class="kindtag k-finding">находка</span> пишется как FindingRecord и видна на «Находках»; <span class="kindtag k-decision">enforce</span> — решение PreToolUse, пишется только в audit.log. Динамические семейства помечены <span class="frid">&lt;...&gt;</span>. {{ cat_count }} групп.</p>
+  </header>
+
+  <!-- filter chips -->
+  <div class="flex flex-wrap gap-2 mb-5">
+    <span class="frfilter active" data-filter="all" onclick="frFilter('all', this)">Все <span class="n">{{ total }}</span></span>
+    <span class="frfilter" data-filter="__finding" onclick="frFilter('__finding', this)">Находки <span class="n">{{ findings_total }}</span></span>
+    <span class="frfilter" data-filter="__decision" onclick="frFilter('__decision', this)">Enforce-решения <span class="n">{{ decisions_total }}</span></span>
+  </div>
+
+  <!-- grouped sections -->
+  <div class="space-y-4">
+    {% for g in groups %}
+    <section class="cc-card p-5" data-group="{{ g.key }}" data-kind="{{ g.kind }}">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="grpicon {{ 'dec' if g.kind == 'decision' else '' }}">
+          {% if g.icon == 'chain' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12h6M8 8a4 4 0 0 0 0 8h1M16 8a4 4 0 0 1 0 8h-1"/></svg>
+          {% elif g.icon == 'swap' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4 3 8l4 4M3 8h13M17 20l4-4-4-4M21 16H8"/></svg>
+          {% elif g.icon == 'pulse' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2-7 4 14 2-7h6"/></svg>
+          {% elif g.icon == 'spark' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 4-7 5 5"/></svg>
+          {% elif g.icon == 'stop' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 8l8 8"/></svg>
+          {% elif g.icon == 'gate' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V6l8-3 8 3v14M4 12h16M9 20V9M15 20V9"/></svg>
+          {% elif g.icon == 'shield' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/></svg>
+          {% elif g.icon == 'check' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          {% elif g.icon == 'brain' %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 0 0-6 0 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 0zM12 5a3 3 0 0 1 6 0 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 0z"/></svg>
+          {% else %}<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>{% endif %}
+        </span>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h2 class="text-base text-white">{{ g.label }}</h2>
+            <span class="kindtag k-{{ g.kind }}">{{ 'находка' if g.kind == 'finding' else 'enforce' }}</span>
+          </div>
+          <p class="text-xs text-slate-500 mt-0.5">{{ g.desc }}</p>
+        </div>
+        <div class="ml-auto text-right shrink-0">
+          <div class="cc-num text-xl text-white">{{ g.count }}</div>
+          <div class="cc-mono text-[10px] text-slate-500">правил</div>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left cc-mono text-[9px] uppercase tracking-wider text-slate-600">
+              <th class="py-1.5 pr-3 font-normal">rule_id</th>
+              <th class="pr-3 font-normal">Серьёзность</th>
+              <th class="pr-3 font-normal">Движок</th>
+              <th class="font-normal">Что ловит</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for r in g.rows %}
+            <tr class="frrow">
+              <td class="py-2 pr-3 align-top"><span class="frid">{{ r.rule_id }}</span></td>
+              <td class="pr-3 align-top">
+                {% set s = r.severity %}
+                {% if 'critical' in s %}{% set sc = 's-critical' %}{% elif 'block' in s %}{% set sc = 's-block' %}{% elif 'warn' in s %}{% set sc = 's-warn' %}{% elif 'info' in s %}{% set sc = 's-info' %}{% else %}{% set sc = 's-other' %}{% endif %}
+                <span class="sev {{ sc }}">{{ s }}</span>
+              </td>
+              <td class="pr-3 align-top"><span class="eng">{{ r.engine }}</span></td>
+              <td class="align-top text-slate-300 text-xs">{{ r.purpose }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endfor %}
+    {% if not groups %}<p class="text-sm text-slate-500">Каталог правил пуст.</p>{% endif %}
+  </div>
+</div>
+
+<script>
+  function frFilter(key, el){
+    document.querySelectorAll('#frroot .frfilter').forEach(c => c.classList.toggle('active', c === el));
+    document.querySelectorAll('#frroot section[data-group]').forEach(s => {
+      var show = key === 'all'
+        || (key === '__finding' && s.dataset.kind === 'finding')
+        || (key === '__decision' && s.dataset.kind === 'decision')
+        || s.dataset.group === key;
+      s.style.display = show ? '' : 'none';
+    });
+  }
+</script>
+{% endblock %}
