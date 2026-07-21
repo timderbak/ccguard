@@ -42,16 +42,19 @@
 {% if explainer %}
 <div class="cc-card p-5 mb-4">
   <div class="cc-eyebrow mb-4" style="color:#c45cff">Цепочка</div>
+  {# бейджи типа сущности — общие для всех веток: находка (выход движка) / сигнал (метка события) #}
+  {% set ent_finding = 'font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:4px;padding:1px 6px;color:#c9b6ff;background:#a855f714;border:1px solid #a855f733' %}
+  {% set ent_signal = 'font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;border-radius:4px;padding:1px 6px;color:#9cc8ff;background:#5aa9ff14;border:1px solid #5aa9ff33' %}
 
   {% if explainer.kind == 'ai_trigger_escalation' %}
   <div class="flex items-center gap-3 flex-wrap">
     <div class="fd-step" style="border-color:#ff547066">
-      <span class="lab">AI-триггер (причина)</span>
+      <span class="lab">AI-триггер (причина) · <span style="{{ ent_finding }}">{{ explainer.trigger_entity }}</span></span>
       <span class="val">{{ explainer.trigger_rule }}</span>
     </div>
     <div class="fd-arrow">→<small>{{ explainer.gap_hours }}ч</small></div>
     <div class="fd-step" style="border-color:#ff8aa066">
-      <span class="lab">Эскалация ({{ explainer.escalation.stage }})</span>
+      <span class="lab">Эскалация ({{ explainer.escalation.stage }}) · <span style="{{ ent_finding if explainer.escalation.is_finding else ent_signal }}">{{ explainer.escalation.entity }}</span></span>
       {% if explainer.escalation.attack_url %}
       <a class="val text-emerald-300 hover:underline" href="{{ explainer.escalation.attack_url }}" target="_blank" rel="noopener">{{ explainer.escalation.signal_id }}</a>
       {% else %}<span class="val">{{ explainer.escalation.signal_id }}</span>{% endif %}
@@ -85,9 +88,9 @@
 
   {% elif explainer.kind == 'sequence' %}
   <div class="flex items-center gap-3 flex-wrap">
-    <div class="fd-step"><span class="lab">Доступ к секрету</span><span class="val">{{ explainer.cred.signal_id }}</span></div>
+    <div class="fd-step"><span class="lab">Доступ к секрету · <span style="{{ ent_signal }}">сигнал</span></span><span class="val">{{ explainer.cred.signal_id }}</span></div>
     <div class="fd-arrow">→<small>{{ "%.0f"|format(explainer.elapsed_seconds) }}s</small></div>
-    <div class="fd-step"><span class="lab">Вынос</span><span class="val">{{ explainer.egress.signal_id }}</span></div>
+    <div class="fd-step"><span class="lab">Вынос · <span style="{{ ent_signal }}">сигнал</span></span><span class="val">{{ explainer.egress.signal_id }}</span></div>
   </div>
 
   {% else %}
