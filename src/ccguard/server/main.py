@@ -152,15 +152,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services.anomaly_service import tick as anomaly_tick
     from ccguard.server.services.chain_engine import tick as chain_tick
     from ccguard.server.services.drift_service import tick as drift_tick
+    from ccguard.server.services.fleet_campaign_service import tick as fleet_campaign_tick
     from ccguard.server.services.risk_service import tick as risk_tick
     from ccguard.server.services.sensor_health_service import tick as sensor_health_tick
     from ccguard.server.services.sequence_service import tick as sequence_tick
     from ccguard.server.services.slow_chain_service import tick as slow_chain_tick
+    from ccguard.server.services.source_monitors import default_monitors
     from ccguard.server.services.supply_chain_escalation_service import (
         tick as ai_escalation_tick,
     )
-    from ccguard.server.services.fleet_campaign_service import tick as fleet_campaign_tick
-    from ccguard.server.services.source_monitors import default_monitors
 
     _DISCOVERY_MONITORS = tuple(default_monitors())
     # Same monitor set reachable by the manual "run discovery now" admin trigger
@@ -171,6 +171,21 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("anomaly scheduler disabled via CCGUARD_DISABLE_SCHEDULER")
     else:
         import asyncio
+
+        def _maybe_review_mcp_descriptions(s: _SessionTick) -> dict | None:
+            """LLM second-opinion sweep, gated on the scanner being enabled AND
+            an initialized ScanService. Returns None when gated off so the tick
+            logs nothing; never raises (its own try/except is in the caller)."""
+            scan_svc = getattr(app.state, "scan_service", None)
+            if scan_svc is None:
+                return None
+            from ccguard.server.services.settings_service import get_setting
+            if (get_setting(s, "llm_scanner_enabled") or "false").lower() != "true":
+                return None
+            from ccguard.server.services import mcp_llm_review
+            return mcp_llm_review.review_descriptions(
+                s, scanner=mcp_llm_review.make_llm_scanner(scan_svc)
+            )
 
         def _tick_job_sync() -> None:
             try:
@@ -192,6 +207,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     # webhook. Disabled by default; best-effort, never breaks the
                     # tick. Runs LAST so it sees every finding emitted above.
                     alert_summary = emit_new_alerts(s)
+                    # Out-of-band LLM second-opinion on MCP description rug-pulls.
+                    # The inventory handler is sync and the scanner async, so the
+                    # rug-pull finding is emitted WITHOUT a verdict; this sweep
+                    # attaches one after the fact. Gated on the scanner being
+                    # enabled AND initialized; best-effort.
+                    mcp_review_summary = _maybe_review_mcp_descriptions(s)
                 logger.info(
                     "anomaly tick: machines=%d findings=%d errors=%d",
                     summary["machines_evaluated"],
@@ -241,12 +262,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     ai_escalation_summary["findings_emitted"],
                     len(ai_escalation_summary["errors"]),
                 )
+                logger.info(
+                    "fleet_campaign tick: campaigns=%d errors=%d",
+                    fleet_campaign_summary["campaigns_emitted"],
+                    len(fleet_campaign_summary["errors"]),
+                )
                 if alert_summary.get("enabled"):
                     logger.info(
                         "alert emit: emitted=%s failed=%s considered=%s",
                         alert_summary.get("emitted"),
                         alert_summary.get("failed"),
                         alert_summary.get("considered"),
+                    )
+                if mcp_review_summary and mcp_review_summary.get("reviewed"):
+                    logger.info(
+                        "mcp llm review: reviewed=%s errors=%s candidates=%s",
+                        mcp_review_summary.get("reviewed"),
+                        mcp_review_summary.get("errors"),
+                        mcp_review_summary.get("candidates"),
                     )
                 # Rule Discovery sweep — once-per-day, gated by
                 # discovery.last_run_at. Needs app.state.signal_drafter (the
