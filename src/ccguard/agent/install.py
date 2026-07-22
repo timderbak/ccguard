@@ -15,11 +15,17 @@ from ccguard.agent.config import default_config_dir
 
 Scope = Literal["user", "project", "managed"]
 
-# Matcher'ы PreToolUse enforce-хука. Write/Edit (v0.2, B.6): target-based
+# Matcher'ы PreToolUse enforce-хука. Write/Edit/MultiEdit (v0.2, B.6): target-based
 # hard-deny на запись ~/.ssh/authorized_keys. PI-шаг для них пропускается, путь
 # дешёвый (один path-чек) — в пределах <100ms PreToolUse budget. Старые агенты
 # graceful: repair/verify дорегистрирует недостающие matcher'ы на следующем sync.
-HOOK_MATCHERS = ["Bash", "Write", "Edit", "mcp__.*", "WebFetch", "WebSearch"]
+#
+# MultiEdit добавлен для hard-deny-паритета с Write/Edit (иначе тот же опасный
+# target через MultiEdit не режется). Read добавлен, чтобы read_pi_block стал
+# рабочим: без этого matcher'а включённый read_pi_block молча ничего не делал.
+# _decide_read делает fast-exit (allow, без чтения файла), когда read_pi_block
+# выключен — стоимость для Read сводится к оверхеду вызова хука.
+HOOK_MATCHERS = ["Bash", "Write", "Edit", "MultiEdit", "Read", "mcp__.*", "WebFetch", "WebSearch"]
 HOOK_TIMEOUT = 5
 SHIM_MARKER = "# ccguard-shim"  # маркер для идемпотентности
 HOOK_TYPE = "command"
