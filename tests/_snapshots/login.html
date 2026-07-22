@@ -4,34 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ccguard — вход</title>
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-              mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
-              display: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'sans-serif'],
-            },
-            colors: {
-              ink: { 900: '#0b0810', 850: '#0e0b14', 800: '#16121f', 700: '#1b1626', 600: '#241d31' },
-              signal: '#34d399',
-              accent: { DEFAULT: '#a855f7', 2: '#c45cff', mag: '#e455c8' },
-            },
-            keyframes: {
-              ccRise: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
-              ccPulse: { '0%,100%': { opacity: '1' }, '50%': { opacity: '.35' } },
-            },
-            animation: { ccRise: 'ccRise .5s cubic-bezier(.22,1,.36,1) both', ccPulse: 'ccPulse 2.4s ease-in-out infinite' },
-          },
-        },
-      };
-    </script>
+    <!-- Self-hosted assets (no runtime CDN) — the console renders fully in an
+         air-gapped / on-prem install. Tailwind is a static build of the classes
+         used in the templates + the custom theme (ink/signal/accent, ccRise/
+         ccPulse) that used to live in the inline tailwind.config. Rebuild with
+         scripts/build-web-assets.sh after adding new utility classes. -->
+    <link rel="stylesheet" href="/static/vendor/tailwind.css" />
+    <link rel="stylesheet" href="/static/vendor/fonts.css" />
+    <script src="/static/vendor/htmx.min.js" defer></script>
     <style>
       :root {
         color-scheme: dark;

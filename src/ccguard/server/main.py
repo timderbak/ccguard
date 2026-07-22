@@ -10,6 +10,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from ccguard.server.api import audit, findings, health, heartbeat, inventory, machines, policy, scan
 from ccguard.server.config import ServerConfig
@@ -312,6 +313,10 @@ def create_app() -> FastAPI:
     app.include_router(heartbeat.router)
     app.include_router(scan.router)
     app.include_router(web_router)
+    # Self-hosted UI assets (Tailwind build, htmx, fonts) — no runtime CDN, so
+    # the console renders fully in an air-gapped / on-prem install.
+    _static_dir = Path(__file__).parent / "web" / "static"
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
     return app
 
 

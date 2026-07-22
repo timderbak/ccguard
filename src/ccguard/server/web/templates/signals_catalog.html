@@ -21,6 +21,7 @@
 </style>
 
 <div class="max-w-[1200px] mx-auto" id="sigroot">
+  {% set active_tab = 'signals' %}{% include 'components/_detect_vocab_tabs.html' %}
   <header class="mb-5">
     <p class="cc-eyebrow">Детект · сигналы</p>
     <h1 class="text-3xl text-white mt-1">Сигналы <span class="text-slate-500 text-xl">{{ total }}</span></h1>

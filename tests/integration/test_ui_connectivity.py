@@ -170,3 +170,62 @@ def test_anomaly_detail_links_machine_and_finding(admin_client):
     body = _get(client, sid, "/anomalies/dev-5/mcp_calls_per_day").text
     assert "/machines/dev-5" in body                     # header → machine
     assert f"/findings/{fid}" in body                    # metric finding row → detail
+
+
+# --- catalog consolidation: 5 loose catalogs → 2 connected axes -------------
+
+
+def test_detect_vocabulary_axis_connects_signals_indicators_rules(admin_client):
+    """The three 'vocabulary' catalogs each carry a tab strip linking the others,
+    so they read as one grouped axis instead of three loose menu items."""
+    client, sid = admin_client
+    for path in ("/signals", "/indicators", "/finding-rules"):
+        body = _get(client, sid, path).text
+        assert 'href="/signals"' in body
+        assert 'href="/indicators"' in body
+        assert 'href="/finding-rules"' in body
+        assert "Словарь детекта" in body
+
+
+def test_coverage_axis_connects_coverage_and_correlations(admin_client):
+    client, sid = admin_client
+    for path in ("/coverage", "/correlations"):
+        body = _get(client, sid, path).text
+        assert 'href="/coverage"' in body
+        assert 'href="/correlations"' in body
+
+
+def test_skills_axis_connects_inventory_and_scan(admin_client):
+    """The two skills screens (baseline inventory + LLM scan) now cross-link;
+    /admin/skills is no longer an orphan reachable only by direct URL."""
+    client, sid = admin_client
+    for path in ("/admin/skills-inventory", "/admin/skills"):
+        body = _get(client, sid, path).text
+        assert 'href="/admin/skills-inventory"' in body
+        assert 'href="/admin/skills"' in body
+
+
+# --- on-prem: self-hosted assets, no runtime CDN ---------------------------
+
+
+def test_ui_references_no_runtime_cdn(admin_client):
+    """The console must render in an air-gapped install — no external CDN in the
+    page <head>, only self-hosted /static/vendor assets."""
+    client, sid = admin_client
+    body = client.get("/login").text  # base.html renders on the unauthenticated login page
+    for cdn in ("cdn.tailwindcss.com", "unpkg.com", "fonts.googleapis.com", "fonts.gstatic.com"):
+        assert cdn not in body, f"runtime CDN still referenced: {cdn}"
+    assert "/static/vendor/tailwind.css" in body
+    assert "/static/vendor/htmx.min.js" in body
+
+
+def test_static_vendor_assets_served(admin_client):
+    client, sid = admin_client
+    for asset, ctype in (
+        ("/static/vendor/tailwind.css", "css"),
+        ("/static/vendor/htmx.min.js", "javascript"),
+        ("/static/vendor/fonts.css", "css"),
+    ):
+        r = client.get(asset)
+        assert r.status_code == 200, asset
+        assert ctype in r.headers.get("content-type", "")

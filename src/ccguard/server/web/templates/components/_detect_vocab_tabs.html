@@ -1,0 +1,27 @@
+{# Detection-vocabulary axis: the three catalogs that describe what detection
+   reads (signals, indicators) and what it emits (rules). Set ``active_tab`` to
+   one of: signals | indicators | rules before including. #}
+<div class="mb-1 cc-eyebrow" style="color:var(--slate-500,#64748b)">Словарь детекта</div>
+<nav class="flex gap-1 border-b border-white/10 mb-6 text-sm flex-wrap" aria-label="Словарь детекта">
+  <a href="/signals"
+     class="px-4 py-2.5 -mb-px border-b-2 inline-flex items-center gap-2 transition-colors
+            {% if active_tab == 'signals' %}border-[#c45cff] text-white font-semibold
+            {% else %}border-transparent text-slate-400 hover:text-slate-200 hover:border-white/20{% endif %}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg>
+    Сигналы <span class="text-[11px] text-slate-500">события</span>
+  </a>
+  <a href="/indicators"
+     class="px-4 py-2.5 -mb-px border-b-2 inline-flex items-center gap-2 transition-colors
+            {% if active_tab == 'indicators' %}border-[#c45cff] text-white font-semibold
+            {% else %}border-transparent text-slate-400 hover:text-slate-200 hover:border-white/20{% endif %}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg>
+    Индикаторы <span class="text-[11px] text-slate-500">артефакты</span>
+  </a>
+  <a href="/finding-rules"
+     class="px-4 py-2.5 -mb-px border-b-2 inline-flex items-center gap-2 transition-colors
+            {% if active_tab == 'rules' %}border-[#c45cff] text-white font-semibold
+            {% else %}border-transparent text-slate-400 hover:text-slate-200 hover:border-white/20{% endif %}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path d="M4 6h16M4 12h10M4 18h13"/><path d="M18 11l2 2 3-3"/></svg>
+    Правила <span class="text-[11px] text-slate-500">выходы</span>
+  </a>
+</nav>

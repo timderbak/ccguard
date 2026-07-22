@@ -28,6 +28,7 @@
 </style>
 
 <div class="max-w-[1200px] mx-auto" id="frroot">
+  {% set active_tab = 'rules' %}{% include 'components/_detect_vocab_tabs.html' %}
   <header class="mb-5">
     <p class="cc-eyebrow">Детект · правила-находки</p>
     <h1 class="text-3xl text-white mt-1">Правила-находки <span class="text-slate-500 text-xl">{{ total }}</span></h1>

@@ -24,6 +24,7 @@
 </style>
 
 <div class="max-w-[1200px] mx-auto" id="indroot">
+  {% set active_tab = 'indicators' %}{% include 'components/_detect_vocab_tabs.html' %}
   <header class="mb-5">
     <p class="cc-eyebrow">Детект · индикаторы</p>
     <h1 class="text-3xl text-white mt-1">Индикаторы <span class="text-slate-500 text-xl">{{ total }}</span></h1>
