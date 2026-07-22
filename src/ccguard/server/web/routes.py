@@ -2587,9 +2587,18 @@ def _settings_context(request: Request, session: Session, user: str) -> dict:
         network_allowlist = []
     # initial-render values for the inline usage counter
     usage = _llm_usage_summary(session)
+    from ccguard.server.services.alert_emitter import load_config as _load_alert_cfg
+    _alert = _load_alert_cfg(session)
     return {
         "user": user,
         "tokens": list_tokens(session),
+        "alert_settings": {
+            "enabled": _alert.enabled,
+            "webhook_url": _alert.webhook_url,
+            "min_severity": _alert.min_severity,
+            "format": _alert.fmt,
+            "telegram_chat_id": _alert.telegram_chat_id,
+        },
         "new_token": request.query_params.get("new_token"),
         "password_msg": request.query_params.get("password_msg"),
         "server_version": "0.1.0",
@@ -2674,6 +2683,59 @@ def admin_llm_settings_save(
     # the box was checked (HTML always sends "on" unless overridden).
     set_setting(session, "llm_scanner_enabled", "true" if enabled else "false")
     set_setting(session, "daily_call_budget", str(budget_int))
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@router.post("/admin/alert-settings")
+def admin_alert_settings_save(
+    request: Request,
+    webhook_url: str = Form(""),
+    min_severity: str = Form("block"),
+    alert_format: str = Form("generic"),
+    telegram_chat_id: str = Form(""),
+    enabled: str = Form(""),
+    reset_watermark: str = Form(""),
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> Response:
+    """Persist the alert-emitter config (webhook URL, min severity, format).
+
+    On enable-or-URL-change (or an explicit "reset") the watermark is zeroed so
+    the next tick fast-forwards to now (no historical-backlog flood). Validation:
+    a non-empty URL must be http(s)://; enabling requires a URL.
+    """
+    from ccguard.server.services.settings_service import get_setting, set_setting
+
+    url = webhook_url.strip()
+    sev = min_severity if min_severity in ("info", "warn", "block", "critical") else "block"
+    fmt = alert_format if alert_format in ("generic", "slack", "telegram") else "generic"
+    is_enabled = bool(enabled)
+
+    err: str | None = None
+    if url and not (url.startswith("http://") or url.startswith("https://")):
+        err = "Webhook URL должен начинаться с http:// или https://."
+    elif is_enabled and not url:
+        err = "Чтобы включить алерты, задайте webhook URL."
+    elif is_enabled and fmt == "telegram" and not telegram_chat_id.strip():
+        err = "Для формата Telegram укажите chat_id."
+    if err is not None:
+        ctx = _settings_context(request, session, user)
+        ctx["alert_validation_error"] = err
+        return templates.TemplateResponse(request, "settings.html", ctx, status_code=200)
+
+    prev_url = (get_setting(session, "alert.webhook_url") or "").strip()
+    prev_enabled = (get_setting(session, "alert.enabled") or "false").lower() in ("1", "true", "yes")
+
+    set_setting(session, "alert.webhook_url", url)
+    set_setting(session, "alert.min_severity", sev)
+    set_setting(session, "alert.format", fmt)
+    set_setting(session, "alert.telegram_chat_id", telegram_chat_id.strip())
+    set_setting(session, "alert.enabled", "true" if is_enabled else "false")
+
+    if reset_watermark or (is_enabled and (not prev_enabled or url != prev_url)):
+        set_setting(session, "alert.last_finding_id", "0")
+
     return RedirectResponse(url="/settings", status_code=303)
 
 

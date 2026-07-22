@@ -54,6 +54,17 @@ _SEQUENCE_SETTINGS_DEFAULTS: dict[str, str] = {
     "sequence.lookback_hours": str(_SEQUENCE_LOOKBACK_HOURS),
 }
 
+# Alert emitter — push new findings to an external webhook. Disabled by default
+# (operator sets the URL). ``alert.last_finding_id`` is NOT seeded: it is the
+# emitter's own watermark (absent → fast-forward on first run).
+_ALERT_SETTINGS_DEFAULTS: dict[str, str] = {
+    "alert.enabled": "false",
+    "alert.webhook_url": "",
+    "alert.min_severity": "block",
+    "alert.format": "generic",
+    "alert.telegram_chat_id": "",
+}
+
 # Behavioral Detection Stage 5 — global enforcement mode.
 # Default ``observe`` closes the explicit "remove all blocking" ask: the engine
 # emits findings but does not return deny. Switch to ``enforce`` to restore
@@ -143,6 +154,27 @@ def seed_risk_settings(session: Session) -> None:
     }
     inserted = False
     for key, default_value in _RISK_SETTINGS_DEFAULTS.items():
+        if key in existing_keys:
+            continue
+        session.add(SettingsRecord(key=key, value=default_value))
+        inserted = True
+    if inserted:
+        session.commit()
+
+
+def seed_alert_settings(session: Session) -> None:
+    """Idempotent first-startup seed of the alert-emitter knobs (disabled by
+    default; operator sets the webhook). Preserves admin edits across re-seeds."""
+    existing_keys = {
+        r.key
+        for r in session.exec(
+            select(SettingsRecord).where(
+                SettingsRecord.key.in_(list(_ALERT_SETTINGS_DEFAULTS.keys()))
+            )
+        ).all()
+    }
+    inserted = False
+    for key, default_value in _ALERT_SETTINGS_DEFAULTS.items():
         if key in existing_keys:
             continue
         session.add(SettingsRecord(key=key, value=default_value))

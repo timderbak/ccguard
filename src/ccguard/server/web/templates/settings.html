@@ -33,6 +33,56 @@
 </section>
 
 <section class="bg-white rounded-lg shadow p-4 mb-6">
+    <h3 class="font-semibold mb-1">Алерты (SIEM / Slack / Telegram)</h3>
+    <p class="text-slate-500 text-sm mb-3">Пуш новых находок (≥ выбранной серьёзности) на внешний webhook после каждого тика. Полностью on-prem: URL указываешь сам (внутренний SIEM-коллектор, Slack/Mattermost incoming webhook или Telegram-бот). Выключено по умолчанию.</p>
+    {% if alert_validation_error %}
+    <div class="bg-red-50 border border-red-200 text-red-700 p-2 rounded mb-3 text-sm">{{ alert_validation_error }}</div>
+    {% endif %}
+    <form method="POST" action="/admin/alert-settings" class="space-y-3 text-sm max-w-xl">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <label class="flex items-center gap-2">
+            <input type="checkbox" name="enabled" {% if alert_settings.enabled %}checked{% endif %} />
+            <span>Включить алерты</span>
+            <span class="cc-mono text-[11px] {% if alert_settings.enabled %}text-emerald-700{% else %}text-slate-400{% endif %}">{{ 'on' if alert_settings.enabled else 'off' }}</span>
+        </label>
+        <div>
+            <label class="block text-slate-600 mb-1">Webhook URL</label>
+            <input type="text" name="webhook_url" value="{{ alert_settings.webhook_url }}"
+                   placeholder="https://siem.internal/ingest  ·  https://hooks.slack.com/…  ·  https://api.telegram.org/bot&lt;token&gt;/sendMessage"
+                   class="cc-mono w-full border border-slate-300 rounded px-2 py-1.5" />
+        </div>
+        <div class="flex gap-4 flex-wrap">
+            <div>
+                <label class="block text-slate-600 mb-1">Мин. серьёзность</label>
+                <select name="min_severity" class="border border-slate-300 rounded px-2 py-1.5">
+                    {% for s in ["info", "warn", "block", "critical"] %}
+                    <option value="{{ s }}" {% if alert_settings.min_severity == s %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-slate-600 mb-1">Формат</label>
+                <select name="alert_format" class="border border-slate-300 rounded px-2 py-1.5">
+                    {% for f in ["generic", "slack", "telegram"] %}
+                    <option value="{{ f }}" {% if alert_settings.format == f %}selected{% endif %}>{{ f }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block text-slate-600 mb-1">Telegram chat_id <span class="text-slate-400">(только для telegram)</span></label>
+                <input type="text" name="telegram_chat_id" value="{{ alert_settings.telegram_chat_id }}"
+                       class="cc-mono border border-slate-300 rounded px-2 py-1.5" />
+            </div>
+        </div>
+        <label class="flex items-center gap-2 text-slate-500">
+            <input type="checkbox" name="reset_watermark" />
+            <span>Сбросить watermark (слать с текущего момента, без старого бэклога)</span>
+        </label>
+        <button class="bg-slate-800 text-white rounded px-4 py-1.5 hover:bg-slate-700">Сохранить</button>
+    </form>
+</section>
+
+<section class="bg-white rounded-lg shadow p-4 mb-6">
     <h3 class="font-semibold mb-3">Токены агентов</h3>
     {% if new_token %}
     <div class="bg-emerald-50 border border-emerald-200 p-3 rounded mb-3 text-sm">

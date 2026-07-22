@@ -34,6 +34,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     from ccguard.server.services import indicator_seed_service
     from ccguard.server.services.settings_service import (
+        seed_alert_settings,
         seed_enforcement_mode,
         seed_llm_settings,
         seed_risk_settings,
@@ -63,6 +64,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_sequence_settings(_s)
         # Behavioral Detection Stage 5: seed enforcement_mode = observe.
         seed_enforcement_mode(_s)
+        # Alert emitter knobs (disabled by default; operator sets the webhook).
+        seed_alert_settings(_s)
         # ТЗ-05: load the vetted ThreatIndicator core (idempotent; a broken
         # seed file logs + loads nothing, never blocks startup).
         indicator_seed_service.load_seed(_s)
@@ -145,6 +148,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         start_scheduler,
     )
     from ccguard.server.services import discovery_service
+    from ccguard.server.services.alert_emitter import emit_new_alerts
     from ccguard.server.services.anomaly_service import tick as anomaly_tick
     from ccguard.server.services.chain_engine import tick as chain_tick
     from ccguard.server.services.drift_service import tick as drift_tick
@@ -184,6 +188,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     # Fleet-scope campaign sweep (org-wide): same compromised
                     # component across N machines → ioa.fleet_campaign.
                     fleet_campaign_summary = fleet_campaign_tick(s)
+                    # Push new findings (>= configured severity) to the operator
+                    # webhook. Disabled by default; best-effort, never breaks the
+                    # tick. Runs LAST so it sees every finding emitted above.
+                    alert_summary = emit_new_alerts(s)
                 logger.info(
                     "anomaly tick: machines=%d findings=%d errors=%d",
                     summary["machines_evaluated"],
@@ -233,6 +241,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     ai_escalation_summary["findings_emitted"],
                     len(ai_escalation_summary["errors"]),
                 )
+                if alert_summary.get("enabled"):
+                    logger.info(
+                        "alert emit: emitted=%s failed=%s considered=%s",
+                        alert_summary.get("emitted"),
+                        alert_summary.get("failed"),
+                        alert_summary.get("considered"),
+                    )
                 # Rule Discovery sweep — once-per-day, gated by
                 # discovery.last_run_at. Needs app.state.signal_drafter (the
                 # self-hosted Ollama default, or Anthropic fallback); if no
