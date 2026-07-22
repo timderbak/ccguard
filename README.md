@@ -282,6 +282,14 @@ anomaly, risk, sensor-silence, MOAT-эскалация, fleet-кампания),
 scripts/demo-env.sh          # → http://127.0.0.1:8080 (admin / admin), данные уже внутри
 ```
 
+**Self-test горячего пути** — прогнать батарею canned-атак через `enforce` без
+сервера и живого Claude Code (evil→deny always-on hard-ярусом даже без политики,
+benign→allow). Быстрый ответ на «не сломал ли я enforce»:
+
+```bash
+ccguard selftest             # exit 0 если все вердикты сошлись
+```
+
 Автотесты локально через `uv`:
 
 ```bash

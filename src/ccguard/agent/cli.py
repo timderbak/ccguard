@@ -161,6 +161,28 @@ def enforce() -> None:
 
 
 @app.command()
+def selftest() -> None:
+    """Прогнать батарею canned-атак через enforce (evil→deny, benign→allow).
+
+    Быстрая проверка горячего пути enforce БЕЗ сервера и живого Claude Code:
+    always-on hard-ярус режет всё «никогда-не-легитимное» даже без политики
+    (свойство anti-tamper A1), а обычные dev-команды проходят (FP-safety).
+    Exit 0 если все вердикты сошлись, иначе 1.
+    """
+    from ccguard.agent.selftest import run_selftest
+
+    results, ok = run_selftest()
+    typer.echo("ccguard enforce self-test\n")
+    for r in results:
+        mark = "ok  " if r.ok else "FAIL"
+        rule = f"  [{r.rule_id}]" if r.rule_id else ""
+        typer.echo(f"  {mark}  expect={r.case.expect:<5s} got={r.permission:<5s}  {r.case.name}{rule}")
+    passed = sum(1 for r in results if r.ok)
+    typer.echo(f"\n{passed}/{len(results)} passed")
+    raise typer.Exit(0 if ok else 1)
+
+
+@app.command()
 def sync() -> None:
     """Отправить inventory на сервер, обновить локальную policy.
 
