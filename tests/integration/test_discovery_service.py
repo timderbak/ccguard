@@ -147,3 +147,37 @@ def test_tick_stamps_last_run_at(client: TestClient) -> None:
         set_setting(s, "daily_call_budget", "10")
         discovery_service.tick(s, drafter=drafter, monitors=[monitor])
         assert get_setting(s, "discovery.last_run_at") is not None
+
+
+def test_real_gitleaks_monitor_drafts_then_dedups(client: TestClient) -> None:
+    """End-to-end: the real GitleaksConfigMonitor (offline via injected fetcher)
+    flows through discovery → drafts one ProposedSignal per rule, and a second
+    sweep dedups every already-fetched rule."""
+    from ccguard.server.services.source_monitors.gitleaks_config import (
+        GitleaksConfigMonitor,
+    )
+
+    toml = (
+        'title = "c"\n'
+        "[[rules]]\n"
+        'id = "aws-access-token"\n'
+        'description = "AWS Access Token"\n'
+        "regex = '''AKIA[0-9A-Z]{16}'''\n"
+    )
+    monitor = GitleaksConfigMonitor(fetch_config=lambda: toml)
+    drafter = FakeDrafter(response=json.dumps({
+        "id": "cred.value.aws_access_token", "attack_technique": "T1552",
+        "pattern": r"AKIA[0-9A-Z]{16}", "description": "live AWS access key value",
+    }))
+    with Session(client.app.state.engine) as s:
+        set_setting(s, "daily_call_budget", "10")
+        first = discovery_service.tick(s, drafter=drafter, monitors=[monitor])
+        assert first["proposed"] == 1
+        assert first["deduped"] == 0
+        drafts = s.exec(select(ProposedSignal)).all()
+        assert len(drafts) == 1
+
+        second = discovery_service.tick(s, drafter=drafter, monitors=[monitor])
+        assert second["proposed"] == 0
+        assert second["deduped"] == 1  # same rule url already fetched
+        assert drafter.calls == 1  # LLM not called again

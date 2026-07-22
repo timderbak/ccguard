@@ -21,8 +21,12 @@ def default_monitors() -> list[SourceMonitor]:
     from ccguard.server.services.source_monitors.cve_ai_filter import (
         CVEAIFilterMonitor,
     )
+    from ccguard.server.services.source_monitors.gitleaks_config import (
+        GitleaksConfigMonitor,
+    )
     from ccguard.server.services.source_monitors.lakera_blog import LakeraBlogMonitor
     from ccguard.server.services.source_monitors.mitre_attack import MitreAttackMonitor
+    from ccguard.server.services.source_monitors.sigma_linux import SigmaLinuxMonitor
 
     return [
         AtomicRedTeamMonitor(),
@@ -30,4 +34,6 @@ def default_monitors() -> list[SourceMonitor]:
         AtlasMonitor(),
         LakeraBlogMonitor(),
         CVEAIFilterMonitor(),
+        SigmaLinuxMonitor(),
+        GitleaksConfigMonitor(),
     ]
