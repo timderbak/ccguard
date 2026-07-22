@@ -83,7 +83,7 @@
                   <span class="cc-mono text-xs text-slate-300 max-w-[380px] truncate" title="{{ i.value }}">{{ i.value }}</span>
                 </div>
               </td>
-              <td class="pr-3">{% if i.technique %}<span class="techpill">{{ i.technique }}</span>{% else %}<span class="text-slate-600">—</span>{% endif %}</td>
+              <td class="pr-3">{% if i.technique %}{% if i.technique in covered_techniques %}<a href="/coverage/{{ i.technique }}" class="techpill" title="Открыть технику в карте покрытия">{{ i.technique }}</a>{% else %}<span class="techpill">{{ i.technique }}</span>{% endif %}{% else %}<span class="text-slate-600">—</span>{% endif %}</td>
               <td class="pr-3 text-slate-400 text-xs">{{ i.tactic or '—' }}</td>
               <td class="pr-3 text-slate-500 text-xs" title="{{ i.source_ref or '' }}">{{ i.source }}</td>
               <td class="text-right whitespace-nowrap">

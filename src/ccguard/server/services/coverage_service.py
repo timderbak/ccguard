@@ -36,6 +36,17 @@ from ccguard.server.db.models import (
 
 log = logging.getLogger(__name__)
 
+
+def known_technique_ids(session: Session) -> set[str]:
+    """All ``technique_id``\\s present in the catalog.
+
+    Used to gate INTERNAL ``/coverage/{id}`` links: that route 404s on an unknown
+    technique, so callers that render technique chips (signals/indicators/finding
+    detail) link internally only when the id is in this set, and otherwise fall
+    back to plain text or the external MITRE reference — never a broken link.
+    """
+    return set(session.exec(select(Technique.technique_id)).all())
+
 # A detector counts as actively "detecting" only if it emitted a finding within
 # this window; older-than-window → "dark" (regressed/quiet), never-fired →
 # "armed". This is the fix for the decoration where a green "covered" badge

@@ -574,6 +574,8 @@ def signals_catalog_page(
             "rows": rows,
         })
 
+    from ccguard.server.services.coverage_service import known_technique_ids
+
     return templates.TemplateResponse(
         request, "signals_catalog.html",
         {
@@ -582,6 +584,7 @@ def signals_catalog_page(
             "groups": groups,
             "total": len(CATALOG),
             "cat_count": len(groups),
+            "covered_techniques": known_technique_ids(session),
         },
     )
 
@@ -664,11 +667,14 @@ def indicators_page(
             "rows": sorted(items, key=lambda i: (-i["weight"], i["value"])),
         })
 
+    from ccguard.server.services.coverage_service import known_technique_ids
+
     return templates.TemplateResponse(
         request, "indicators.html",
         {"user": user, "csrf_token": _csrf_for(request),
          "groups": groups, "pending": [_iv(r) for r in pending],
-         "total": len(active), "type_count": len(groups)},
+         "total": len(active), "type_count": len(groups),
+         "covered_techniques": known_technique_ids(session)},
     )
 
 
@@ -689,6 +695,7 @@ def attacks_page(
     recent = [{
         "scenario_key": m.scenario_key, "machine_id": m.machine_id,
         "session_id": m.session_id, "matched_at": m.matched_at,
+        "finding_id": m.finding_id,
         "steps": json.loads(m.matched_steps_json or "[]"),
     } for m in matches]
     return templates.TemplateResponse(
@@ -1809,14 +1816,25 @@ def _finding_detail_context(session: Session, finding) -> dict:
         ]
         for tid in sorted(set(tech_ids)):
             t = session.exec(select(Technique).where(Technique.technique_id == tid)).first()
-            techniques.append({"id": tid, "name": t.name if t else "", "url": t.url if t else None})
+            # ``covered`` gates the INTERNAL /coverage/{id} link: only techniques
+            # present in the catalog have a coverage page (others 404), so we link
+            # internally only when the row exists and fall back to MITRE otherwise.
+            techniques.append(
+                {"id": tid, "name": t.name if t else "", "url": t.url if t else None,
+                 "covered": t is not None}
+            )
 
     # catalog-signal finding (cred.read.*, c2.*, ...) — pull its ATT&CK technique
     if not techniques:
         from ccguard.server.web.finding_view import attack_url_for_signal, _SIGNAL_TO_TECHNIQUE
         tech = _SIGNAL_TO_TECHNIQUE.get(rid)
         if tech:
-            techniques.append({"id": tech, "name": "", "url": attack_url_for_signal(rid)})
+            t_row = session.exec(select(Technique).where(Technique.technique_id == tech)).first()
+            techniques.append(
+                {"id": tech, "name": t_row.name if t_row else "",
+                 "url": attack_url_for_signal(rid) or (t_row.url if t_row else None),
+                 "covered": t_row is not None}
+            )
 
     # source artifact: split the "<identity>::<snippet>" matched_pattern that the
     # PI / dangerous detectors compose, so the page shows WHAT was injected / WHERE.
@@ -3041,6 +3059,7 @@ def anomaly_detail(
                 sigma_display = "—"
         findings_vm.append(
             {
+                "id": r.id,
                 "discovered_at": r.discovered_at,
                 "observed_value": payload.get("observed_value", "—"),
                 "sigma_distance": sigma_display,

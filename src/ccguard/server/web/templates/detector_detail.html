@@ -31,7 +31,7 @@
   <div class="cc-card p-5 mb-4">
     <div class="cc-eyebrow mb-2">Эмитит rule_id</div>
     <div class="flex flex-wrap gap-2">
-      {% for r in d.rule_ids %}<span class="rulechip">{{ r }}</span>{% endfor %}
+      {% for r in d.rule_ids %}<a href="/findings?rule_id={{ r|urlencode }}" class="rulechip" title="Показать находки этого правила">{{ r }}</a>{% endfor %}
       {% if not d.rule_ids %}<span class="text-sm text-slate-500">—</span>{% endif %}
     </div>
     {% if d.description %}<p class="cc-mono text-[11px] text-slate-500 mt-3">{{ d.description }}</p>{% endif %}
@@ -46,7 +46,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
       <dl class="kv">
         <dt>Наблюдает сигналы</dt>
-        <dd class="flex flex-wrap gap-1.5 mt-1">{% for w in explain.watches %}<span class="sigchip">{{ w }}</span>{% endfor %}</dd>
+        <dd class="flex flex-wrap gap-1.5 mt-1">{% for w in explain.watches %}<a href="/signals#{{ w }}" class="sigchip" title="Открыть сигнал в каталоге">{{ w }}</a>{% endfor %}</dd>
       </dl>
       <dl class="kv">
         <dt>Окно корреляции</dt>

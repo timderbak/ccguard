@@ -70,12 +70,12 @@
           </thead>
           <tbody>
           {% for s in g.rows %}
-            <tr class="sigrow">
+            <tr class="sigrow" id="{{ s.id }}">
               <td class="py-2 pr-3 align-top">
                 <div class="sigid">{{ s.id }}</div>
                 <div class="mt-1"><span class="sigpat" title="{{ s.pattern }}">{{ s.pattern }}</span></div>
               </td>
-              <td class="pr-3 align-top whitespace-nowrap"><span class="techpill">{{ s.technique }}</span></td>
+              <td class="pr-3 align-top whitespace-nowrap">{% if s.technique in covered_techniques %}<a href="/coverage/{{ s.technique }}" class="techpill" title="Открыть технику в карте покрытия">{{ s.technique }}</a>{% else %}<span class="techpill">{{ s.technique }}</span>{% endif %}</td>
               <td class="align-top text-slate-300 text-xs">{{ s.description }}</td>
             </tr>
           {% endfor %}
