@@ -99,6 +99,7 @@ from ccguard.server.db.models import (  # noqa: E402
     FindingRecord,
     Machine,
     MachineBaseline,
+    SettingsRecord,
     ToolUseEvent,
 )
 from ccguard.server.services import settings_service  # noqa: E402
@@ -131,6 +132,32 @@ def _load_tunables(session: Session) -> tuple[float, float, float]:
         _f("risk.window_hours", DEFAULT_WINDOW_HOURS),
         _f("risk.half_life_hours", DEFAULT_HALF_LIFE_HOURS),
     )
+
+
+_WEIGHT_PREFIX = "risk.weight."
+
+
+def _load_weights(session: Session) -> dict[str, float]:
+    """``DEFAULT_WEIGHTS`` with per-signal ``risk.weight.<signal_id>`` overrides
+    from SettingsRecord applied on top — lets an admin calibrate a signal's
+    weight (or weight a brand-new signal) without a redeploy. Bad values are
+    logged and skipped, keeping the baked default for that signal.
+    """
+    weights = dict(DEFAULT_WEIGHTS)
+    rows = session.exec(
+        select(SettingsRecord).where(
+            SettingsRecord.key.like(f"{_WEIGHT_PREFIX}%")  # type: ignore[attr-defined]
+        )
+    ).all()
+    for row in rows:
+        sid = row.key[len(_WEIGHT_PREFIX):]
+        if not sid:
+            continue
+        try:
+            weights[sid] = float(row.value)
+        except (TypeError, ValueError):
+            log.warning("risk: bad %s=%r, keeping default weight", row.key, row.value)
+    return weights
 
 
 def _machine_is_warm(session: Session, machine_id: str) -> bool:
@@ -214,13 +241,14 @@ def evaluate_one(session: Session, machine_id: str) -> FindingRecord | None:
     from ccguard.server.services.suppression_service import list_active
 
     threshold, window_h, half_life_h = _load_tunables(session)
+    weights = _load_weights(session)
     now = datetime.now(UTC)
     since = now - timedelta(hours=window_h)
     events_with_actor = _load_events_with_actor(session, machine_id, since)
     events = [evt for evt, _ in events_with_actor]
     suppressed = list_active(session, machine_id=machine_id, now=now)
     breakdown = compute_risk_score(
-        events, now, DEFAULT_WEIGHTS, window_h, half_life_h,
+        events, now, weights, window_h, half_life_h,
         excluded_signals=suppressed,
     )
 
@@ -236,7 +264,7 @@ def evaluate_one(session: Session, machine_id: str) -> FindingRecord | None:
         by_actor.setdefault(actor, []).append(evt)
     for actor, actor_events in by_actor.items():
         actor_bd = compute_risk_score(
-            actor_events, now, DEFAULT_WEIGHTS, window_h, half_life_h,
+            actor_events, now, weights, window_h, half_life_h,
             excluded_signals=suppressed,
         )
         actor_top: str | None = None
