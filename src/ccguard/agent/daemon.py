@@ -145,8 +145,14 @@ def run_loop(
 # --- Production wiring ----------------------------------------------------
 
 
-def _build_real_sync_callable() -> SyncCallable:
-    """Returns a ``do_sync`` that runs the real perform_sync + scan."""
+def _build_real_sync_callable(interval_seconds: float) -> SyncCallable:
+    """Returns a ``do_sync`` that runs the real perform_sync + scan.
+
+    ``interval_seconds`` is the daemon's actual loop cadence — threaded through
+    so the per-cycle heartbeat reports a truthful ``expected_interval_sec`` to
+    the server's silence detector (previously it read a non-existent
+    ``cfg.interval_seconds`` and always sent ``None``).
+    """
     import os as _os
     from pathlib import Path as _Path
 
@@ -193,7 +199,7 @@ def _build_real_sync_callable() -> SyncCallable:
             # ТЗ-07: explicit heartbeat every cycle — sent even when the sync
             # carried nothing, so the server can tell idle-but-alive from dead.
             # Best-effort: a heartbeat failure never affects the sync result.
-            _send_heartbeat_best_effort(cfg, inv.machine_id)
+            _send_heartbeat_best_effort(cfg, inv.machine_id, interval_seconds)
             # P6: ship locally-buffered PI/Read findings on the same cycle.
             # Without this the findings_buffer.db never reaches the server in a
             # default install (no cron/systemd timer). Best-effort: a flush
@@ -226,23 +232,28 @@ def _flush_findings_best_effort() -> None:
         pass
 
 
-def _send_heartbeat_best_effort(cfg: object, machine_id: str) -> None:
-    """Fire one heartbeat with a self-integrity check. Swallows everything."""
+def _send_heartbeat_best_effort(cfg: object, machine_id: str, interval_seconds: float) -> None:
+    """Fire one heartbeat with a self-integrity check. Swallows everything.
+
+    ``interval_seconds`` is the daemon's real loop cadence; it is reported as
+    ``expected_interval_sec`` so the server can size its silence grace window
+    correctly (server clamps it to ``sensor.max_interval_sec``).
+    """
     try:
         import os as _os
         from pathlib import Path as _Path
 
+        from ccguard import __version__ as _ccguard_version
         from ccguard.agent import heartbeat as _hb
-        from ccguard.agent.config import default_config_dir as _dcd
 
         settings_path = (
             _Path(_os.environ.get("CCGUARD_CLAUDE_HOME", _Path.home() / ".claude"))
             / "settings.json"
         )
-        interval = int(getattr(cfg, "interval_seconds", 0) or 0) or None
+        interval = int(interval_seconds) if interval_seconds and interval_seconds > 0 else None
         payload = _hb.build_heartbeat(
             machine_id=machine_id,
-            agent_version=getattr(cfg, "agent_version", None),
+            agent_version=_ccguard_version,
             hooks_intact=_hb.check_hooks_intact(settings_path),
             expected_interval_sec=interval,
             hooks_hash=_hb.compute_hooks_hash(settings_path),
@@ -264,7 +275,17 @@ def main() -> int:
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    from ccguard.agent.config import default_config_dir
+    from ccguard.agent.config import default_config_dir, load_or_create
+
+    # Loop cadence comes from config (sync.interval_minutes) so the daemon honors
+    # it AND reports the same value in the heartbeat's expected_interval_sec.
+    try:
+        cfg, _ = load_or_create()
+        interval_seconds = float(cfg.sync.interval_minutes * 60)
+    except Exception:  # noqa: BLE001 — never let config errors stop the daemon
+        interval_seconds = DaemonConfig().interval_seconds
+    if interval_seconds <= 0:
+        interval_seconds = DaemonConfig().interval_seconds
 
     state_path = default_config_dir() / "daemon.state.json"
     state = DaemonState()
@@ -278,8 +299,8 @@ def main() -> int:
     signal.signal(signal.SIGINT, _on_signal)
 
     run_loop(
-        DaemonConfig(),
-        do_sync=_build_real_sync_callable(),
+        DaemonConfig(interval_seconds=interval_seconds),
+        do_sync=_build_real_sync_callable(interval_seconds),
         state=state,
         stop_event=stop_event,
         state_path=state_path,

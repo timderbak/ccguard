@@ -17,12 +17,33 @@ _KNOWN_EVENTS = set(get_args(_HookEntry.model_fields["event"].annotation))
 
 _SHIM_HASH_BYTE_CAP = 256 * 1024  # 256 KB
 
+# Interpreter basenames we skip so the SCRIPT argument (the thing we actually
+# want to fingerprint) wins over the interpreter — e.g. for
+# ``/usr/local/bin/python /opt/shim.py`` we return ``/opt/shim.py``, not the
+# python binary. A bare ``python`` (no ``/``) was already skipped because it is
+# not a path; the bug this guards against is the interpreter given by ABSOLUTE
+# path, which is itself a real file and would otherwise be picked first.
+_INTERPRETER_NAMES = frozenset(
+    {"python", "python2", "python3", "bash", "sh", "zsh", "dash", "node", "nodejs", "perl", "ruby", "env"}
+)
+
+
+def _is_interpreter(token: str) -> bool:
+    """True if ``token`` names a language interpreter (e.g. python3.11), not a shim."""
+    base = Path(token).name
+    # Second clause covers versioned python (python3, python3.11, ...).
+    return base in _INTERPRETER_NAMES or (
+        base.startswith("python") and base[len("python"):].replace(".", "").isdigit()
+    )
+
 
 def _extract_shim_path(command: str) -> str | None:
-    """Return the first non-flag token in `command` that refers to an existing file.
+    """Return the file token in `command` that refers to the shim/script executed.
 
     Used to locate the shim/script that the hook actually executes so we can
-    fingerprint its content. Returns None when nothing in the command looks
+    fingerprint its content. When the command is ``<interpreter> <script> ...``
+    the interpreter is skipped and the script is returned; a shim invoked
+    directly is returned as-is. Returns None when nothing in the command looks
     like a file path on disk (inline `bash -c`, builtins, etc).
     """
     if not command:
@@ -31,14 +52,17 @@ def _extract_shim_path(command: str) -> str | None:
         tokens = shlex.split(command)
     except ValueError:
         return None
-    for tok in tokens:
-        if tok.startswith("-"):
-            continue
-        # Only accept tokens that name a real file. Avoids false positives like
-        # "bash", "python", "node" (which exist on $PATH but aren't shims).
-        if "/" in tok and Path(tok).is_file():
+    # Only accept tokens that name a real file. Avoids false positives like
+    # "bash", "python", "node" (which exist on $PATH but aren't shims).
+    file_tokens = [tok for tok in tokens if not tok.startswith("-") and "/" in tok and Path(tok).is_file()]
+    # Prefer the first file token that is NOT an interpreter (the actual shim /
+    # script). Only if every file token is an interpreter do we fall back to the
+    # first one, preserving prior behaviour for ``python -m module`` (no script
+    # file to fingerprint).
+    for tok in file_tokens:
+        if not _is_interpreter(tok):
             return tok
-    return None
+    return file_tokens[0] if file_tokens else None
 
 
 def _hash_shim_file(path: str) -> tuple[str | None, str | None]:
