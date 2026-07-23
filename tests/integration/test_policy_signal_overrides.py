@@ -1,14 +1,11 @@
 """/api/v1/policy injects approved catalog overrides + ETag invalidates on change."""
 from __future__ import annotations
 
-import json
-
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from ccguard.server.services import proposed_signal_service as svc
 from ccguard.server.services.settings_service import set_setting
-
 
 _VALID = {
     "id": "cred.read.session_cookie",
@@ -145,3 +142,30 @@ def test_store_host_rules_deduped_by_pattern(client: TestClient, auth_headers):
         _add_host_indicator(s, "dup.host.test", source="src-b")
     rules = client.get("/api/v1/policy", headers=auth_headers).json()["suspicious_host_rules"]
     assert sum(1 for r in rules if r["pattern"] == "dup.host.test") == 1
+
+
+# --- sensitive_path indicators served on the update channel -----------------
+
+
+def _add_path_indicator(session: Session, path: str, source: str = "manual") -> None:
+    from ccguard.server.db.models import ThreatIndicator
+
+    session.add(
+        ThreatIndicator(
+            indicator_type="sensitive_path", value=path, value_kind="exact",
+            source=source, technique="T1552.001", tactic="credential-access",
+            status="active", enabled=True, description="test secret path",
+        )
+    )
+    session.commit()
+
+
+def test_added_sensitive_path_served_but_os_standard_excluded(client: TestClient, auth_headers):
+    with Session(client.app.state.engine) as s:
+        _add_path_indicator(s, "~/.config/acme/api_token", source="manual")   # served
+        _add_path_indicator(s, "~/.ssh/id_ed25519", source="os-standard")     # baked → excluded
+    overrides = client.get("/api/v1/policy", headers=auth_headers).json().get("signal_overrides", [])
+    path_ovs = [o for o in overrides if str(o["id"]).startswith("cred.read.store_")]
+    assert len(path_ovs) == 1  # only the manual one; os-standard stays baked
+    import re
+    assert re.search(path_ovs[0]["pattern"], "cat ~/.config/acme/api_token")  # pattern matches

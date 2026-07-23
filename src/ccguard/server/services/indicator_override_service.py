@@ -48,6 +48,17 @@ _ID_PREFIX = "indicator."
 # from indicator serving (they still populate the store for the unified catalog).
 MIRROR_SOURCE = "llm-proposed"
 
+# sensitive_path indicators from these sources duplicate the baked, FP-calibrated
+# ``cred.read.*`` catalog signals (the offline baseline). Serving them too would
+# double-count that read, so they stay baked-only. Anything from ANOTHER source
+# (an operator-added path, a Path-2 threat-intel find) IS a new detection with no
+# baked equivalent → served, so "add a sensitive path → detected, no redeploy".
+_CORE_SEED_SOURCES = frozenset({"os-standard"})
+# Served sensitive_path signals carry a ``cred.read.`` prefix so they resolve to
+# the credential-access kill-chain stage (feed the correlators), yet a distinct
+# ``store_`` infix so they never collide with (and REPLACE) a baked signal.
+_PATH_ID_PREFIX = "cred.read.store_"
+
 
 def _to_pattern(value: str, value_kind: str) -> str | None:
     """Turn an indicator ``(value, value_kind)`` into a regex, or None if unusable.
@@ -133,6 +144,44 @@ def load_suspicious_host_rules(session: Session) -> list[dict[str, object]]:
                 "reason": (ind.description or "Индикатор из threat-store (suspicious_host).")[:512],
                 "remediation": "Проверь адресата. Если легитимен — добавь в network.allowlist_hosts; "
                 "иначе повысь до block.",
+            }
+        )
+    out.sort(key=lambda x: str(x.get("id", "")))
+    return out
+
+
+def load_sensitive_path_overrides(session: Session) -> list[dict[str, object]]:
+    """Active ``sensitive_path`` indicators (minus the baked core-seed sources) as
+    signal overrides.
+
+    The norm-EDR update channel for secret-file paths: the baked ``cred.read.*``
+    catalog signals are the offline baseline; a path ADDED to the store (operator
+    UI / Path-2 threat-intel) is served here so it detects without a redeploy. Its
+    signal id keeps the ``cred.read.`` prefix so a read of it feeds the
+    credential-access kill-chain stage (not just a lone tag). Core-seed
+    (``os-standard``) paths are excluded — they already have a baked signal, so
+    serving them would double-count.
+    """
+    stmt = (
+        select(ThreatIndicator)
+        .where(ThreatIndicator.indicator_type == "sensitive_path")
+        .where(ThreatIndicator.status == "active")
+        .where(ThreatIndicator.enabled == True)  # noqa: E712
+        .where(ThreatIndicator.source.notin_(_CORE_SEED_SOURCES))  # type: ignore[attr-defined]
+    )
+    out: list[dict[str, object]] = []
+    for ind in session.exec(stmt):
+        if ind.id is None or not ind.platform_relevant:
+            continue
+        pattern = _to_pattern(ind.value, ind.value_kind)
+        if pattern is None:
+            continue
+        out.append(
+            {
+                "id": f"{_PATH_ID_PREFIX}{ind.id}",
+                "attack_technique": ind.technique or "T1552",
+                "pattern": pattern,
+                "description": ind.description or f"чтение чувствительного пути {ind.value}",
             }
         )
     out.sort(key=lambda x: str(x.get("id", "")))

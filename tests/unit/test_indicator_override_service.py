@@ -14,6 +14,7 @@ from ccguard.server.db.models import ThreatIndicator
 from ccguard.server.db.session import init_db, make_engine
 from ccguard.server.services.indicator_override_service import (
     load_indicator_overrides,
+    load_sensitive_path_overrides,
     load_suspicious_host_rules,
 )
 
@@ -174,3 +175,60 @@ def test_non_host_types_not_in_host_rules(tmp_path) -> None:
 
 def test_disabled_host_excluded(tmp_path) -> None:
     assert _load_hosts(tmp_path, _host(enabled=False)) == []
+
+
+# --- sensitive_path → cred.read.store_* overrides --------------------------
+
+
+def _path(**kw) -> ThreatIndicator:
+    base = dict(
+        indicator_type="sensitive_path", value="~/.config/newapp/token", value_kind="exact",
+        source="manual", technique="T1552.001", tactic="credential-access",
+        status="active", enabled=True, description="app token",
+    )
+    base.update(kw)
+    return ThreatIndicator(**base)
+
+
+def _load_paths(tmp_path, *inds):
+    tag = "p_" + "_".join(str(i.value) for i in inds)
+    eng = _engine(tmp_path, tag)
+    with Session(eng) as s:
+        for i in inds:
+            s.add(i)
+        s.commit()
+    with Session(eng) as s:
+        return load_sensitive_path_overrides(s)
+
+
+def test_added_sensitive_path_is_served_with_cred_prefix(tmp_path) -> None:
+    ovs = _load_paths(tmp_path, _path())
+    assert len(ovs) == 1
+    assert str(ovs[0]["id"]).startswith("cred.read.store_")
+    assert ovs[0]["attack_technique"] == "T1552.001"
+
+
+def test_served_path_signal_resolves_to_credential_access() -> None:
+    # the prefix must actually feed the credential-access kill-chain stage
+    from ccguard.server.services.chain_constants import stage_for_signal
+
+    assert stage_for_signal("cred.read.store_42") == "credential-access"
+
+
+def test_core_seed_os_standard_paths_excluded(tmp_path) -> None:
+    # os-standard paths already have a baked cred.read.* signal → not served
+    assert _load_paths(tmp_path, _path(value="~/.ssh/id_rsa", source="os-standard")) == []
+
+
+def test_added_path_technique_defaults_to_t1552(tmp_path) -> None:
+    ovs = _load_paths(tmp_path, _path(technique=None))
+    assert ovs[0]["attack_technique"] == "T1552"
+
+
+def test_disabled_and_non_path_excluded_from_path_serving(tmp_path) -> None:
+    ovs = _load_paths(
+        tmp_path,
+        _path(value="a", enabled=False),
+        _path(value="b", indicator_type="dangerous_command"),
+    )
+    assert ovs == []

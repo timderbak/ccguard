@@ -20,6 +20,7 @@ from ccguard.server.db.models import SettingsRecord
 from ccguard.server.policy_loader import PolicyLoader
 from ccguard.server.services.indicator_override_service import (
     load_indicator_overrides,
+    load_sensitive_path_overrides,
     load_suspicious_host_rules,
 )
 from ccguard.server.services.settings_service import get_enforcement_mode
@@ -38,6 +39,8 @@ def _combined_overrides(session: Session) -> list[dict[str, object]]:
     """
     merged: dict[str, dict[str, object]] = {}
     for ov in load_indicator_overrides(session):
+        merged[str(ov["id"])] = ov
+    for ov in load_sensitive_path_overrides(session):
         merged[str(ov["id"])] = ov
     for ov in _load_signal_overrides(session):  # ProposedSignal wins on collision
         merged[str(ov["id"])] = ov
