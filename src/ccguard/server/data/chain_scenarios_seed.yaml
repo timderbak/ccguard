@@ -210,6 +210,69 @@ scenarios:
       - {step_index: 1, tactic: defense-evasion, description: "clear history/logs / disable tooling"}
       - {step_index: 2, tactic: exfiltration, description: "ANY egress channel"}
 
+  - scenario_key: recon_harvest_exfil
+    name: "Инъекция → энумерация → сбор ключей → вынос"
+    description: >-
+      The Nx "s1ngularity" pattern (Aug 2025, ITW): external/injected content
+      drives the agent to enumerate the host/filesystem, harvest every secret it
+      finds, then exfiltrate. The discovery step between the trigger and the
+      credential read is what distinguishes a targeted "read one known secret"
+      from a "sweep the box for anything valuable" harvest.
+    window_seconds: 600
+    severity: critical
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: initial-access, description: "external content / MCP / supply-chain injection"}
+      - {step_index: 1, tactic: discovery, description: "host / cloud / account / filesystem enumeration"}
+      - {step_index: 2, tactic: credential-access, description: "read any secret"}
+      - {step_index: 3, tactic: exfiltration, description: "ANY egress channel"}
+
+  - scenario_key: c2_command_to_impact
+    name: "C2-канал → входящая команда → разрушение"
+    description: >-
+      A reverse shell / outbound tunnel is followed by code execution and then a
+      destructive action — the operator (or an automated C2) pushes a command
+      down the channel and the agent runs it to wipe/DROP/overwrite. The
+      execution step between C2 and impact separates an active operator-driven
+      intrusion from an idle tunnel.
+    window_seconds: 600
+    severity: critical
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: command-and-control, description: "reverse shell / outbound tunnel"}
+      - {step_index: 1, tactic: execution, description: "pipe-to-shell / eval / inline code"}
+      - {step_index: 2, tactic: impact, description: "destructive (rm -rf / DROP / dd / mkfs)"}
+
+  - scenario_key: discover_cred_persist
+    name: "Энумерация → доступ к секрету → закрепление"
+    description: >-
+      Reconnaissance (host/cloud/account enum) followed by a secret read and then
+      persistence (rc/cron/systemd/hook/agent-settings). The footholding pattern:
+      map the box, grab a key, then plant a way back in — a slow intrusion that
+      ends in persistence rather than immediate exfil.
+    window_seconds: 900
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: discovery, description: "host / cloud / account enumeration"}
+      - {step_index: 1, tactic: credential-access, description: "read any secret"}
+      - {step_index: 2, tactic: persistence, description: "rc/cron/systemd/hook/agent-settings drop"}
+
+  - scenario_key: collect_exfil_evade
+    name: "Сбор → вынос → заметание следов"
+    description: >-
+      Data is staged/archived/clipboard-captured, exfiltrated over any channel,
+      and then history/logs are cleared or tooling disabled — steal the data and
+      cover the tracks. Distinct from the credential-led exfil_then_coverup: this
+      is a bulk-collection theft (archives, db dumps) rather than a single secret.
+    window_seconds: 900
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: collection, description: "archive / clipboard / db-dump staging"}
+      - {step_index: 1, tactic: exfiltration, description: "ANY egress channel"}
+      - {step_index: 2, tactic: defense-evasion, description: "clear history/logs / disable tooling"}
+
   # NOTE: a cred→lateral chain was intentionally NOT added — `ssh host <cmd>`
   # is the universal deploy/CI idiom, so `read .env` + `ssh deploy@prod restart`
   # would manufacture a finding on every deploy. lateral.remote_exec stays a

@@ -84,4 +84,46 @@ def test_benign_cred_egress_without_coverup_stays_quiet(tmp_path):
         _ev(s, "m", signals=["egress.network_tool"], minutes_ago=2)
         rule_ids = [f.rule_id for f in chain_engine.evaluate_machine(s, "m")]
     assert "ioa.chain.exfil_then_coverup" not in rule_ids
+
+
+def test_recon_harvest_exfil_fires(tmp_path):
+    """Nx s1ngularity: injection → enumeration → key harvest → exfil."""
+    with Session(_engine(tmp_path)) as s:
+        chain_seed_service.load_chain_seed(s)
+        _ev(s, "m", signals=["content.read.external"], minutes_ago=8)  # initial-access
+        _ev(s, "m", signals=["discovery.recon"], minutes_ago=6)        # discovery
+        _ev(s, "m", signals=["cred.read.aws"], minutes_ago=4)          # credential-access
+        _ev(s, "m", signals=["egress.network_tool"], minutes_ago=1)    # exfiltration
+        rule_ids = [f.rule_id for f in chain_engine.evaluate_machine(s, "m")]
+    assert "ioa.chain.recon_harvest_exfil" in rule_ids
+
+
+def test_c2_command_to_impact_fires(tmp_path):
+    with Session(_engine(tmp_path)) as s:
+        chain_seed_service.load_chain_seed(s)
+        _ev(s, "m", signals=["c2.reverse_shell"], minutes_ago=6)   # command-and-control
+        _ev(s, "m", signals=["exec.pipe_to_shell"], minutes_ago=4)  # execution
+        _ev(s, "m", signals=["impact.disk_wipe"], minutes_ago=1)    # impact
+        rule_ids = [f.rule_id for f in chain_engine.evaluate_machine(s, "m")]
+    assert "ioa.chain.c2_command_to_impact" in rule_ids
+
+
+def test_discover_cred_persist_fires(tmp_path):
+    with Session(_engine(tmp_path)) as s:
+        chain_seed_service.load_chain_seed(s)
+        _ev(s, "m", signals=["discovery.cloud_enum"], minutes_ago=10)  # discovery
+        _ev(s, "m", signals=["cred.read.aws"], minutes_ago=6)          # credential-access
+        _ev(s, "m", signals=["persist.cron"], minutes_ago=1)           # persistence
+        rule_ids = [f.rule_id for f in chain_engine.evaluate_machine(s, "m")]
+    assert "ioa.chain.discover_cred_persist" in rule_ids
+
+
+def test_collect_exfil_evade_fires(tmp_path):
+    with Session(_engine(tmp_path)) as s:
+        chain_seed_service.load_chain_seed(s)
+        _ev(s, "m", signals=["collection.archive_staging"], minutes_ago=8)  # collection
+        _ev(s, "m", signals=["egress.network_tool"], minutes_ago=5)         # exfiltration
+        _ev(s, "m", signals=["defense.clear_logs"], minutes_ago=1)          # defense-evasion
+        rule_ids = [f.rule_id for f in chain_engine.evaluate_machine(s, "m")]
+    assert "ioa.chain.collect_exfil_evade" in rule_ids
     assert "ioa.chain.evade_then_steal" not in rule_ids
