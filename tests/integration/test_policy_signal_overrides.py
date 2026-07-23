@@ -61,3 +61,48 @@ def test_corrupt_setting_override_value_is_skipped(client: TestClient, auth_head
     assert resp.status_code == 200
     # Corrupt entries dropped silently, valid endpoint still returns 200.
     assert resp.json().get("signal_overrides", []) == []
+
+
+# --- ThreatIndicator → served overrides (indicators become live detection) ---
+
+
+def _add_dangerous_indicator(session: Session, pattern: str) -> None:
+    from ccguard.server.db.models import ThreatIndicator
+
+    session.add(
+        ThreatIndicator(
+            indicator_type="dangerous_command", value=pattern, value_kind="regex",
+            source="manual", technique="T1059", tactic="execution",
+            status="active", enabled=True, description="test danger",
+        )
+    )
+    session.commit()
+
+
+def test_active_dangerous_indicator_is_served_and_detects(client: TestClient, auth_headers):
+    """An active dangerous_command indicator is served on the same wire and, fed
+    to the agent extractor, actually fires — closing the 'indicators added but
+    never used' gap."""
+    with Session(client.app.state.engine) as s:
+        _add_dangerous_indicator(s, r"wget\s+.*169\.254\.169\.254")  # cloud metadata SSRF
+    body = client.get("/api/v1/policy", headers=auth_headers).json()
+    overrides = body.get("signal_overrides", [])
+    ind_ovs = [o for o in overrides if str(o["id"]).startswith("indicator.")]
+    assert len(ind_ovs) == 1
+
+    # End-to-end: the served override, handed to the agent extractor, detects.
+    from ccguard.agent.signals.extractor import extract_signals
+
+    sigs = extract_signals(
+        "Bash", {"command": "wget http://169.254.169.254/latest/meta-data/"},
+        overrides=ind_ovs,
+    )
+    assert ind_ovs[0]["id"] in sigs
+
+
+def test_etag_changes_when_an_indicator_is_added(client: TestClient, auth_headers):
+    etag_before = client.get("/api/v1/policy", headers=auth_headers).headers["ETag"]
+    with Session(client.app.state.engine) as s:
+        _add_dangerous_indicator(s, r"nc\s+-e\s+/bin/sh")
+    etag_after = client.get("/api/v1/policy", headers=auth_headers).headers["ETag"]
+    assert etag_before != etag_after

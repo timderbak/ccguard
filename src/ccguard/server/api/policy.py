@@ -18,11 +18,27 @@ from sqlmodel import Session, select
 from ccguard.server.api.deps import get_policy_loader, get_session, require_token
 from ccguard.server.db.models import SettingsRecord
 from ccguard.server.policy_loader import PolicyLoader
+from ccguard.server.services.indicator_override_service import load_indicator_overrides
 from ccguard.server.services.settings_service import get_enforcement_mode
 
 router = APIRouter(prefix="/api/v1")
 
 _OVERRIDE_PREFIX = "catalog.override."
+
+
+def _combined_overrides(session: Session) -> list[dict[str, object]]:
+    """Approved ProposedSignal overrides + active dangerous_command indicators.
+
+    Both are served on the SAME agent wire (``signal_overrides``). Merged and
+    deduped by id (ProposedSignal wins a collision, though the ``indicator.``
+    namespace makes one impossible), sorted for a deterministic ETag.
+    """
+    merged: dict[str, dict[str, object]] = {}
+    for ov in load_indicator_overrides(session):
+        merged[str(ov["id"])] = ov
+    for ov in _load_signal_overrides(session):  # ProposedSignal wins on collision
+        merged[str(ov["id"])] = ov
+    return sorted(merged.values(), key=lambda x: str(x.get("id", "")))
 
 
 def _load_signal_overrides(session: Session) -> list[dict[str, object]]:
@@ -73,7 +89,7 @@ def get_policy(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="no policy configured yet — publish one via the console",
         ) from exc
-    overrides = _load_signal_overrides(session)
+    overrides = _combined_overrides(session)
     # Stage 5b: admin can flip enforcement_mode via /settings without editing
     # policy YAML. SettingsRecord override wins over the schema default.
     mode_override = get_enforcement_mode(session)
