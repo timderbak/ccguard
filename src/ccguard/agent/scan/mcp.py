@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from pathlib import Path
@@ -24,11 +25,17 @@ def _hash_text(text: str | None) -> str | None:
 
 
 def tools_hash(tools: object) -> str | None:
-    """Order-independent hash of a runtime tool list (name+description per tool).
+    """Order-independent hash of a runtime tool list (name+description+schema).
 
-    The rug-pull surface lives here (tool descriptions are fed to the LLM as
-    authoritative instructions). Returns None when no usable tool list exists,
-    so the baseline diff is simply skipped (back-compat with no-tools agents).
+    The rug-pull surface lives here (tool descriptions AND the ``inputSchema`` —
+    the JSON parameter schema — are fed to the LLM as authoritative instructions,
+    so line-jumping injection can hide in schema field descriptions too). Returns
+    None when no usable tool list exists, so the baseline diff is simply skipped
+    (back-compat with no-tools agents).
+
+    ``inputSchema`` is folded in ONLY when a tool actually carries one, so a
+    schema-less tool hashes exactly as before — an agent upgrade does not spuriously
+    fire ``tools_changed`` for the common stdio/config case that has no schema.
     """
     if not isinstance(tools, list) or not tools:
         return None
@@ -38,7 +45,16 @@ def tools_hash(tools: object) -> str | None:
             continue
         name = str(t.get("name", ""))
         desc = str(t.get("description", ""))
-        parts.append(f"{name}\x1f{desc}")
+        part = f"{name}\x1f{desc}"
+        # MCP spec uses camelCase ``inputSchema``; tolerate snake_case too.
+        schema = t.get("inputSchema")
+        if schema is None:
+            schema = t.get("input_schema")
+        if schema is not None:
+            # unserializable schema → hash on name+desc only (no crash)
+            with contextlib.suppress(TypeError, ValueError):
+                part += "\x1f" + json.dumps(schema, sort_keys=True, ensure_ascii=False)
+        parts.append(part)
     if not parts:
         return None
     return _hash_text("\x1e".join(sorted(parts)))
