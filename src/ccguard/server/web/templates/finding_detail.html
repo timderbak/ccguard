@@ -93,6 +93,13 @@
     <div class="fd-step"><span class="lab">Вынос · <span style="{{ ent_signal }}">сигнал</span></span><span class="val">{{ explainer.egress.signal_id }}</span></div>
   </div>
 
+  {% elif explainer.kind == 'toxic_flow' %}
+  <div class="flex items-center gap-3 flex-wrap">
+    <div class="fd-step"><span class="lab">Внешний/недоверенный контент · <span style="{{ ent_signal }}">taint</span></span><span class="val">{{ explainer.taint.signal_id }}</span></div>
+    <div class="fd-arrow">→<small>{{ "%.0f"|format(explainer.elapsed_seconds) }}s</small></div>
+    <div class="fd-step"><span class="lab">Оружейный сток · {{ explainer.sink_label }}</span><span class="val">{{ explainer.sink.signal_id }}</span></div>
+  </div>
+
   {% else %}
   <p class="text-sm text-slate-400">Подробности — в данных находки ниже.</p>
   {% endif %}

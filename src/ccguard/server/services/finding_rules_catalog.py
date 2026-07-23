@@ -60,6 +60,11 @@ CATALOG: tuple[FindingRule, ...] = (
                 "Триггер → скрытая/временная запись (staging) [→ опц. egress]; аддитивный скоринг."),
     FindingRule("ioa.staging_chain.suppressed", "info", "finding", "sequence_service",
                 "Тот же staging-паттерн, но запись — build/пакетный кэш или VCS; шум, подавлен."),
+    FindingRule("ioa.toxic_flow", "critical", "finding", "sequence_service",
+                "Confused-deputy: внешний/недоверенный контент → «оружейный» сток "
+                "(правка своего конфига · persistence · разрушение · exfil на sketchy-хост) "
+                "властью самого агента. Ловит то, что exfil_sequence (нужен cred-read) и "
+                "staging_chain (нужна fs-запись) пропускают."),
     FindingRule("ioa.chain.<scenario_key>", "по политике", "finding", "chain_engine",
                 "Data-driven сценарий: последовательность стадий kill-chain завершилась в окне."),
     FindingRule("ioa.slow_chain", "warn", "finding", "slow_chain_service",

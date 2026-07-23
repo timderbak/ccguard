@@ -50,6 +50,51 @@ ALLOWLISTED_WRITE_MARKERS: frozenset[str] = frozenset({"fs.write.cache", "fs.wri
 # transparently findable and (b) never share dedup state with real findings.
 STAGING_SUPPRESSED_RULE_ID: str = "ioa.staging_chain.suppressed"
 
+# --- Toxic-flow (confused-deputy IOA) --------------------------------------
+# The flagship "toxic agent flow": untrusted/external content ingested by the
+# agent is followed by a WEAPONIZED sink action — config self-tamper, persistence,
+# destruction, or exfil to a suspicious host — carried out with the agent's OWN
+# authority. This is the class the market fears most (GitHub-MCP toxic flow,
+# CurXecute, EchoLeak) because it needs no malware, only the agent's legit token.
+#
+# Distinct from the two existing kernels, which MISS the external→sink-direct flow:
+#   * exfil_sequence needs a credential READ as the first link;
+#   * staging_chain needs a filesystem staging WRITE as the middle link.
+# toxic_flow needs neither — external content directly drives the sink. Same
+# minutes-window tier as those kernels (the chain_engine covers the hours-window
+# ``injection_*`` scenarios; this is the fast, tight complement).
+TOXIC_FLOW_RULE_ID: str = "ioa.toxic_flow"
+
+# Taint source = the ТЗ-03 external-content marker, ALREADY emitted by the agent
+# (WebFetch/WebSearch results, every ``mcp__*`` tool result, reads of untrusted
+# paths). So B1 is pure server-side correlation — zero agent change, fully
+# backward-compatible (a legacy agent that never emits it simply never fires this).
+TAINT_SOURCE_SIGNAL: str = EXTERNAL_CONTENT_SIGNAL  # "content.read.external"
+
+# Config self-tamper sink (CurXecute pattern): external input rewrites the
+# agent's own settings / MCP config — able to disable the guard or plant hooks.
+CONFIG_TAMPER_SINK: str = "config.agent_settings_edit"
+
+# Weaponized-sink set — DELIBERATELY curated for precision. Generic egress
+# (``egress.http_client`` / ``egress.network_tool``) is EXCLUDED on purpose:
+# the taint marker fires on EVERY ``mcp__*`` call, so a benign "MCP read then an
+# ordinary WebFetch/curl" must NOT trip toxic_flow. Only a suspicious DESTINATION
+# egress counts as a weaponized sink (precision-over-coverage, ТЗ-03 §1).
+TOXIC_SINK_EXACT: frozenset[str] = frozenset(
+    {
+        CONFIG_TAMPER_SINK,
+        "egress.paste_site",
+        "egress.bot_api",
+        "egress.dns_long_subdomain",
+        "egress.dns_tool",
+        "egress.icmp_tunnel",
+        "egress.adhoc_server",
+    }
+)
+# Prefix sinks: any persistence implant (``persist.*``) or destructive impact
+# (``impact.*``) action driven by the external content.
+TOXIC_SINK_PREFIXES: tuple[str, ...] = ("persist.", "impact.")
+
 # Additive scoring defaults (tunable via SettingsRecord — see _load_staging_cfg).
 # Calibrated so ТЗ-02/03 outcomes are preserved:
 #   non-ext hidden, no egress  = HIDDEN(2)                 = 2 → warn

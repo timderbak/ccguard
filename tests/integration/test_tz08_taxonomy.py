@@ -34,6 +34,7 @@ DETECTOR_KEYS = {
     "slow_chain",
     "ai_trigger_escalation",
     "fleet_campaign",
+    "toxic_flow",
 }
 
 
