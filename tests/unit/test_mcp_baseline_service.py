@@ -141,11 +141,13 @@ def test_description_change_emits_critical_finding() -> None:
 
 
 # ---------------------------------------------------------------------------
-# definition_hash change → warn finding
+# definition_hash change → classified finding
 # ---------------------------------------------------------------------------
 
 
-def test_definition_change_emits_warn_finding() -> None:
+def test_definition_swap_to_tmp_binary_is_critical() -> None:
+    """A real command→/tmp binary swap is a target_shift → critical (the
+    classifier escalates it above the plain warn default)."""
     engine = _engine()
     with Session(engine) as s:
         svc.update_and_detect(s, "m1", [_mcp("notion", command="npx", args=["-y", "real-mcp"])])
@@ -158,7 +160,44 @@ def test_definition_change_emits_warn_finding() -> None:
         assert len(findings) == 1
         f = findings[0]
         assert f.rule_id == svc.RULE_DEFINITION
-        assert f.severity == "warn"
+        assert f.severity == "critical"
+        import json as _json
+        assert _json.loads(f.payload_json)["change_kind"] == "target_shift"
+
+
+def test_version_bump_is_expected_update_not_a_warning() -> None:
+    """The anti-false-positive core: a pinned semver bump (foo@1.2.3 → 1.3.0) is
+    an expected update → info under mcp.update.expected, NOT a warn rug-pull."""
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("notion", command="npx", args=["-y", "notion-mcp@1.2.3"])])
+        s.commit()
+
+    with Session(engine) as s:
+        bumped = _mcp("notion", command="npx", args=["-y", "notion-mcp@1.3.0"])
+        findings = svc.update_and_detect(s, "m1", [bumped])
+        s.commit()
+        assert len(findings) == 1
+        f = findings[0]
+        assert f.rule_id == svc.RULE_UPDATE_EXPECTED
+        assert f.severity == "info"
+        import json as _json
+        assert _json.loads(f.payload_json)["change_kind"] == "version_bump"
+
+
+def test_opaque_definition_change_stays_warn() -> None:
+    """A command change we can't classify (no version/target markers) keeps the
+    cautious warn default under mcp.rug_pull.definition_changed."""
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("notion", command="serverA", args=["run"])])
+        s.commit()
+    with Session(engine) as s:
+        findings = svc.update_and_detect(s, "m1", [_mcp("notion", command="serverB", args=["run"])])
+        s.commit()
+        assert len(findings) == 1
+        assert findings[0].rule_id == svc.RULE_DEFINITION
+        assert findings[0].severity == "warn"
 
 
 # ---------------------------------------------------------------------------

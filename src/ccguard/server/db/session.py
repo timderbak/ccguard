@@ -113,6 +113,14 @@ _TOOL_USE_SESSION_INDEX_DDL: tuple[str, ...] = (
     "ON tooluseevent(session_id)",
 )
 
+# Additive column for MCPServerBaseline: the raw (secret-masked) definition text,
+# stored so the rug-pull change-classifier can compare old vs new semantically
+# (version bump vs binary swap) instead of only seeing the hash moved. Same
+# PRAGMA-guarded ADD COLUMN pattern — create_all is a no-op on existing tables.
+_MCP_BASELINE_ADDITIVE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("definition_preview", "ALTER TABLE mcpserverbaseline ADD COLUMN definition_preview TEXT"),
+)
+
 # Composite UNIQUE for ThreatIndicator (ТЗ-05). Same idempotent pattern as the
 # baseline tables — one row per (indicator_type, value, source) so the same
 # value from two sources is two rows, but one source can't duplicate it.
@@ -236,6 +244,13 @@ def init_db(engine: Engine) -> None:
         }
         for col_name, ddl in _MACHINE_HEARTBEAT_COLUMNS:
             if col_name not in machine_cols:
+                conn.execute(text(ddl))
+        # Additive ALTER for MCPServerBaseline.definition_preview (rug-pull classifier).
+        mcp_baseline_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(mcpserverbaseline)"))
+        }
+        for col_name, ddl in _MCP_BASELINE_ADDITIVE_COLUMNS:
+            if col_name not in mcp_baseline_cols:
                 conn.execute(text(ddl))
         # Additive ALTER for Technique.in_scope (ТЗ-06 coverage fix; table
         # renamed atlastechnique→technique in ТЗ-08).

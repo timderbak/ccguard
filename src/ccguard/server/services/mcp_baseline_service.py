@@ -49,18 +49,42 @@ from sqlmodel import Session, select
 
 from ccguard.schemas import McpServerEntry
 from ccguard.server.db.models import FindingRecord, MCPServerBaseline
+from ccguard.server.services.mcp_change_classifier import (
+    Corroborator,
+    classify_definition_change,
+)
 
 # --- Constants -------------------------------------------------------------
 
 RULE_DESCRIPTION = "mcp.rug_pull.description_changed"
 RULE_DEFINITION = "mcp.rug_pull.definition_changed"
 RULE_TOOLS = "mcp.rug_pull.tools_changed"
+# A definition change the classifier judged a routine, expected update (a pinned
+# semver bumped and nothing else). Emitted at info so it is transparent/auditable
+# WITHOUT adding warn/critical noise — the anti-false-positive split.
+RULE_UPDATE_EXPECTED = "mcp.update.expected"
 
 SEVERITY_DESCRIPTION = "critical"
-SEVERITY_DEFINITION = "warn"
+SEVERITY_DEFINITION = "warn"  # cautious default; the classifier may raise/lower it
 SEVERITY_TOOLS = "critical"
 
+# Classifier kinds that mean "routine update" → info under RULE_UPDATE_EXPECTED.
+_EXPECTED_CHANGE_KINDS = frozenset({"version_bump", "corroborated_update", "noop"})
+
 DESCRIPTION_PREVIEW_LEN = 200
+
+
+def _definition_text(entry: McpServerEntry) -> str:
+    """Rebuild the ``command args | url`` definition text from an entry.
+
+    Mirrors the agent's ``_definition_text`` (ccguard.agent.scan.mcp). Secrets are
+    already masked in ``command``/``args``/``url`` by the agent, so this is safe to
+    store as the baseline ``definition_preview`` for later semantic classification.
+    """
+    cmd = entry.command or ""
+    args_str = " ".join(entry.args or [])
+    url_s = entry.url or ""
+    return f"{cmd} {args_str} | {url_s}"
 
 
 # --- Helpers ---------------------------------------------------------------
@@ -115,6 +139,7 @@ def update_and_detect(
     current_mcps: list[McpServerEntry],
     *,
     inventory_id: int | None = None,
+    corroborator: Corroborator | None = None,
 ) -> list[FindingRecord]:
     """Diff ``current_mcps`` against persisted baselines and return findings.
 
@@ -169,6 +194,7 @@ def update_and_detect(
                     definition_hash=entry.definition_hash,
                     tools_hash=entry.tools_hash,
                     description_preview=_preview(entry.description),
+                    definition_preview=_definition_text(entry),
                     first_seen_at=now,
                     last_seen_at=now,
                 )
@@ -235,31 +261,63 @@ def update_and_detect(
             )
 
         if def_changed:
-            findings.append(
-                _make_finding(
-                    machine_id=machine_id,
-                    inventory_id=inventory_id,
-                    rule_id=RULE_DEFINITION,
-                    severity=SEVERITY_DEFINITION,
-                    title=f"MCP '{entry.name}' изменил command/args/url",
-                    description=(
-                        f"Команда запуска MCP-сервера '{entry.name}' изменилась — "
-                        "поменялся command, args или url. Это может быть подмена "
-                        "бинарника/endpoint'а."
-                    ),
-                    source=entry.source,
-                    recommendation=(
-                        "Сверь новый command/args с upstream-конфигом. Если изменение "
-                        "ожидаемо — обновить baseline; иначе — откатить."
-                    ),
-                    matched_value=entry.name,
-                    extra_payload={
-                        "mcp_name": entry.name,
-                        "old_hash": baseline.definition_hash,
-                        "new_hash": entry.definition_hash,
-                    },
-                )
+            # Anti-false-positive: don't blanket-warn on ANY command/args/url
+            # change. Classify old→new — a routine version bump is info (an
+            # expected update), a pin-drop / digest swap / target shift is
+            # warn/critical. ``baseline.definition_preview`` still holds the OLD
+            # text here (updated below), so this compares old vs new.
+            new_def_text = _definition_text(entry)
+            verdict = classify_definition_change(
+                baseline.definition_preview, new_def_text, corroborator=corroborator
             )
+            expected = verdict.kind in _EXPECTED_CHANGE_KINDS
+            common_payload = {
+                "mcp_name": entry.name,
+                "old_hash": baseline.definition_hash,
+                "new_hash": entry.definition_hash,
+                "change_kind": verdict.kind,
+                "change_rationale": verdict.rationale,
+            }
+            if expected:
+                findings.append(
+                    _make_finding(
+                        machine_id=machine_id,
+                        inventory_id=inventory_id,
+                        rule_id=RULE_UPDATE_EXPECTED,
+                        severity="info",
+                        title=f"MCP '{entry.name}' — обычное обновление",
+                        description=(
+                            f"Определение MCP-сервера '{entry.name}' изменилось, но "
+                            f"классификатор счёл это ожидаемым обновлением: {verdict.rationale}. "
+                            "Зафиксировано для прозрачности, не является тревогой."
+                        ),
+                        source=entry.source,
+                        recommendation="Действий не требуется; при сомнении сверь с upstream-релизом.",
+                        matched_value=entry.name,
+                        extra_payload=common_payload,
+                    )
+                )
+            else:
+                findings.append(
+                    _make_finding(
+                        machine_id=machine_id,
+                        inventory_id=inventory_id,
+                        rule_id=RULE_DEFINITION,
+                        severity=verdict.severity,
+                        title=f"MCP '{entry.name}' изменил command/args/url",
+                        description=(
+                            f"Команда запуска MCP-сервера '{entry.name}' изменилась — "
+                            f"{verdict.rationale}. Это может быть подмена бинарника/endpoint'а."
+                        ),
+                        source=entry.source,
+                        recommendation=(
+                            "Сверь новый command/args с upstream-конфигом. Если изменение "
+                            "ожидаемо — обновить baseline; иначе — откатить."
+                        ),
+                        matched_value=entry.name,
+                        extra_payload=common_payload,
+                    )
+                )
 
         if tools_changed:
             findings.append(
@@ -297,6 +355,9 @@ def update_and_detect(
             baseline.description_preview = _preview(entry.description)
         if entry.definition_hash is not None:
             baseline.definition_hash = entry.definition_hash
+            # Store the new definition text so the NEXT change classifies against
+            # it. Also backfills pre-feature baselines (was None → now populated).
+            baseline.definition_preview = _definition_text(entry)
         if entry.tools_hash is not None:
             baseline.tools_hash = entry.tools_hash
         baseline.last_seen_at = now

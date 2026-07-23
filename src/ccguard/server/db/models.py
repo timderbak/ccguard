@@ -410,6 +410,12 @@ class MCPServerBaseline(SQLModel, table=True):
     description_hash: str | None = None
     definition_hash: str | None = None
     description_preview: str | None = None
+    # Raw (secret-masked) definition text — ``command args | url`` — stored so a
+    # later diff can classify the CHANGE semantically (version bump vs binary
+    # swap), not just note that the hash moved. Without it the anti-false-positive
+    # classifier has only the new side. Nullable/back-compat: pre-feature rows and
+    # v0.1 agents leave it None and the classifier falls back to "opaque change".
+    definition_preview: str | None = None
     # P4b: hash of the runtime tool list (tools/list). Optional/back-compat:
     # old agents send None and the tools-drift diff is skipped for that row.
     tools_hash: str | None = None

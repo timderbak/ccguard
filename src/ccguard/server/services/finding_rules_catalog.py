@@ -78,8 +78,12 @@ CATALOG: tuple[FindingRule, ...] = (
                 "Описание MCP изменилось после первой регистрации (описание идёт в LLM как инструкция)."),
     FindingRule("mcp.rug_pull.tools_changed", "critical", "finding", "mcp_baseline_service",
                 "Runtime tools/list MCP подменён — имена/описания инструментов изменены."),
-    FindingRule("mcp.rug_pull.definition_changed", "warn", "finding", "mcp_baseline_service",
-                "Изменились command/args/url запуска MCP (возможная подмена бинарника/endpoint)."),
+    FindingRule("mcp.rug_pull.definition_changed", "warn→critical", "finding", "mcp_baseline_service",
+                "Изменились command/args/url запуска MCP — классификатор отличает подозрительное "
+                "(pin-drop · digest-swap · target-shift) от обычного bump'а; severity по вердикту."),
+    FindingRule("mcp.update.expected", "info", "finding", "mcp_baseline_service",
+                "Изменение определения MCP, классифицированное как обычное обновление (bump версии "
+                "по пину) — зафиксировано для прозрачности, НЕ тревога (анти-фалз-позитив)."),
     FindingRule("hook.rug_pull.content", "block", "finding", "hook_baseline_service",
                 "Содержимое скрипта хука изменилось без правки settings.json — та же команда, новый payload."),
     FindingRule("hook.rug_pull.command", "warn", "finding", "hook_baseline_service",
