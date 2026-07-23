@@ -12,7 +12,10 @@ from sqlmodel import Session
 
 from ccguard.server.db.models import ThreatIndicator
 from ccguard.server.db.session import init_db, make_engine
-from ccguard.server.services.indicator_override_service import load_indicator_overrides
+from ccguard.server.services.indicator_override_service import (
+    load_indicator_overrides,
+    load_suspicious_host_rules,
+)
 
 
 def _engine(tmp_path, tag: str = ""):
@@ -111,3 +114,63 @@ def test_technique_falls_back_to_tactic_then_na(tmp_path) -> None:
 def test_description_falls_back_to_value(tmp_path) -> None:
     ovs = _load(tmp_path, _ind(value="dangerous-thing", description=None))
     assert ovs[0]["description"] == "dangerous-thing"
+
+
+# --- suspicious_host → SuspiciousHostRule ----------------------------------
+
+
+def _host(**kw) -> ThreatIndicator:
+    base = dict(
+        indicator_type="suspicious_host", value="evil.example.com", value_kind="exact",
+        source="manual", technique="T1567", tactic="exfiltration",
+        status="active", enabled=True, description="known exfil host",
+    )
+    base.update(kw)
+    return ThreatIndicator(**base)
+
+
+def _load_hosts(tmp_path, *inds):
+    tag = "h_" + "_".join(str(i.value) for i in inds)
+    eng = _engine(tmp_path, tag)
+    with Session(eng) as s:
+        for i in inds:
+            s.add(i)
+        s.commit()
+    with Session(eng) as s:
+        return load_suspicious_host_rules(s)
+
+
+def test_active_suspicious_host_becomes_warn_rule(tmp_path) -> None:
+    rules = _load_hosts(tmp_path, _host())
+    assert len(rules) == 1
+    r = rules[0]
+    assert r["id"] == r["id"]  # namespaced
+    assert str(r["id"]).startswith("indicator/")
+    assert r["pattern"] == "evil.example.com"
+    assert r["type"] == "glob"
+    assert r["severity"] == "warn"  # conservative: tag, don't block, by default
+    assert r["title"] and r["reason"] and r["remediation"]  # all required fields present
+
+
+def test_host_value_kind_conversions(tmp_path) -> None:
+    reg = _load_hosts(tmp_path, _host(value=r"evil\d+\.com", value_kind="regex"))
+    assert reg[0]["type"] == "regex" and reg[0]["pattern"] == r"evil\d+\.com"
+    pre = _load_hosts(tmp_path, _host(value="cdn.evil", value_kind="prefix"))
+    assert pre[0]["type"] == "glob" and pre[0]["pattern"] == "cdn.evil*"
+
+
+def test_host_bad_regex_skipped(tmp_path) -> None:
+    assert _load_hosts(tmp_path, _host(value="([bad", value_kind="regex")) == []
+
+
+def test_non_host_types_not_in_host_rules(tmp_path) -> None:
+    rules = _load_hosts(
+        tmp_path,
+        _host(indicator_type="dangerous_command", value="curl|sh", value_kind="regex"),
+        _host(indicator_type="safe_path", value="node_modules"),
+    )
+    assert rules == []
+
+
+def test_disabled_host_excluded(tmp_path) -> None:
+    assert _load_hosts(tmp_path, _host(enabled=False)) == []

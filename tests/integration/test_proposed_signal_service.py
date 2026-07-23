@@ -62,6 +62,79 @@ def test_approve_validates_regex_and_writes_setting_override(client: TestClient)
         assert payload["pattern"] == r"login\s+data"
 
 
+def test_approve_mirrors_into_indicator_store(client: TestClient) -> None:
+    """Discovery → store loop: approving a command-signal populates the unified
+    ThreatIndicator store, but the mirror is NOT double-served (it's already on
+    the wire via the catalog.override the approval wrote)."""
+    from ccguard.server.db.models import ThreatIndicator
+    from ccguard.server.services.indicator_override_service import (
+        MIRROR_SOURCE,
+        load_indicator_overrides,
+    )
+
+    with Session(client.app.state.engine) as s:
+        row = svc.propose(s, draft=_draft(pattern=r"aws_secret_access_key"), source_kind="manual")
+        svc.approve(s, row.id, reviewed_by="admin")  # type: ignore[arg-type]
+
+        mirror = s.exec(
+            select(ThreatIndicator)
+            .where(ThreatIndicator.source == MIRROR_SOURCE)
+            .where(ThreatIndicator.value == r"aws_secret_access_key")
+        ).first()
+        assert mirror is not None
+        assert mirror.indicator_type == "dangerous_command"
+        assert mirror.status == "active" and mirror.enabled is True
+
+        # NOT double-served: the mirror source is excluded from indicator serving.
+        served_ids = {o["id"] for o in load_indicator_overrides(s)}
+        assert f"indicator.{mirror.id}" not in served_ids
+
+
+def test_revert_disables_mirror_and_reapprove_reactivates(client: TestClient) -> None:
+    from ccguard.server.db.models import ThreatIndicator
+    from ccguard.server.services.indicator_override_service import MIRROR_SOURCE
+
+    def _mirror(s):
+        return s.exec(
+            select(ThreatIndicator)
+            .where(ThreatIndicator.source == MIRROR_SOURCE)
+            .where(ThreatIndicator.value == r"login\s+data")
+        ).first()
+
+    with Session(client.app.state.engine) as s:
+        row = svc.propose(s, draft=_draft(), source_kind="manual")
+        svc.approve(s, row.id, reviewed_by="admin")  # type: ignore[arg-type]
+        assert _mirror(s).status == "active"
+
+        svc.revert(s, row.id, reviewed_by="admin", reason="noisy")  # type: ignore[arg-type]
+        m = _mirror(s)
+        assert m.status == "disabled" and m.enabled is False
+
+        # Re-approve after revert reactivates the same mirror row (idempotent).
+        row2 = svc.propose(s, draft=_draft(), source_kind="manual")
+        svc.approve(s, row2.id, reviewed_by="admin")  # type: ignore[arg-type]
+        m2 = _mirror(s)
+        assert m2.status == "active" and m2.enabled is True
+
+
+def test_pi_pattern_approve_does_not_mirror(client: TestClient) -> None:
+    """A pi_pattern draft is a PI category, not a dangerous_command — no mirror."""
+    from ccguard.server.db.models import ThreatIndicator
+    from ccguard.server.services.indicator_override_service import MIRROR_SOURCE
+
+    with Session(client.app.state.engine) as s:
+        row = svc.propose(
+            s,
+            draft={"category": "exfil_url", "pattern": r"evil\.test", "description": "x"},
+            source_kind="manual", kind="pi_pattern",
+        )
+        svc.approve(s, row.id, reviewed_by="admin")  # type: ignore[arg-type]
+        mirrors = s.exec(
+            select(ThreatIndicator).where(ThreatIndicator.source == MIRROR_SOURCE)
+        ).all()
+    assert mirrors == []
+
+
 def test_approve_refuses_invalid_regex(client: TestClient) -> None:
     with Session(client.app.state.engine) as s:
         row = svc.propose(s, draft=_draft(pattern=r"(unclosed"), source_kind="manual")

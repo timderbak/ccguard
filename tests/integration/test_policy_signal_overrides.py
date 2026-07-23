@@ -106,3 +106,42 @@ def test_etag_changes_when_an_indicator_is_added(client: TestClient, auth_header
         _add_dangerous_indicator(s, r"nc\s+-e\s+/bin/sh")
     etag_after = client.get("/api/v1/policy", headers=auth_headers).headers["ETag"]
     assert etag_before != etag_after
+
+
+# --- suspicious_host indicators merge into policy host rules ----------------
+
+
+def _add_host_indicator(session: Session, host: str, source: str = "manual") -> None:
+    from ccguard.server.db.models import ThreatIndicator
+
+    session.add(
+        ThreatIndicator(
+            indicator_type="suspicious_host", value=host, value_kind="exact",
+            source=source, technique="T1567", tactic="exfiltration",
+            status="active", enabled=True, description="test exfil host",
+        )
+    )
+    session.commit()
+
+
+def test_suspicious_host_indicator_merges_into_policy_rules(client: TestClient, auth_headers):
+    """An added suspicious_host indicator appears in the served policy's
+    suspicious_host_rules — as a warn rule, via the proper host mechanism."""
+    with Session(client.app.state.engine) as s:
+        _add_host_indicator(s, "exfil.attacker.test")
+    body = client.get("/api/v1/policy", headers=auth_headers).json()
+    rules = body.get("suspicious_host_rules", [])
+    mine = [r for r in rules if r.get("pattern") == "exfil.attacker.test"]
+    assert len(mine) == 1
+    assert mine[0]["severity"] == "warn"
+    assert str(mine[0]["id"]).startswith("indicator/")
+
+
+def test_store_host_rules_deduped_by_pattern(client: TestClient, auth_headers):
+    """Two indicators with the SAME host pattern (different sources = two rows)
+    yield only ONE served rule — patterns are deduped, no duplicate host rules."""
+    with Session(client.app.state.engine) as s:
+        _add_host_indicator(s, "dup.host.test", source="src-a")
+        _add_host_indicator(s, "dup.host.test", source="src-b")
+    rules = client.get("/api/v1/policy", headers=auth_headers).json()["suspicious_host_rules"]
+    assert sum(1 for r in rules if r["pattern"] == "dup.host.test") == 1

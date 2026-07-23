@@ -18,7 +18,10 @@ from sqlmodel import Session, select
 from ccguard.server.api.deps import get_policy_loader, get_session, require_token
 from ccguard.server.db.models import SettingsRecord
 from ccguard.server.policy_loader import PolicyLoader
-from ccguard.server.services.indicator_override_service import load_indicator_overrides
+from ccguard.server.services.indicator_override_service import (
+    load_indicator_overrides,
+    load_suspicious_host_rules,
+)
 from ccguard.server.services.settings_service import get_enforcement_mode
 
 router = APIRouter(prefix="/api/v1")
@@ -90,6 +93,8 @@ def get_policy(
             detail="no policy configured yet — publish one via the console",
         ) from exc
     overrides = _combined_overrides(session)
+    # Active suspicious_host indicators merge into the policy's host rules below.
+    store_host_rules = load_suspicious_host_rules(session)
     # Stage 5b: admin can flip enforcement_mode via /settings without editing
     # policy YAML. SettingsRecord override wins over the schema default.
     mode_override = get_enforcement_mode(session)
@@ -97,6 +102,8 @@ def get_policy(
     tag_parts = []
     if overrides:
         tag_parts.append(f"ov-{_overrides_etag_tag(overrides)}")
+    if store_host_rules:
+        tag_parts.append(f"sh-{_overrides_etag_tag(store_host_rules)}")
     if mode_override != policy.enforcement_mode:
         tag_parts.append(f"em-{mode_override[:3]}")
     if tag_parts:
@@ -115,4 +122,17 @@ def get_policy(
     body["enforcement_mode"] = mode_override
     if overrides:
         body["signal_overrides"] = overrides
+    if store_host_rules:
+        # Merge store-derived host rules into the policy's list, deduped by
+        # pattern so a store indicator never shadows/duplicates a hardcoded rule
+        # (the hardcoded block-tier rule wins). Done on the serialized body so the
+        # loader's cached Policy object is never mutated.
+        existing = body.get("suspicious_host_rules") or []
+        seen_patterns = {r.get("pattern") for r in existing}
+        merged = list(existing)
+        for r in store_host_rules:
+            if r["pattern"] not in seen_patterns:
+                merged.append(r)
+                seen_patterns.add(r["pattern"])  # also dedup store rules among themselves
+        body["suspicious_host_rules"] = merged
     return body

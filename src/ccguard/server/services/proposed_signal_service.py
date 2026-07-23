@@ -22,7 +22,8 @@ from typing import Any
 
 from sqlmodel import Session, select
 
-from ccguard.server.db.models import ProposedSignal, SettingsRecord
+from ccguard.server.db.models import ProposedSignal, SettingsRecord, ThreatIndicator
+from ccguard.server.services.indicator_override_service import MIRROR_SOURCE
 
 # Mirror catalog.py's id format constraint.
 _ID_RE = re.compile(r"^[a-z0-9]+(\.[a-z0-9_]+)+$")
@@ -32,6 +33,65 @@ _PI_REQUIRED_KEYS = ("category", "pattern", "description")
 _PI_CATEGORY_RE = re.compile(r"^[a-z][a-z0-9_]{2,63}$")
 _OVERRIDE_KEY_PREFIX = "catalog.override."
 _PI_OVERRIDE_KEY_PREFIX = "pi.override."
+
+
+def _find_mirror(session: Session, pattern: str) -> ThreatIndicator | None:
+    return session.exec(
+        select(ThreatIndicator)
+        .where(ThreatIndicator.indicator_type == "dangerous_command")
+        .where(ThreatIndicator.value == pattern)
+        .where(ThreatIndicator.source == MIRROR_SOURCE)
+    ).first()
+
+
+def _mirror_to_store(session: Session, draft: dict[str, Any], *, now: datetime) -> None:
+    """Auto-populate the indicator store from an approved command-signal.
+
+    Mirrors the draft into the unified ThreatIndicator store as a
+    ``dangerous_command`` indicator (source ``llm-proposed``), so the store grows
+    with every approved auto-discovery — the "discovery feeds the store"
+    loop. Idempotent on (type, value, source). NOT re-served from the indicator
+    pipe (it is excluded by that source) — the ``catalog.override.<id>`` written
+    by :func:`approve` is what actually serves the pattern, so there is no
+    double-tag. Best-effort: never blocks the approval it rides on.
+    """
+    pattern = draft.get("pattern")
+    if not isinstance(pattern, str) or not pattern:
+        return
+    row = _find_mirror(session, pattern)
+    if row is None:
+        session.add(
+            ThreatIndicator(
+                indicator_type="dangerous_command",
+                value=pattern,
+                value_kind="regex",
+                source=MIRROR_SOURCE,
+                source_ref=str(draft.get("id") or "")[:256] or None,
+                technique=(draft.get("attack_technique") or None),
+                status="active",
+                enabled=True,
+                description=(draft.get("description") or None),
+            )
+        )
+    else:  # re-approve of a previously reverted signal → reactivate
+        row.status = "active"
+        row.enabled = True
+        row.updated_at = now
+        session.add(row)
+
+
+def _unmirror_from_store(session: Session, draft: dict[str, Any], *, now: datetime) -> None:
+    """Disable the mirrored store indicator when its ProposedSignal is reverted,
+    so the unified store reflects the revert (kept, not deleted, for the audit)."""
+    pattern = draft.get("pattern")
+    if not isinstance(pattern, str) or not pattern:
+        return
+    row = _find_mirror(session, pattern)
+    if row is not None:
+        row.status = "disabled"
+        row.enabled = False
+        row.updated_at = now
+        session.add(row)
 
 
 class InvalidDraft(ValueError):
@@ -148,6 +208,10 @@ def approve(session: Session, row_id: int, *, reviewed_by: str) -> ProposedSigna
     row.reviewed_by = reviewed_by
     row.reviewed_at = now
     session.add(row)
+    # Mirror command-signals into the unified indicator store (not pi_pattern,
+    # which is a PI category, not a dangerous_command). Discovery → store loop.
+    if row.kind != "pi_pattern":
+        _mirror_to_store(session, draft, now=now)
     session.commit()
     session.refresh(row)
     return row
@@ -185,11 +249,14 @@ def revert(
     existing = session.get(SettingsRecord, override_key)
     if existing is not None:
         session.delete(existing)
+    now = datetime.now(UTC)
     row.status = "reverted"
     row.reviewed_by = reviewed_by
-    row.reviewed_at = datetime.now(UTC)
+    row.reviewed_at = now
     row.rejection_reason = reason or "(rolled back)"
     session.add(row)
+    if row.kind != "pi_pattern":
+        _unmirror_from_store(session, draft, now=now)
     session.commit()
     session.refresh(row)
     return row
