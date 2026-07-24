@@ -16,14 +16,25 @@
   .sumchip .n{font-family:"IBM Plex Mono",monospace;font-weight:700;color:#fff}
   .revbar{width:60px;height:4px;border-radius:99px;background:#ffffff10;overflow:hidden;display:inline-block;vertical-align:middle}
   .revbar>span{display:block;height:100%;background:linear-gradient(90deg,#059669,#34d399)}
+  .srcbadge{display:inline-flex;align-items:center;gap:4px;font-family:"IBM Plex Mono",monospace;font-size:10px;
+    border-radius:6px;padding:1px 7px;border:1px solid transparent;white-space:nowrap}
+  .srcbadge.s-managed{color:#6ee7b7;background:#34d39914;border-color:#34d39940}
+  .srcbadge.s-plugin{color:#c9b6ff;background:#a855f714;border-color:#a855f740}
+  .srcbadge.s-project{color:#9cc8ff;background:#5aa9ff14;border-color:#5aa9ff40}
+  .srcbadge.s-user{color:#fcd34d;background:#f59e0b14;border-color:#f59e0b40}
+  .srcbadge.s-unknown{color:#8f88a0;background:#ffffff08;border-color:#ffffff1a}
+  .mixbadge{font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+    color:#fdba74;background:#fb923c14;border:1px solid #fb923c47;border-radius:5px;padding:1px 6px}
 </style>
 <div class="max-w-[1200px] mx-auto">
   <header class="mb-5">
     <p class="cc-eyebrow">Детект · supply chain</p>
     <h1 class="text-3xl text-white mt-1">MCP по флоту <span class="text-slate-500 text-xl">{{ total }}</span></h1>
-    <p class="text-sm text-slate-400 mt-1.5 max-w-3xl">Единая база MCP-серверов по всем машинам — какие установлены, сколько их хешей (hash — цифровой отпечаток содержимого) совпадает между хостами, и какие проверены администратором вручную. Одно имя с разными хешами на разных машинах = <span class="text-rose-300">расхождение</span>: тот же сервер запускает разный код на разных хостах — сильный сигнал supply-chain-компрометации.</p>
+    <p class="text-sm text-slate-400 mt-1.5 max-w-3xl">Единая база MCP-серверов по всем машинам — какие установлены, <span class="text-slate-200">откуда взялись</span>, сколько их хешей (hash — цифровой отпечаток содержимого) совпадает между хостами, и какие проверены администратором вручную. Одно имя с разными хешами на разных машинах = <span class="text-rose-300">расхождение</span>: тот же сервер запускает разный код на разных хостах — сильный сигнал supply-chain-компрометации.</p>
     <div class="mt-4 flex items-center gap-2.5 flex-wrap">
       <span class="sumchip"><span class="n">{{ total }}</span> серверов</span>
+      {% if self_installed_count > 0 %}<span class="sumchip" style="border-color:#f59e0b47;color:#fcd34d"><span class="n" style="color:#fcd34d">{{ self_installed_count }}</span> поставили сами</span>{% endif %}
+      {% if plugin_count > 0 %}<span class="sumchip" style="border-color:#a855f747;color:#c9b6ff"><span class="n" style="color:#c9b6ff">{{ plugin_count }}</span> из плагинов</span>{% endif %}
       {% if divergent_count > 0 %}<span class="sumchip" style="border-color:#ff547047;color:#ff8aa0"><span class="n" style="color:#ff8aa0">{{ divergent_count }}</span> расхождений</span>{% endif %}
       {% if unreviewed_count > 0 %}<span class="sumchip" style="border-color:#f59e0b47;color:#fbbf24"><span class="n" style="color:#fbbf24">{{ unreviewed_count }}</span> не полностью проверено</span>{% endif %}
     </div>
@@ -39,6 +50,10 @@
                   hx-get="/_partials/mcp-inventory/drill?name={{ r.mcp_name|urlencode }}"
                   hx-target="next .cc-drill" hx-swap="innerHTML">{{ r.mcp_name }}</button>
           <span class="text-slate-600 text-[11px]">{{ r.transport }}</span>
+          {% with scope = r.primary_scope, plugin_label = r.plugin_label %}
+            {% include "components/_mcp_source_badge.html" %}
+          {% endwith %}
+          {% if r.scope_is_mixed %}<span class="mixbadge" title="На разных машинах прописан по-разному — где-то централизованно, где-то вручную">разные источники</span>{% endif %}
           {% if r.is_divergent %}<span class="divbadge">расхождение</span>{% endif %}
           <span class="ml-auto cc-mono text-[10px] text-slate-500">{{ r.machines_total }} маш.</span>
         </div>

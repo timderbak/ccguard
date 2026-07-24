@@ -39,16 +39,22 @@ def _seed_machine(s: Session, machine_id: str) -> None:
         ))
 
 
-def _mcp(name="notion", command="npx", args=None, description="a tool", tools_hash=None):
+def _mcp(
+    name="notion", command="npx", args=None, description="a tool", tools_hash=None,
+    scope=None, origin="local", parent_plugin=None, source_marketplace=None,
+    source="/test/.claude.json",
+):
     from ccguard.agent.scan.mcp import _definition_text, _hash_text
 
     args = args or ["-y", "@notion/mcp"]
     return McpServerEntry(
         name=name, transport="stdio", command=command, args=args, url=None,
-        env_keys=[], source="/test/.claude.json", description=description,
+        env_keys=[], source=source, description=description,
         description_hash=_hash_text(description),
         definition_hash=_hash_text(_definition_text(command, args, None)),
         tools_hash=tools_hash,
+        scope=scope, origin=origin,
+        parent_plugin=parent_plugin, source_marketplace=source_marketplace,
     )
 
 
@@ -237,3 +243,103 @@ def test_page_requires_auth(monkeypatch, tmp_path) -> None:
     with _login(monkeypatch, tmp_path) as client:
         r = client.get("/admin/mcp-inventory", follow_redirects=False)
         assert r.status_code in (307, 401, 403)
+
+
+# --- провенанс: «откуда MCP взялся» -----------------------------------------
+
+
+def test_page_shows_source_badges(monkeypatch, tmp_path) -> None:
+    with _login(monkeypatch, tmp_path) as client:
+        engine = client.app.state.engine  # type: ignore[attr-defined]
+        with Session(engine) as s:
+            _seed_machine(s, "m1")
+            mcp_baseline_service.update_and_detect(s, "m1", [
+                _mcp("corp-mcp", scope="managed"),
+                _mcp("self-mcp", scope="user"),
+                _mcp("repo-mcp", scope="project"),
+            ])
+            s.commit()
+            sid = create_session(s, user_id="admin")
+
+        r = client.get("/admin/mcp-inventory", cookies={"ccg_session": sid})
+        assert r.status_code == 200
+        assert "организация" in r.text       # managed
+        assert "поставил сам" in r.text      # user
+        assert "из репозитория" in r.text    # project
+        assert "1</span> поставили сами" in r.text  # сводный счётчик
+
+
+def test_page_shows_plugin_attribution(monkeypatch, tmp_path) -> None:
+    with _login(monkeypatch, tmp_path) as client:
+        engine = client.app.state.engine  # type: ignore[attr-defined]
+        with Session(engine) as s:
+            _seed_machine(s, "m1")
+            mcp_baseline_service.update_and_detect(s, "m1", [
+                _mcp("mem-mcp", scope="user", origin="plugin",
+                     parent_plugin="claude-mem",
+                     source_marketplace="anthropics/claude-plugins-official"),
+            ])
+            s.commit()
+            sid = create_session(s, user_id="admin")
+
+        r = client.get("/admin/mcp-inventory", cookies={"ccg_session": sid})
+        assert r.status_code == 200
+        assert "claude-mem@anthropics/claude-plugins-official" in r.text
+        assert "1</span> из плагинов" in r.text
+
+
+def test_page_flags_mixed_sources(monkeypatch, tmp_path) -> None:
+    """Один MCP: на двух машинах от организации, на третьей добавлен вручную."""
+    with _login(monkeypatch, tmp_path) as client:
+        engine = client.app.state.engine  # type: ignore[attr-defined]
+        with Session(engine) as s:
+            for m in ("m1", "m2", "m3"):
+                _seed_machine(s, m)
+            mcp_baseline_service.update_and_detect(s, "m1", [_mcp("x", scope="managed")])
+            mcp_baseline_service.update_and_detect(s, "m2", [_mcp("x", scope="managed")])
+            mcp_baseline_service.update_and_detect(s, "m3", [_mcp("x", scope="user")])
+            s.commit()
+            sid = create_session(s, user_id="admin")
+
+        r = client.get("/admin/mcp-inventory", cookies={"ccg_session": sid})
+        assert r.status_code == 200
+        assert "разные источники" in r.text
+        # показываем наименее санкционированный источник, а не «организация»
+        assert "поставил сам" in r.text
+
+
+def test_unknown_provenance_renders_honestly(monkeypatch, tmp_path) -> None:
+    """Агент v0.1 не шлёт провенанс — не угадываем, а честно говорим."""
+    with _login(monkeypatch, tmp_path) as client:
+        engine = client.app.state.engine  # type: ignore[attr-defined]
+        with Session(engine) as s:
+            _seed_machine(s, "m1")
+            e = _mcp("legacy-mcp")
+            e.scope = None
+            mcp_baseline_service.update_and_detect(s, "m1", [e])
+            s.commit()
+            sid = create_session(s, user_id="admin")
+
+        r = client.get("/admin/mcp-inventory", cookies={"ccg_session": sid})
+        assert r.status_code == 200
+        assert "источник неизвестен" in r.text
+
+
+def test_drill_shows_source_path(monkeypatch, tmp_path) -> None:
+    with _login(monkeypatch, tmp_path) as client:
+        engine = client.app.state.engine  # type: ignore[attr-defined]
+        with Session(engine) as s:
+            _seed_machine(s, "m1")
+            mcp_baseline_service.update_and_detect(s, "m1", [
+                _mcp("x", scope="project", source="/repo/.mcp.json")
+            ])
+            s.commit()
+            sid = create_session(s, user_id="admin")
+
+        r = client.get(
+            "/_partials/mcp-inventory/drill?name=x",
+            cookies={"ccg_session": sid},
+        )
+        assert r.status_code == 200
+        assert "/repo/.mcp.json" in r.text
+        assert "из репозитория" in r.text

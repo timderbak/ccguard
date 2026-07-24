@@ -1218,6 +1218,12 @@ def mcp_inventory_page(
             "total": len(rows),
             "divergent_count": sum(1 for r in rows if r.is_divergent),
             "unreviewed_count": sum(1 for r in rows if not r.fully_reviewed),
+            # «Что люди сами себе понаставили» — серверы, объявленные в личном
+            # конфиге разработчика и не пришедшие с плагином.
+            "self_installed_count": sum(
+                1 for r in rows if r.primary_scope == "user" and not r.from_plugin
+            ),
+            "plugin_count": sum(1 for r in rows if r.from_plugin),
             "csrf_token": _csrf_for(request),
         },
     )

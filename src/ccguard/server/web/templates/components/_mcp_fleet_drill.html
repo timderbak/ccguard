@@ -7,6 +7,10 @@
         <li class="flex items-center gap-2 flex-wrap">
             <a href="/machines/{{ r.machine_id }}" class="text-slate-300 hover:text-white hover:underline">{{ r.machine_id }}</a>
             <span class="text-slate-600" title="{{ r.transport }}">{{ r.transport }}</span>
+            {% with scope = r.scope, plugin_label = (r.parent_plugin ~ '@' ~ (r.source_marketplace or 'unknown')) if r.origin == 'plugin' and r.parent_plugin else None %}
+              {% include "components/_mcp_source_badge.html" %}
+            {% endwith %}
+            {% if r.source_path %}<span class="text-slate-600 truncate" style="max-width: 16rem;" title="прописан в {{ r.source_path }}">{{ r.source_path }}</span>{% endif %}
             {% if r.definition_hash %}<span class="text-slate-600 truncate" style="max-width: 10rem;" title="definition_hash {{ r.definition_hash }}">def#{{ r.definition_hash[:8] }}</span>{% endif %}
             {% if r.tools_hash %}<span class="text-slate-600 truncate" style="max-width: 10rem;" title="tools_hash {{ r.tools_hash }}">tools#{{ r.tools_hash[:8] }}</span>{% endif %}
             <span class="rounded px-1.5 py-0.5 text-[9px] font-semibold

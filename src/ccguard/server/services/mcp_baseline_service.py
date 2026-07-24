@@ -239,6 +239,11 @@ def update_and_detect(
                     first_seen_at=now,
                     last_seen_at=now,
                     status="pending",
+                    scope=getattr(entry, "scope", None),
+                    origin=getattr(entry, "origin", "local") or "local",
+                    parent_plugin=getattr(entry, "parent_plugin", None),
+                    source_marketplace=getattr(entry, "source_marketplace", None),
+                    source_path=entry.source,
                 )
             )
             # Scan-on-first-registration for hidden Unicode: a description poisoned
@@ -411,6 +416,24 @@ def update_and_detect(
             baseline.definition_preview = _definition_text(entry)
         if entry.tools_hash is not None:
             baseline.tools_hash = entry.tools_hash
+        # Provenance refresh: an MCP can legitimately MOVE between configs (a
+        # dev-installed server later rolled out centrally as managed, or the
+        # other way round), so track the current source. Only overwrite when the
+        # agent actually sent a value — a v0.1 agent that omits provenance must
+        # not blank out what a newer agent already recorded.
+        entry_scope = getattr(entry, "scope", None)
+        if entry_scope is not None:
+            baseline.scope = entry_scope
+        entry_origin = getattr(entry, "origin", None)
+        if entry_origin:
+            baseline.origin = entry_origin
+            # parent_plugin/marketplace are meaningful only alongside their
+            # origin, so they move together with it (including back to None
+            # when a server stops being plugin-shipped).
+            baseline.parent_plugin = getattr(entry, "parent_plugin", None)
+            baseline.source_marketplace = getattr(entry, "source_marketplace", None)
+        if entry.source:
+            baseline.source_path = entry.source
         baseline.last_seen_at = now
         session.add(baseline)
 

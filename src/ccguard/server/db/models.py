@@ -428,6 +428,20 @@ class MCPServerBaseline(SQLModel, table=True):
     status: str = Field(default="pending")  # pending | active
     accepted_at: datetime | None = None
     accepted_by: str | None = None
+    # Provenance ("откуда этот MCP взялся") — denormalized from McpServerEntry,
+    # same source-tracking shape SkillBaseline/AgentBaseline already carry.
+    #   scope:  managed = раскатано организацией | user = поставил себе сам |
+    #           project = лежит в репозитории | project_local = локально в проекте
+    #   origin: local | plugin (+ parent_plugin / source_marketplace when plugin)
+    # All nullable: a v0.1/v0.2 agent doesn't send them, and the UI then says
+    # "источник неизвестен" instead of guessing.
+    scope: str | None = Field(default=None, index=True)
+    origin: str = Field(default="local")
+    parent_plugin: str | None = None
+    source_marketplace: str | None = None
+    # Config file the entry was declared in — the audit answer to "где именно
+    # это прописано" when an admin needs to go and remove it.
+    source_path: str | None = None
 
 
 class HookBaseline(SQLModel, table=True):

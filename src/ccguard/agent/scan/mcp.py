@@ -83,7 +83,16 @@ def _classify_transport(spec: dict[str, Any]) -> str:
     return "stdio"
 
 
-def _entry_from_spec(name: str, spec: dict[str, Any], source: str) -> McpServerEntry | None:
+def _entry_from_spec(
+    name: str,
+    spec: dict[str, Any],
+    source: str,
+    *,
+    scope: str | None = None,
+    origin: str = "local",
+    parent_plugin: str | None = None,
+    source_marketplace: str | None = None,
+) -> McpServerEntry | None:
     if not isinstance(spec, dict):
         return None
     transport = _classify_transport(spec)
@@ -126,6 +135,10 @@ def _entry_from_spec(name: str, spec: dict[str, Any], source: str) -> McpServerE
         description_hash=description_hash,
         definition_hash=definition_hash,
         tools_hash=tools_h,
+        scope=scope,  # type: ignore[arg-type]
+        origin=origin,  # type: ignore[arg-type]
+        parent_plugin=parent_plugin,
+        source_marketplace=source_marketplace,
     )
 
 
@@ -140,14 +153,24 @@ def extract_from_settings(parsed_list: list[ParsedSettings]) -> list[McpServerEn
         if not isinstance(servers, dict):
             continue
         for name, spec in servers.items():
-            entry = _entry_from_spec(name, spec, p.source.path)
+            # p.source.scope уже вычислен парсером settings (user/project/
+            # project_local/managed) — это и есть ответ на «кто это поставил».
+            entry = _entry_from_spec(name, spec, p.source.path, scope=p.source.scope)
             if entry is not None and (entry.name, entry.source) not in seen:
                 out.append(entry)
                 seen.add((entry.name, entry.source))
     return out
 
 
-def _extract_from_mcp_json_file(path: Path, source_label: str | None = None) -> list[McpServerEntry]:
+def _extract_from_mcp_json_file(
+    path: Path,
+    source_label: str | None = None,
+    *,
+    scope: str | None = None,
+    origin: str = "local",
+    parent_plugin: str | None = None,
+    source_marketplace: str | None = None,
+) -> list[McpServerEntry]:
     """Разобрать произвольный JSON-файл вида {"mcpServers": {...}}."""
     if not path.exists():
         return []
@@ -163,20 +186,31 @@ def _extract_from_mcp_json_file(path: Path, source_label: str | None = None) -> 
     src = source_label or str(path)
     out: list[McpServerEntry] = []
     for name, spec in servers.items():
-        entry = _entry_from_spec(name, spec, src)
+        entry = _entry_from_spec(
+            name, spec, src,
+            scope=scope, origin=origin,
+            parent_plugin=parent_plugin, source_marketplace=source_marketplace,
+        )
         if entry:
             out.append(entry)
     return out
 
 
 def extract_from_mcp_json(project_dir: Path) -> list[McpServerEntry]:
-    """`.mcp.json` в корне проекта — альтернативный формат."""
-    return _extract_from_mcp_json_file(project_dir / ".mcp.json")
+    """`.mcp.json` в корне проекта — альтернативный формат.
+
+    scope=project: файл лежит в репозитории и приезжает к каждому, кто клонирует
+    проект — то есть решение командное, а не персональное.
+    """
+    return _extract_from_mcp_json_file(project_dir / ".mcp.json", scope="project")
 
 
 def extract_from_user_mcp_json(claude_home: Path) -> list[McpServerEntry]:
-    """Per-user `~/.claude/.mcp.json` — глобальный MCP-конфиг."""
-    return _extract_from_mcp_json_file(claude_home / ".mcp.json")
+    """Per-user `~/.claude/.mcp.json` — глобальный MCP-конфиг.
+
+    scope=user: персональный файл разработчика — «поставил себе сам».
+    """
+    return _extract_from_mcp_json_file(claude_home / ".mcp.json", scope="user")
 
 
 def extract_from_claude_json(claude_json_path: Path) -> list[McpServerEntry]:
@@ -197,10 +231,14 @@ def extract_from_claude_json(claude_json_path: Path) -> list[McpServerEntry]:
     out: list[McpServerEntry] = []
     src_base = str(claude_json_path)
 
+    # `~/.claude.json` — персональный файл разработчика в его домашней папке,
+    # он не коммитится и не раздаётся организацией. Значит и top-level, и
+    # per-project секции внутри него — это scope=user («поставил себе сам»),
+    # даже когда запись привязана к конкретному проекту.
     top = data.get("mcpServers") or {}
     if isinstance(top, dict):
         for name, spec in top.items():
-            entry = _entry_from_spec(name, spec, f"{src_base}:mcpServers")
+            entry = _entry_from_spec(name, spec, f"{src_base}:mcpServers", scope="user")
             if entry:
                 out.append(entry)
 
@@ -213,7 +251,54 @@ def extract_from_claude_json(claude_json_path: Path) -> list[McpServerEntry]:
             if not isinstance(servers, dict):
                 continue
             for name, spec in servers.items():
-                entry = _entry_from_spec(name, spec, f"{src_base}:projects[{proj_path}]")
+                entry = _entry_from_spec(
+                    name, spec, f"{src_base}:projects[{proj_path}]", scope="user"
+                )
                 if entry:
                     out.append(entry)
+    return out
+
+
+# Куда плагин может положить свой MCP-конфиг внутри папки установки. Проверяем
+# несколько кандидатов, потому что жёсткого стандарта нет: `.mcp.json` в корне
+# плагина (тот же формат, что и у проекта), его вариант под `.claude/`, и
+# манифест `.claude-plugin/plugin.json`, куда часть плагинов кладёт `mcpServers`
+# вместе с остальными метаданными. Файла нет — просто пусто, ничего не ломается.
+_PLUGIN_MCP_CANDIDATES: tuple[str, ...] = (
+    ".mcp.json",
+    ".claude/.mcp.json",
+    ".claude-plugin/plugin.json",
+)
+
+
+def extract_from_plugins(claude_home: Path) -> list[McpServerEntry]:
+    """MCP-серверы, приехавшие вместе с установленным плагином.
+
+    Привязка «артефакт → плагин → маркетплейс» делается ровно тем же способом,
+    что уже работает для skills и sub-agents: индекс установленных плагинов
+    (`~/.claude/plugins/installed_plugins.json`) даёт installPath каждого
+    плагина, а дальше внутри этой папки ищется MCP-конфиг. Это и есть ответ на
+    «откуда MCP тянется»: origin=plugin + имя плагина + маркетплейс.
+
+    Плагины ставятся в домашнюю папку разработчика, поэтому scope=user.
+    """
+    from ccguard.agent.scan.plugins import plugin_install_index
+
+    out: list[McpServerEntry] = []
+    seen: set[tuple[str, str]] = set()  # (name, plugin) — один плагин, одно имя
+    for install_path, plugin_name, marketplace in plugin_install_index(claude_home):
+        for rel in _PLUGIN_MCP_CANDIDATES:
+            entries = _extract_from_mcp_json_file(
+                install_path / rel,
+                source_label=f"plugin:{plugin_name}@{marketplace}:{rel}",
+                scope="user",
+                origin="plugin",
+                parent_plugin=plugin_name,
+                source_marketplace=marketplace,
+            )
+            for e in entries:
+                key = (e.name, plugin_name)
+                if key not in seen:
+                    seen.add(key)
+                    out.append(e)
     return out

@@ -1,0 +1,34 @@
+{# Бейдж происхождения MCP-сервера: «откуда он взялся».
+   Вход: scope (managed|user|project|project_local|None), plugin_label (строка
+   вида "plugin@marketplace" или пустое). Плагин показываем в приоритете — это
+   более конкретный ответ, чем область конфига. #}
+{% if plugin_label %}
+<span class="srcbadge s-plugin" title="Приехал вместе с установленным плагином {{ plugin_label }}">
+  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
+  {{ plugin_label }}
+</span>
+{% elif scope == 'managed' %}
+<span class="srcbadge s-managed" title="Раскатано централизованно организацией (managed-settings) — согласовано с ИБ">
+  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/></svg>
+  организация
+</span>
+{% elif scope == 'project' %}
+<span class="srcbadge s-project" title="Прописан в репозитории проекта — приезжает всей команде вместе с кодом">
+  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-7L10 5H5a2 2 0 0 0-2 2Z"/></svg>
+  из репозитория
+</span>
+{% elif scope == 'project_local' %}
+<span class="srcbadge s-user" title="Локальный конфиг проекта (settings.local.json) — не попадает в git, личная настройка">
+  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+  локально в проекте
+</span>
+{% elif scope == 'user' %}
+<span class="srcbadge s-user" title="Личный конфиг разработчика — поставил себе сам">
+  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+  поставил сам
+</span>
+{% else %}
+<span class="srcbadge s-unknown" title="Агент этой версии ещё не передаёт происхождение — обнови агент до v0.3+">
+  источник неизвестен
+</span>
+{% endif %}

@@ -131,6 +131,17 @@ _MCP_BASELINE_REVIEW_COLUMNS: tuple[tuple[str, str], ...] = (
     ("accepted_by", "ALTER TABLE mcpserverbaseline ADD COLUMN accepted_by TEXT"),
 )
 
+# Additive columns for MCPServerBaseline: provenance ("откуда MCP взялся").
+# Nullable / defaulted so rows written by pre-feature agents stay valid and
+# render as "источник неизвестен" rather than being mislabeled.
+_MCP_BASELINE_PROVENANCE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("scope", "ALTER TABLE mcpserverbaseline ADD COLUMN scope TEXT"),
+    ("origin", "ALTER TABLE mcpserverbaseline ADD COLUMN origin TEXT NOT NULL DEFAULT 'local'"),
+    ("parent_plugin", "ALTER TABLE mcpserverbaseline ADD COLUMN parent_plugin TEXT"),
+    ("source_marketplace", "ALTER TABLE mcpserverbaseline ADD COLUMN source_marketplace TEXT"),
+    ("source_path", "ALTER TABLE mcpserverbaseline ADD COLUMN source_path TEXT"),
+)
+
 # Composite UNIQUE for ThreatIndicator (ТЗ-05). Same idempotent pattern as the
 # baseline tables — one row per (indicator_type, value, source) so the same
 # value from two sources is two rows, but one source can't duplicate it.
@@ -263,6 +274,9 @@ def init_db(engine: Engine) -> None:
             if col_name not in mcp_baseline_cols:
                 conn.execute(text(ddl))
         for col_name, ddl in _MCP_BASELINE_REVIEW_COLUMNS:
+            if col_name not in mcp_baseline_cols:
+                conn.execute(text(ddl))
+        for col_name, ddl in _MCP_BASELINE_PROVENANCE_COLUMNS:
             if col_name not in mcp_baseline_cols:
                 conn.execute(text(ddl))
         # Additive ALTER for Technique.in_scope (ТЗ-06 coverage fix; table

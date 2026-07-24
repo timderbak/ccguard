@@ -55,6 +55,9 @@ def run_scan(claude_home: Path, project_dir: Path, machine_id: str, machine_labe
     mcp_servers.extend(scan_mcp.extract_from_mcp_json(project_dir))
     mcp_servers.extend(scan_mcp.extract_from_user_mcp_json(claude_home))
     mcp_servers.extend(scan_mcp.extract_from_claude_json(claude_home.parent / ".claude.json"))
+    # MCP, приехавшие с установленными плагинами — даёт привязку
+    # origin=plugin + parent_plugin + marketplace («откуда этот MCP тянется»).
+    mcp_servers.extend(scan_mcp.extract_from_plugins(claude_home))
 
     return InventoryReport(
         machine_id=machine_id,

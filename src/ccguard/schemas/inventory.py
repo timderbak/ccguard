@@ -61,6 +61,25 @@ class McpServerEntry(SchemaBase):
     # the static config. Captured from a config `tools` array if present, or an
     # opt-in HTTP tools/list probe. None when unavailable (diff then skipped).
     tools_hash: str | None = None
+    # Provenance (v0.3+) — "откуда этот MCP взялся", the transparency axis.
+    # Two INDEPENDENT axes, mirroring SkillEntry/AgentEntry's source tracking:
+    #
+    #   scope  — WHERE the config is declared, i.e. WHO put it there:
+    #     managed       = pushed centrally by the org (IT/security) — sanctioned;
+    #     user          = the developer's own personal config — self-installed;
+    #     project       = committed in the repo, ships with the code to the team;
+    #     project_local = local-only project override, never committed.
+    #   origin — WHETHER it came bundled with an installed plugin (plugin) or was
+    #     declared by hand (local); when `plugin`, parent_plugin +
+    #     source_marketplace name it, e.g. "claude-mem" @
+    #     "anthropics/claude-plugins-official".
+    #
+    # All optional: a v0.1/v0.2 agent omits them and the server renders the row
+    # as "источник неизвестен" rather than guessing.
+    scope: Literal["user", "project", "project_local", "managed"] | None = None
+    origin: Literal["local", "plugin"] = "local"
+    parent_plugin: str | None = None
+    source_marketplace: str | None = None
 
 
 class SkillEntry(SchemaBase):
