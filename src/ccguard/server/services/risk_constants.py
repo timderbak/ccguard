@@ -139,4 +139,9 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "egress.icmp_tunnel": 3.0,
     "exec.lolbin_download": 4.0,  # download-cradle LOLBin, rarely benign
     "exec.windows_lolbin": 4.0,  # LOLBAS proxy-exec / AWL-bypass
+    # Coverage-gap batch 3 — verified holes vs ATT&CK.
+    "impact.encrypt": 5.0,  # ransomware — mass file encryption (top-tier impact)
+    "persist.preload": 4.0,  # LD_PRELOAD / ld.so.preload hijack — stealthy, rarely benign
+    "cred.read.shell_history": 3.0,  # shell/REPL history harvest (creds pasted inline)
+    "defense.timestomp": 3.0,  # timestamp forgery — anti-forensics, same tier as clear_history
 }
