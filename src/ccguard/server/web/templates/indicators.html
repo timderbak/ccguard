@@ -104,11 +104,24 @@
   {% if pending %}
   <div class="cc-card p-5 mt-4" data-group="__pending">
     <h2 class="text-lg text-white mb-1">На согласовании <span class="text-slate-500 text-sm">({{ pending|length }})</span></h2>
-    <p class="text-xs text-slate-500 mb-3">предложенные сигнатуры ждут review (Путь-2)</p>
+    <p class="text-xs text-slate-500 mb-3">авто-собранные индикаторы (Путь-2) ждут review — до одобрения не раздаются агентам</p>
     {% for i in pending %}
-    <div class="indrow py-2 flex items-center justify-between">
-      <span class="cc-mono text-xs text-slate-300">{{ i.type }} · {{ i.value }}</span>
-      <span class="text-xs text-slate-500">{{ i.source }}</span>
+    <div class="indrow py-2 flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <span class="cc-mono text-xs text-slate-300">{{ i.type }} · {{ i.value }}</span>
+        <span class="text-xs text-slate-500 ml-2">{{ i.source }}{% if i.technique %} · {{ i.technique }}{% endif %}</span>
+        {% if i.description %}<p class="text-[11px] text-slate-500 mt-0.5 truncate">{{ i.description }}</p>{% endif %}
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <form method="POST" action="/admin/indicators/{{ i.id }}/approve">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <button class="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">Одобрить</button>
+        </form>
+        <form method="POST" action="/admin/indicators/{{ i.id }}/reject" onsubmit="return confirm('Отклонить индикатор?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+          <button class="text-xs px-3 py-1.5 bg-white text-red-600 border border-red-200 rounded-md hover:bg-red-50">Отклонить</button>
+        </form>
+      </div>
     </div>
     {% endfor %}
   </div>

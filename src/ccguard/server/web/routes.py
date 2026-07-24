@@ -647,7 +647,7 @@ def indicators_page(
     pending = [r for r in rows if r.status == "pending"]
 
     def _iv(r: object) -> dict:
-        return {"type": r.indicator_type, "value": r.value, "kind": r.value_kind,
+        return {"id": r.id, "type": r.indicator_type, "value": r.value, "kind": r.value_kind,
                 "source": r.source, "source_ref": r.source_ref, "technique": r.technique,
                 "tactic": r.tactic, "weight": r.weight, "status": r.status,
                 "description": r.description}
@@ -1390,6 +1390,43 @@ def proposed_signals_trigger_discovery(
     monitors = getattr(request.app.state, "discovery_monitors", None) or default_monitors()
     discovery_service.tick(session, drafter=drafter, monitors=list(monitors))
     return RedirectResponse(url="/admin/proposed-signals", status_code=303)
+
+
+@router.post("/admin/indicators/{row_id}/approve")
+def indicator_approve(
+    row_id: int,
+    request: Request,
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Promote a pending Path-2 indicator (e.g. an auto-collected IOC host) to
+    active — it ships to agents on the next policy sync."""
+    from ccguard.server.services import indicator_review_service as svc
+
+    try:
+        svc.approve(session, row_id, reviewed_by=user)
+    except svc.NotPending as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return RedirectResponse(url="/indicators", status_code=303)
+
+
+@router.post("/admin/indicators/{row_id}/reject")
+def indicator_reject(
+    row_id: int,
+    request: Request,
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Reject a pending Path-2 indicator — kept for provenance, never served."""
+    from ccguard.server.services import indicator_review_service as svc
+
+    try:
+        svc.reject(session, row_id, reviewed_by=user)
+    except svc.NotPending as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return RedirectResponse(url="/indicators", status_code=303)
 
 
 @router.post("/machines/{machine_id}/suppress")
