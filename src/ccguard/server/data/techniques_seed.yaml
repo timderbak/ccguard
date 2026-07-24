@@ -53,6 +53,30 @@ techniques:
     url: https://attack.mitre.org/techniques/T1552/005/
     source: attack-seed
     description: "IMDS endpoint abuse to harvest cloud credentials."
+  - technique_id: T1555
+    framework: attack
+    name: Credentials from Password Stores
+    tactic: credential-access
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1555/
+    source: attack-seed
+    description: "Adversaries search common password-storage locations (browsers, keychains, password managers) to harvest stored credentials."
+  - technique_id: T1555.003
+    framework: attack
+    name: Credentials from Web Browsers
+    tactic: credential-access
+    parent_technique: T1555
+    url: https://attack.mitre.org/techniques/T1555/003/
+    source: attack-seed
+    description: "Steal credentials/cookies/keys from browser stores (Chrome Login Data, Firefox key4.db & logins.json, Local State encryption key)."
+  - technique_id: T1555.005
+    framework: attack
+    name: Password Managers
+    tactic: credential-access
+    parent_technique: T1555
+    url: https://attack.mitre.org/techniques/T1555/005/
+    source: attack-seed
+    description: "Extract credentials from a password manager / OS credential vault (KeePass .kdbx, GNOME keyring, KWallet, macOS Keychain file, Windows Credential Manager)."
   - technique_id: T1005
     framework: attack
     name: Data from Local System

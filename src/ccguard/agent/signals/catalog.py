@@ -203,11 +203,40 @@ CATALOG: tuple[Signal, ...] = (
         "T1555.003",
         _p(
             r"(login\s+data|cookies\.sqlite|cookies\.binarycookies|formhistory\.sqlite"
-            # Chromium-family profile cookie / login stores (macOS/Linux paths).
-            r"|/(google/chrome|chromium|microsoft\s*edge|bravesoftware|vivaldi|opera\s*software)/"
-            r"[^/]+/(cookies|login\s*data|web\s*data)\b)"
+            # Firefox saved-password store: key4.db/key3.db is the NSS master key
+            # (unambiguous — no dev tool reads it) + logins.json is the encrypted
+            # blob; stealing Firefox creds needs the pair.
+            r"|key[34]\.db\b"
+            r"|(?:mozilla|firefox)[^\n]*/logins\.json"
+            # Chromium-family cookie/login/webdata stores AND ``Local State`` — the
+            # file holding the AES key that decrypts Chrome's Login Data/Cookies, so
+            # attackers grab it alongside Login Data. Separator ``[/-]`` covers both
+            # the Linux ``google-chrome`` dir and the macOS ``Google/Chrome`` path.
+            r"|/(google[/-]chrome|chromium|microsoft\s*edge|bravesoftware|vivaldi|opera\s*software)/"
+            r"(?:[^/\n]+/(cookies|login\s*data|web\s*data)|local\s*state)\b"
+            # Bulk-copy / archive of a whole browser profile — steal creds+cookies
+            # offline in one shot.
+            r"|\b(?:cp|rsync|tar|zip|7z|scp)\b[^\n]*"
+            r"(?:\.config/(?:google-chrome|chromium|bravesoftware)|\.mozilla/firefox"
+            r"|library/application\s*support/(?:google/chrome|firefox)))"
         ),
-        "Access to browser credential / cookie stores",
+        "Access to browser credential / cookie / key stores (incl. profile bulk-copy)",
+    ),
+    Signal(
+        "cred.read.password_manager",
+        "T1555.005",
+        _p(
+            # KeePass / KeePassXC database (.kdbx modern, .kdb legacy — also DB2
+            # keystores, which are themselves a credential store worth flagging).
+            r"(\.kdbx?\b"
+            # GNOME keyring / KDE KWallet vault files.
+            r"|\.local/share/keyrings/|login\.keyring\b|\bkdewallet\b|\.kwl\b"
+            # macOS Keychain FILE read/copy (the `security` CLI path is os_keychain).
+            r"|login\.keychain(?:-db)?\b"
+            # Windows Credential Manager enumeration.
+            r"|\bvaultcmd\b|\bcmdkey\s+/list\b|rundll32[^\n]*keymgr)"
+        ),
+        "Access to a password-manager / credential-vault store (KeePass / keyring / KWallet / Keychain file / Windows Credential Manager)",
     ),
     Signal(
         "cred.read.git",

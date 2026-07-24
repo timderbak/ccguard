@@ -51,6 +51,7 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     "cred.read.saas_token": 5.0,  # P2: SaaS/cloud-CLI/DB creds — top-tier
     "cred.read.secret_manager": 5.0,  # P2: password/secret-manager read
     "cred.read.os_keychain": 5.0,  # macOS Keychain / Linux keyring / pass
+    "cred.read.password_manager": 5.0,  # KeePass .kdbx / keyring / KWallet / Win Cred Mgr
     "cred.read.cloud_session": 5.0,  # P2: cloud/CI session tokens
     "discovery.cloud_enum": 2.0,  # P2: recon, noisier
     "discovery.account_enum": 2.0,  # P2: recon, noisier
