@@ -49,6 +49,7 @@ from sqlmodel import Session, select
 
 from ccguard.schemas import McpServerEntry
 from ccguard.server.db.models import FindingRecord, MCPServerBaseline
+from ccguard.server.services.hidden_unicode import scan_hidden_unicode
 from ccguard.server.services.mcp_change_classifier import (
     Corroborator,
     classify_definition_change,
@@ -63,6 +64,9 @@ RULE_TOOLS = "mcp.rug_pull.tools_changed"
 # semver bumped and nothing else). Emitted at info so it is transparent/auditable
 # WITHOUT adding warn/critical noise — the anti-false-positive split.
 RULE_UPDATE_EXPECTED = "mcp.update.expected"
+# Hidden/invisible Unicode in an MCP description — an injection hidden from human
+# review but read by the LLM. Deterministic, zero-false-positive → critical.
+RULE_HIDDEN_UNICODE = "mcp.hidden_unicode"
 
 SEVERITY_DESCRIPTION = "critical"
 SEVERITY_DEFINITION = "warn"  # cautious default; the classifier may raise/lower it
@@ -85,6 +89,43 @@ def _definition_text(entry: McpServerEntry) -> str:
     args_str = " ".join(entry.args or [])
     url_s = entry.url or ""
     return f"{cmd} {args_str} | {url_s}"
+
+
+def _hidden_unicode_finding(
+    machine_id: str, inventory_id: int | None, entry: McpServerEntry
+) -> FindingRecord | None:
+    """Emit a critical finding when the MCP description hides invisible/bidi/tag
+    Unicode. Deterministic and false-positive-free, so it fires even at FIRST
+    registration (the description is poison from day one)."""
+    result = scan_hidden_unicode(entry.description)
+    if not result.found:
+        return None
+    return _make_finding(
+        machine_id=machine_id,
+        inventory_id=inventory_id,
+        rule_id=RULE_HIDDEN_UNICODE,
+        severity="critical",
+        title=f"MCP '{entry.name}': скрытые Unicode-символы в описании",
+        description=(
+            f"Описание MCP-сервера '{entry.name}' содержит {result.summary()} — невидимые/"
+            "bidi/tag-символы, которые человек в ревью не видит, а LLM читает как инструкцию. "
+            "Классический приём сокрытия инъекции (Rules File Backdoor / GlassWorm)."
+        ),
+        source=entry.source,
+        recommendation=(
+            "Открой описание с показом невидимых символов (hex). Удали скрытые символы "
+            "или удали сервер — легитимному MCP они не нужны."
+        ),
+        matched_value=entry.name,
+        extra_payload={
+            "mcp_name": entry.name,
+            "hidden_count": result.count,
+            "hidden_categories": list(result.categories),
+            "hidden_samples": [
+                {"hex": h.hex, "name": h.name, "pos": h.position} for h in result.samples
+            ],
+        },
+    )
 
 
 # --- Helpers ---------------------------------------------------------------
@@ -199,6 +240,11 @@ def update_and_detect(
                     last_seen_at=now,
                 )
             )
+            # Scan-on-first-registration for hidden Unicode: a description poisoned
+            # from day one is caught here even though the baseline itself is silent.
+            hidden = _hidden_unicode_finding(machine_id, inventory_id, entry)
+            if hidden is not None:
+                findings.append(hidden)
             continue
 
         # Existing baseline — diff.
@@ -259,6 +305,10 @@ def update_and_detect(
                     },
                 )
             )
+            # A description CHANGED to one carrying hidden Unicode → flag it too.
+            hidden = _hidden_unicode_finding(machine_id, inventory_id, entry)
+            if hidden is not None:
+                findings.append(hidden)
 
         if def_changed:
             # Anti-false-positive: don't blanket-warn on ANY command/args/url

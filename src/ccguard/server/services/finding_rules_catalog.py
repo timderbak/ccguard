@@ -84,6 +84,10 @@ CATALOG: tuple[FindingRule, ...] = (
     FindingRule("mcp.update.expected", "info", "finding", "mcp_baseline_service",
                 "Изменение определения MCP, классифицированное как обычное обновление (bump версии "
                 "по пину) — зафиксировано для прозрачности, НЕ тревога (анти-фалз-позитив)."),
+    FindingRule("mcp.hidden_unicode", "critical", "finding", "mcp_baseline_service",
+                "Скрытые Unicode-символы (невидимые/bidi/tag) в описании MCP — инъекция, невидимая "
+                "человеку, но читаемая LLM (Rules File Backdoor / GlassWorm). Детерминированно, "
+                "срабатывает даже при первой регистрации."),
     FindingRule("hook.rug_pull.content", "block", "finding", "hook_baseline_service",
                 "Содержимое скрипта хука изменилось без правки settings.json — та же команда, новый payload."),
     FindingRule("hook.rug_pull.command", "warn", "finding", "hook_baseline_service",
