@@ -1429,6 +1429,24 @@ def indicator_reject(
     return RedirectResponse(url="/indicators", status_code=303)
 
 
+@router.post("/admin/indicators/trigger-ioc-feeds")
+def indicator_trigger_ioc_feeds(
+    request: Request,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Run the IOC host-feed sweep ON DEMAND, instead of waiting for the daily
+    scheduler. Deterministic (no LLM). Reuses the same feed set as the scheduled
+    sweep; each feed is isolation-safe, so an offline source is logged, not
+    fatal. Fetched hosts land as pending indicators for review below."""
+    from ccguard.server.services import ioc_feed_service
+
+    feeds = getattr(request.app.state, "ioc_feeds", None) or ioc_feed_service.default_feeds()
+    ioc_feed_service.run_ioc_feeds(session, feeds=list(feeds))
+    return RedirectResponse(url="/indicators", status_code=303)
+
+
 @router.post("/machines/{machine_id}/suppress")
 def machine_suppress_signal(
     machine_id: str,

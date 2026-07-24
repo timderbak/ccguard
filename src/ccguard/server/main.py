@@ -147,7 +147,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         shutdown_scheduler,
         start_scheduler,
     )
-    from ccguard.server.services import discovery_service
+    from ccguard.server.services import discovery_service, ioc_feed_service
     from ccguard.server.services.alert_emitter import emit_new_alerts
     from ccguard.server.services.anomaly_service import tick as anomaly_tick
     from ccguard.server.services.chain_engine import tick as chain_tick
@@ -166,6 +166,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Same monitor set reachable by the manual "run discovery now" admin trigger
     # (routes.py), so the on-demand sweep and the scheduled sweep never drift.
     app.state.discovery_monitors = list(_DISCOVERY_MONITORS)
+
+    _IOC_FEEDS = tuple(ioc_feed_service.default_feeds())
+    # Same feed set reachable by the manual "run IOC feeds now" admin trigger.
+    app.state.ioc_feeds = list(_IOC_FEEDS)
 
     if is_disabled():
         logger.info("anomaly scheduler disabled via CCGUARD_DISABLE_SCHEDULER")
@@ -301,6 +305,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                                 disc_summary["deduped"],
                                 disc_summary["drafter_errors"],
                             )
+                # IOC host-feed sweep — once-per-day, gated by
+                # ioc_feed.last_run_at. Deterministic (no LLM), so it runs
+                # regardless of the drafter: fetched hosts land as pending
+                # indicators for admin review, never auto-live.
+                from datetime import UTC as _IUTC
+                from datetime import datetime as _idt
+                with _SessionTick(engine) as s3:
+                    if ioc_feed_service.should_run(s3, now=_idt.now(_IUTC)):
+                        ioc_summary = ioc_feed_service.run_ioc_feeds(
+                            s3, feeds=list(_IOC_FEEDS)
+                        )
+                        logger.info(
+                            "ioc_feed tick: inserted=%d deduped=%d invalid=%d feed_errors=%d",
+                            ioc_summary["inserted"],
+                            ioc_summary["deduped"],
+                            ioc_summary["invalid"],
+                            len(ioc_summary["feed_errors"]),
+                        )
             except Exception:  # noqa: BLE001 — scheduler job must not crash the loop
                 logger.exception("scheduled tick raised")
 

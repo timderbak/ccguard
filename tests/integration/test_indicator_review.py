@@ -205,3 +205,54 @@ def test_web_approve_requires_auth(monkeypatch, tmp_path):
         assert r.status_code in (307, 401, 403)
     finally:
         client.__exit__(None, None, None)
+
+
+# --- manual "run IOC feeds now" trigger --------------------------------------
+
+
+class _StubFeed:
+    name = "stub"
+
+    def __init__(self, iocs):
+        self._iocs = iocs
+
+    def poll(self):
+        return list(self._iocs)
+
+
+def test_trigger_ioc_feeds_inserts_pending(monkeypatch, tmp_path):
+    from ccguard.server.services.ioc_feed_service import HostIOC
+
+    client, sid = _login(monkeypatch, tmp_path)
+    try:
+        ioc = HostIOC(
+            value="198.51.100.23", source="stub", source_ref="t",
+            technique="T1071.001", tactic="command-and-control",
+            weight=4.0, description="stub C2",
+        )
+        client.app.state.ioc_feeds = [_StubFeed([ioc])]
+        token = _csrf(client, sid)
+        r = client.post(
+            "/admin/indicators/trigger-ioc-feeds",
+            data={"csrf_token": token},
+            cookies={"ccg_session": sid},
+            follow_redirects=False,
+        )
+        assert r.status_code in (200, 303)
+        with Session(client.app.state.engine) as s:
+            row = s.exec(
+                select(ThreatIndicator).where(ThreatIndicator.value == "198.51.100.23")
+            ).first()
+            assert row is not None
+            assert row.status == "pending"  # trigger collects, never auto-lives
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_trigger_ioc_feeds_requires_auth(monkeypatch, tmp_path):
+    client, _ = _login(monkeypatch, tmp_path)
+    try:
+        r = client.post("/admin/indicators/trigger-ioc-feeds", follow_redirects=False)
+        assert r.status_code in (307, 401, 403)
+    finally:
+        client.__exit__(None, None, None)
