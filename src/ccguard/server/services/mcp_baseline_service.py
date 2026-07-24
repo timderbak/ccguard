@@ -238,6 +238,7 @@ def update_and_detect(
                     definition_preview=_definition_text(entry),
                     first_seen_at=now,
                     last_seen_at=now,
+                    status="pending",
                 )
             )
             # Scan-on-first-registration for hidden Unicode: a description poisoned
@@ -445,6 +446,8 @@ def accept_baseline(
     session: Session,
     machine_id: str,
     mcp_name: str,
+    *,
+    reviewed_by: str | None = None,
 ) -> MCPServerBaseline | None:
     """Bump baseline hashes to the latest snapshot's hashes for this MCP.
 
@@ -452,6 +455,11 @@ def accept_baseline(
     legitimate, so we replace the stored hashes with the most recent
     inventory snapshot's hashes. Returns the updated row, or None if no
     baseline exists for this (machine, mcp) pair.
+
+    ``reviewed_by`` is optional (kept back-compat for existing callers that
+    don't track identity) — when given, also stamps the fleet review state
+    (pending -> active, accepted_by/accepted_at): accepting a drifted
+    definition IS a review of the resulting state.
 
     Implementation: pull the latest :class:`InventorySnapshot`, find the
     matching MCP entry, copy its hashes into the baseline row.
@@ -488,7 +496,70 @@ def accept_baseline(
             if isinstance(desc, str):
                 baseline.description_preview = _preview(desc)
             baseline.last_seen_at = datetime.now(UTC)
+            if reviewed_by is not None:
+                baseline.status = "active"
+                baseline.accepted_by = reviewed_by
+                baseline.accepted_at = datetime.now(UTC)
             session.add(baseline)
             session.commit()
             return baseline
     return None
+
+
+def mark_reviewed(
+    session: Session,
+    machine_id: str,
+    mcp_name: str,
+    *,
+    reviewed_by: str,
+) -> MCPServerBaseline | None:
+    """Mark one machine's MCP server as reviewed (pending -> active), with NO
+    hash change — distinct from :func:`accept_baseline`, which re-syncs hashes
+    after a drift finding. Used by the fleet inventory page's per-row "Пометить
+    проверенным" action: an admin looked at an MCP server that has no pending
+    drift and vouches for it as-is. Returns the updated row, or None if no
+    baseline exists for this (machine, mcp) pair.
+    """
+    baseline = session.exec(
+        select(MCPServerBaseline)
+        .where(MCPServerBaseline.machine_id == machine_id)
+        .where(MCPServerBaseline.mcp_name == mcp_name)
+    ).one_or_none()
+    if baseline is None:
+        return None
+    baseline.status = "active"
+    baseline.accepted_by = reviewed_by
+    baseline.accepted_at = datetime.now(UTC)
+    session.add(baseline)
+    session.commit()
+    session.refresh(baseline)
+    return baseline
+
+
+def mark_reviewed_fleet_wide(
+    session: Session,
+    mcp_name: str,
+    *,
+    reviewed_by: str,
+) -> int:
+    """Mark every PENDING instance of ``mcp_name`` across the whole fleet as
+    reviewed in one action. Returns the number of rows flipped (already-active
+    rows are left untouched — their existing accepted_by/accepted_at stand).
+    Used by the fleet inventory page's bulk action: reviewing one machine at a
+    time doesn't scale once the same MCP server sits on dozens of hosts.
+    """
+    rows = list(
+        session.exec(
+            select(MCPServerBaseline)
+            .where(MCPServerBaseline.mcp_name == mcp_name)
+            .where(MCPServerBaseline.status == "pending")
+        )
+    )
+    now = datetime.now(UTC)
+    for row in rows:
+        row.status = "active"
+        row.accepted_by = reviewed_by
+        row.accepted_at = now
+        session.add(row)
+    session.commit()
+    return len(rows)

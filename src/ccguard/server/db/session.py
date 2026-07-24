@@ -121,6 +121,16 @@ _MCP_BASELINE_ADDITIVE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("definition_preview", "ALTER TABLE mcpserverbaseline ADD COLUMN definition_preview TEXT"),
 )
 
+# Additive columns for MCPServerBaseline: fleet review state (pending/active +
+# who/when). ``status`` defaults every pre-existing row to 'pending' too — they
+# were never reviewed under the old schema either, so that default is honest,
+# not a silent promotion to 'active'. Same PRAGMA-guarded ADD COLUMN pattern.
+_MCP_BASELINE_REVIEW_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("status", "ALTER TABLE mcpserverbaseline ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"),
+    ("accepted_at", "ALTER TABLE mcpserverbaseline ADD COLUMN accepted_at TIMESTAMP"),
+    ("accepted_by", "ALTER TABLE mcpserverbaseline ADD COLUMN accepted_by TEXT"),
+)
+
 # Composite UNIQUE for ThreatIndicator (ТЗ-05). Same idempotent pattern as the
 # baseline tables — one row per (indicator_type, value, source) so the same
 # value from two sources is two rows, but one source can't duplicate it.
@@ -250,6 +260,9 @@ def init_db(engine: Engine) -> None:
             row[1] for row in conn.execute(text("PRAGMA table_info(mcpserverbaseline)"))
         }
         for col_name, ddl in _MCP_BASELINE_ADDITIVE_COLUMNS:
+            if col_name not in mcp_baseline_cols:
+                conn.execute(text(ddl))
+        for col_name, ddl in _MCP_BASELINE_REVIEW_COLUMNS:
             if col_name not in mcp_baseline_cols:
                 conn.execute(text(ddl))
         # Additive ALTER for Technique.in_scope (ТЗ-06 coverage fix; table

@@ -481,3 +481,141 @@ def test_accept_baseline_also_clears_tools_hash() -> None:
         findings = svc.update_and_detect(s, "m1", [new_entry])
         s.commit()
         assert findings == []
+
+
+# --- fleet review state (pending/active) ------------------------------------
+
+
+def test_new_baseline_starts_pending():
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("notion")])
+        s.commit()
+        row = s.exec(select(MCPServerBaseline)).one()
+        assert row.status == "pending"
+        assert row.accepted_by is None
+        assert row.accepted_at is None
+
+
+def test_mark_reviewed_flips_to_active():
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("notion")])
+        s.commit()
+        updated = svc.mark_reviewed(s, "m1", "notion", reviewed_by="alice")
+        assert updated is not None
+        assert updated.status == "active"
+        assert updated.accepted_by == "alice"
+        assert updated.accepted_at is not None
+
+
+def test_mark_reviewed_missing_baseline_returns_none():
+    engine = _engine()
+    with Session(engine) as s:
+        assert svc.mark_reviewed(s, "m1", "ghost", reviewed_by="alice") is None
+
+
+def test_mark_reviewed_does_not_touch_hashes():
+    # mark_reviewed is a pure status flip -- distinct from accept_baseline,
+    # which re-syncs hashes after a drift finding.
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("notion", tools_hash="t1")])
+        s.commit()
+        before = s.exec(select(MCPServerBaseline)).one()
+        before_hash = before.tools_hash
+        svc.mark_reviewed(s, "m1", "notion", reviewed_by="alice")
+        after = s.exec(select(MCPServerBaseline)).one()
+        assert after.tools_hash == before_hash
+
+
+def test_accept_baseline_without_reviewed_by_leaves_status_pending():
+    # Back-compat: existing callers that don't pass reviewed_by keep the old
+    # behavior exactly -- no status stamp.
+    from datetime import UTC, datetime
+
+    from ccguard.schemas import InventoryReport
+    from ccguard.server.db.models import InventorySnapshot
+
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("notion", tools_hash="v1")])
+        s.commit()
+
+    new_entry = _mcp("notion", tools_hash="v2")
+    inv = InventoryReport(
+        machine_id="m1", timestamp=datetime.now(UTC), agent_version="0.2",
+        os="linux", mcp_servers=[new_entry],
+    )
+    with Session(engine) as s:
+        s.add(InventorySnapshot(machine_id="m1", payload_json=inv.model_dump_json()))
+        s.commit()
+
+    with Session(engine) as s:
+        updated = svc.accept_baseline(s, "m1", "notion")
+        assert updated is not None
+        assert updated.status == "pending"
+        assert updated.accepted_by is None
+
+
+def test_accept_baseline_with_reviewed_by_marks_active():
+    from datetime import UTC, datetime
+
+    from ccguard.schemas import InventoryReport
+    from ccguard.server.db.models import InventorySnapshot
+
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("notion", tools_hash="v1")])
+        s.commit()
+
+    new_entry = _mcp("notion", tools_hash="v2")
+    inv = InventoryReport(
+        machine_id="m1", timestamp=datetime.now(UTC), agent_version="0.2",
+        os="linux", mcp_servers=[new_entry],
+    )
+    with Session(engine) as s:
+        s.add(InventorySnapshot(machine_id="m1", payload_json=inv.model_dump_json()))
+        s.commit()
+
+    with Session(engine) as s:
+        updated = svc.accept_baseline(s, "m1", "notion", reviewed_by="bob")
+        assert updated is not None
+        assert updated.status == "active"
+        assert updated.accepted_by == "bob"
+        assert updated.accepted_at is not None
+
+
+def test_mark_reviewed_fleet_wide_flips_only_pending():
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("notion")])
+        svc.update_and_detect(s, "m2", [_mcp("notion")])
+        svc.update_and_detect(s, "m3", [_mcp("notion")])
+        s.commit()
+        # pre-review one machine manually so it's already active
+        svc.mark_reviewed(s, "m2", "notion", reviewed_by="alice")
+
+        flipped = svc.mark_reviewed_fleet_wide(s, "notion", reviewed_by="bob")
+        assert flipped == 2  # m1 + m3 were pending; m2 was already active
+
+        rows = {r.machine_id: r for r in s.exec(select(MCPServerBaseline)).all()}
+        assert rows["m1"].status == "active"
+        assert rows["m1"].accepted_by == "bob"
+        assert rows["m3"].status == "active"
+        assert rows["m3"].accepted_by == "bob"
+        # m2 keeps its original reviewer -- not overwritten
+        assert rows["m2"].accepted_by == "alice"
+
+
+def test_mark_reviewed_fleet_wide_scoped_to_name():
+    engine = _engine()
+    with Session(engine) as s:
+        svc.update_and_detect(s, "m1", [_mcp("notion")])
+        svc.update_and_detect(s, "m1", [_mcp("airtable")])
+        s.commit()
+        flipped = svc.mark_reviewed_fleet_wide(s, "notion", reviewed_by="alice")
+        assert flipped == 1
+        rows = {r.mcp_name: r for r in s.exec(select(MCPServerBaseline)).all()}
+        assert rows["notion"].status == "active"
+        assert rows["airtable"].status == "pending"  # untouched -- different name

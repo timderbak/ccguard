@@ -1197,6 +1197,83 @@ def skills_inventory_drill_partial(
     )
 
 
+@router.get("/admin/mcp-inventory", response_class=HTMLResponse)
+def mcp_inventory_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Единая база MCP-серверов по всему флоту: список, хеши, расхождения
+    между хостами (supply-chain / tamper-сигнал), статус ревью
+    (проверено/не проверено)."""
+    from ccguard.server.services.mcp_fleet_service import aggregate_mcp_servers
+
+    rows = aggregate_mcp_servers(session)
+    return templates.TemplateResponse(
+        request,
+        "mcp_inventory.html",
+        {
+            "user": user,
+            "rows": rows,
+            "total": len(rows),
+            "divergent_count": sum(1 for r in rows if r.is_divergent),
+            "unreviewed_count": sum(1 for r in rows if not r.fully_reviewed),
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+@router.get("/_partials/mcp-inventory/drill", response_class=HTMLResponse)
+def mcp_inventory_drill_partial(
+    request: Request,
+    name: str,
+    _user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """HTMX drill-down: по-машинные хеши + статус ревью для одного имени MCP."""
+    from ccguard.server.services.mcp_fleet_service import machines_for_mcp
+
+    rows = machines_for_mcp(session, name)
+    return templates.TemplateResponse(
+        request,
+        "components/_mcp_fleet_drill.html",
+        {"rows": rows, "name": name, "csrf_token": _csrf_for(request)},
+    )
+
+
+@router.post("/admin/mcp-inventory/review")
+def mcp_inventory_review(
+    request: Request,
+    machine_id: str = Form(...),
+    mcp_name: str = Form(...),
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Пометить один экземпляр MCP-сервера (на одной машине) проверенным."""
+    from ccguard.server.services import mcp_baseline_service
+
+    user_id = _resolve_user_id(session, sid)
+    mcp_baseline_service.mark_reviewed(session, machine_id, mcp_name, reviewed_by=user_id)
+    return RedirectResponse(url="/admin/mcp-inventory", status_code=303)
+
+
+@router.post("/admin/mcp-inventory/review-all")
+def mcp_inventory_review_all(
+    request: Request,
+    mcp_name: str = Form(...),
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Пометить ВСЕ непроверенные экземпляры этого MCP по всему флоту."""
+    from ccguard.server.services import mcp_baseline_service
+
+    user_id = _resolve_user_id(session, sid)
+    mcp_baseline_service.mark_reviewed_fleet_wide(session, mcp_name, reviewed_by=user_id)
+    return RedirectResponse(url="/admin/mcp-inventory", status_code=303)
+
+
 @router.get("/admin/proposed-signals", response_class=HTMLResponse)
 def proposed_signals_page(
     request: Request,
@@ -1490,7 +1567,7 @@ def machine_accept_mcp_baseline(
     machine_id: str,
     request: Request,
     mcp_name: str = Form(...),
-    _user: str = Depends(require_session),
+    sid: str = Depends(require_session),
     _csrf: None = Depends(require_csrf),
     session: Session = Depends(get_session),
 ) -> RedirectResponse:
@@ -1499,10 +1576,12 @@ def machine_accept_mcp_baseline(
     Используется когда админ подтвердил, что изменение description/definition
     легитимное (например, плагин действительно выпустил новый релиз и описание
     обновили). После accept последующий sync с тем же содержимым не будет
-    вызывать новое finding.
+    вызывать новое finding. Также помечает MCP как проверенный (fleet review
+    state), т.к. принятие изменения — это и есть ревью итогового состояния.
     """
     from ccguard.server.services import mcp_baseline_service
-    mcp_baseline_service.accept_baseline(session, machine_id, mcp_name)
+    user_id = _resolve_user_id(session, sid)
+    mcp_baseline_service.accept_baseline(session, machine_id, mcp_name, reviewed_by=user_id)
     return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
 
 

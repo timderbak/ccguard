@@ -421,6 +421,13 @@ class MCPServerBaseline(SQLModel, table=True):
     tools_hash: str | None = None
     first_seen_at: datetime = Field(default_factory=_utcnow)
     last_seen_at: datetime = Field(default_factory=_utcnow)
+    # Fleet review state (проверено/не проверено): every MCP starts unreviewed,
+    # mirroring the Hook/Skill/AgentBaseline pending->active pattern. Unlike
+    # those three, MCP has no missing/removed state -- disappearance stays
+    # silent for v0.2 (see module docstring in mcp_baseline_service).
+    status: str = Field(default="pending")  # pending | active
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
 
 
 class HookBaseline(SQLModel, table=True):
