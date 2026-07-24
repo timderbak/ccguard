@@ -197,6 +197,42 @@ techniques:
     url: https://attack.mitre.org/techniques/T1562/
     source: attack-seed
     description: "Disable or tamper with security controls/monitoring."
+  # ----- command-and-control / impact: referenced by suspicious_host indicators
+  # (exfil sinks, tunnels, mining pools) + the abuse.ch IOC feed. Present so
+  # those indicators attribute to a technique on the coverage map instead of
+  # logging "unknown technique".
+  - technique_id: T1071
+    framework: attack
+    name: Application Layer Protocol
+    tactic: command-and-control
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1071/
+    source: attack-seed
+    description: "C2 over a standard application-layer protocol (blends with normal traffic)."
+  - technique_id: T1071.001
+    framework: attack
+    name: "Application Layer Protocol: Web Protocols"
+    tactic: command-and-control
+    parent_technique: T1071
+    url: https://attack.mitre.org/techniques/T1071/001/
+    source: attack-seed
+    description: "C2 / exfil over HTTP(S) — webhook-capture sinks, botnet C2 endpoints."
+  - technique_id: T1572
+    framework: attack
+    name: Protocol Tunneling
+    tactic: command-and-control
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1572/
+    source: attack-seed
+    description: "Tunnel traffic (ngrok / cloudflared / ssh -R) to relay remote access or exfil."
+  - technique_id: T1496
+    framework: attack
+    name: Resource Hijacking
+    tactic: impact
+    parent_technique: null
+    url: https://attack.mitre.org/techniques/T1496/
+    source: attack-seed
+    description: "Hijack host resources — e.g. connecting to a cryptomining pool."
 
   # ===== MITRE ATLAS (framework=atlas) ======================================
   # ----- in-scope: ccguard's domain (IPI, supply chain, plugin compromise) --
