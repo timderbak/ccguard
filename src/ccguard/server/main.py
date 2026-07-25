@@ -12,7 +12,17 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from ccguard.server.api import audit, findings, health, heartbeat, inventory, machines, policy, scan
+from ccguard.server.api import (
+    audit,
+    deploy,
+    findings,
+    health,
+    heartbeat,
+    inventory,
+    machines,
+    policy,
+    scan,
+)
 from ccguard.server.config import ServerConfig
 from ccguard.server.db.session import init_db, make_engine
 from ccguard.server.policy_loader import PolicyLoader
@@ -425,6 +435,7 @@ def create_app() -> FastAPI:
     app.include_router(audit.router)
     app.include_router(heartbeat.router)
     app.include_router(scan.router)
+    app.include_router(deploy.router)
     app.include_router(web_router)
     # Self-hosted UI assets (Tailwind build, htmx, fonts) — no runtime CDN, so
     # the console renders fully in an air-gapped / on-prem install.

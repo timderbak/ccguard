@@ -1353,6 +1353,55 @@ def canary_delete(
     return RedirectResponse(url="/admin/canaries", status_code=303)
 
 
+@router.get("/admin/deploy", response_class=HTMLResponse)
+def deploy_page(
+    request: Request,
+    platform: str = "linux",
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Готовый конфиг для массовой раскатки через домен / образ / Ansible."""
+    from ccguard.server.services import deploy_config_service
+
+    if platform not in deploy_config_service.SUPPORTED_PLATFORMS:
+        platform = "linux"
+    bundle = deploy_config_service.build_bundle(
+        session, platform=platform, fallback_url=str(request.base_url),
+    )
+    return templates.TemplateResponse(
+        request,
+        "deploy.html",
+        {
+            "user": user,
+            "b": bundle,
+            "platform": platform,
+            "platforms": deploy_config_service.SUPPORTED_PLATFORMS,
+            # Машины, чей отпечаток хуков не совпал с раскатанным конфигом.
+            # Проверка почти бесплатная: отпечаток уже приходит с сигналом.
+            "drift": deploy_config_service.config_drift(session, platform=platform),
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+@router.post("/admin/deploy/server-url")
+def deploy_set_server_url(
+    request: Request,
+    server_url: str = Form(...),
+    platform: str = Form("linux"),
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Задать публичный адрес сервера, который попадёт в раскатанный конфиг."""
+    from ccguard.server.services import deploy_config_service, settings_service
+
+    settings_service.set_setting(
+        session, deploy_config_service.SERVER_URL_KEY, server_url.strip(),
+    )
+    return RedirectResponse(url=f"/admin/deploy?platform={platform}", status_code=303)
+
+
 @router.get("/admin/protection", response_class=HTMLResponse)
 def protection_page(
     request: Request,
