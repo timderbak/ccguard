@@ -201,6 +201,10 @@ def overview_page(
     pending_feeds = len(
         session.exec(select(ProposedSignal.id).where(ProposedSignal.status == "pending")).all()
     )
+    # Личность агента: на скольких машинах агент работает БЕЗ подтверждений
+    # человеком. Первый вопрос руководителя ИБ, поэтому место — на главной.
+    from ccguard.server.services.identity_service import fleet_permission_summary
+    identity = fleet_permission_summary(session)
     return templates.TemplateResponse(
         request,
         "overview.html",
@@ -215,6 +219,7 @@ def overview_page(
             "open_threats": open_threats,
             "active_threats": active_threats,
             "pending_feeds": pending_feeds,
+            "identity": identity,
             "csrf_token": _csrf_for(request),
         },
     )

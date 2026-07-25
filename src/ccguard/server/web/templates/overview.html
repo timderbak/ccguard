@@ -84,6 +84,38 @@
             <div class="text-xs text-slate-400">фида на согласовании</div>
         </div>
     </div>
+
+    {# Личность агента: на скольких машинах агент действует без подтверждений
+       человеком. Показываем только когда такие машины есть — нулевая плитка
+       занимала бы место и приучала бы её игнорировать. #}
+    {% if identity is defined and identity.unattended_count > 0 %}
+    <div class="cc-card-2 p-4 mt-4" data-testid="identity-unattended"
+         style="border:1px solid #f59e0b47">
+        <div class="flex items-center gap-3 flex-wrap">
+            <span class="cc-num text-2xl" style="color:#fbbf24">{{ identity.unattended_count }}</span>
+            <div class="min-w-0">
+                <div class="text-sm text-slate-200">
+                    {% if identity.unattended_count == 1 %}машина работает{% else %}машин работают{% endif %}
+                    без подтверждений человеком
+                </div>
+                <div class="text-xs text-slate-500 mt-0.5">
+                    режим <span class="cc-mono">bypassPermissions</span> /
+                    <span class="cc-mono">dontAsk</span> — агент выполняет действия,
+                    не спрашивая. Для CI это норма, на рабочей машине — повод проверить.
+                </div>
+            </div>
+            <a href="/audit" class="ml-auto text-xs text-amber-300 hover:underline whitespace-nowrap">разобрать →</a>
+        </div>
+        <div class="mt-2.5 flex flex-wrap gap-1.5">
+            {% for m in identity.unattended_machines[:8] %}
+            <a href="/machines/{{ m }}" class="cc-mono text-[11px] px-2 py-0.5 rounded border border-amber-400/30 text-amber-200/90 hover:bg-amber-500/10">{{ m }}</a>
+            {% endfor %}
+            {% if identity.unattended_machines|length > 8 %}
+            <span class="cc-mono text-[11px] text-slate-500">+{{ identity.unattended_machines|length - 8 }}</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 {% if active_threats %}

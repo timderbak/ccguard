@@ -165,6 +165,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services.chain_engine import tick as chain_tick
     from ccguard.server.services.drift_service import tick as drift_tick
     from ccguard.server.services.fleet_campaign_service import tick as fleet_campaign_tick
+    from ccguard.server.services.identity_service import tick as identity_tick
     from ccguard.server.services.risk_service import tick as risk_tick
     from ccguard.server.services.sensor_health_service import tick as sensor_health_tick
     from ccguard.server.services.sequence_service import tick as sequence_tick
@@ -213,6 +214,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     slow_chain_summary = slow_chain_tick(s)
                     drift_summary = drift_tick(s)
                     sensor_summary = sensor_health_tick(s)
+                    # Опасные действия, выполненные агентом БЕЗ подтверждений
+                    # человеком (permission_mode = bypassPermissions/dontAsk).
+                    identity_summary = identity_tick(s)
                     # The moat correlator runs LAST so it sees every trigger /
                     # ioa.* finding the other engines just emitted this tick.
                     ai_escalation_summary = ai_escalation_tick(s)
@@ -271,6 +275,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     sensor_summary["machines_evaluated"],
                     sensor_summary["findings_emitted"],
                     len(sensor_summary["errors"]),
+                )
+                logger.info(
+                    "identity tick: machines=%d findings=%d errors=%d",
+                    identity_summary["machines_evaluated"],
+                    identity_summary["findings_emitted"],
+                    len(identity_summary["errors"]),
                 )
                 logger.info(
                     "ai_escalation tick: machines=%d findings=%d errors=%d",

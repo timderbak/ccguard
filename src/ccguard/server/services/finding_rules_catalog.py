@@ -73,6 +73,10 @@ CATALOG: tuple[FindingRule, ...] = (
                 "МОАТ: AI-триггер (rug-pull/drift/PI) → последующая endpoint-эскалация на машине."),
     FindingRule("ioa.fleet_campaign", "critical", "finding", "fleet_campaign_service",
                 "Один скомпрометированный компонент на ≥N машинах флота — орг-уровневая кампания."),
+    FindingRule("identity.unattended_risk", "warn", "finding", "identity_service",
+                "Опасные действия выполнены в режиме БЕЗ подтверждений человеком "
+                "(permission_mode = bypassPermissions/dontAsk). Сам режим — не находка "
+                "(норма для CI); срабатывает только на совпадении «без надзора + опасное действие»."),
     # --- Rug-pull / TOFU baseline -----------------------------------------
     FindingRule("mcp.rug_pull.description_changed", "critical", "finding", "mcp_baseline_service",
                 "Описание MCP изменилось после первой регистрации (описание идёт в LLM как инструкция)."),
