@@ -61,6 +61,11 @@ detectors:
     kind: correlation
     rule_ids: ioa.toxic_flow
     description: "sequence_service.detect_toxic_flow — untrusted/external content (content.read.external) directly followed by a WEAPONIZED sink (agent-config self-tamper / persistence / destruction / suspicious-host exfil) carried out with the agent's own authority. The confused-deputy flow that needs no malware; catches the external→sink-direct case that exfil_sequence (needs a credential read) and staging_chain (needs a staging write) miss."
+  - detector_key: memory_baseline
+    name: Memory / instruction drift (TOFU)
+    kind: correlation
+    rule_ids: memory.new,memory.external,memory.drift,memory.removed
+    description: "memory_baseline_service.update_and_detect — trust-on-first-use over CLAUDE.md at every level and its @import chain. Injected standing instructions ('before any command, first …') execute with the agent's own authority because to the agent they ARE its memory, not input to re-check. Catches a new/changed instruction file, and separately an instruction pulled from OUTSIDE the repo (external @import / ancestor CLAUDE.md) that no code review would see."
 
 # detector_key → technique bindings. framework duplicated for query convenience.
 mappings:
@@ -186,5 +191,17 @@ mappings:
   - detector_key: toxic_flow
     technique_id: T1567
     framework: attack
+    control_type: DETECT
+    relevance: secondary
+  # memory_baseline: closes ASI06 (Memory & Context Poisoning) — previously an
+  # HONEST gap with no detector. TOFU over CLAUDE.md + @import chain.
+  - detector_key: memory_baseline
+    technique_id: ASI06
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: memory_baseline
+    technique_id: AML.T0051
+    framework: atlas
     control_type: DETECT
     relevance: secondary

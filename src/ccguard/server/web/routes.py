@@ -975,6 +975,56 @@ def machine_detail(
         AgentBaseline,
     )
 
+    # Память/инструкции (ASI06). Слот здесь — путь файла, а не (name, origin,
+    # plugin), поэтому свой билдер, а не общий _build_drift_cards.
+    from ccguard.server.db.models import MemoryBaseline
+
+    pending_memory_count = int(
+        session.exec(
+            select(_hbf.count(MemoryBaseline.id)).where(
+                MemoryBaseline.machine_id == machine_id,
+                MemoryBaseline.status == "pending",
+            )
+        ).one() or 0
+    )
+
+    def _build_memory_cards() -> list[dict]:
+        rows = list(session.exec(
+            select(FindingRecord)
+            .where(
+                FindingRecord.machine_id == machine_id,
+                FindingRecord.rule_id.in_(  # type: ignore[attr-defined]
+                    ["memory.new", "memory.external", "memory.drift", "memory.removed"]
+                ),
+            )
+            .order_by(FindingRecord.discovered_at.desc())  # type: ignore[attr-defined]
+            .limit(30)
+        ))
+        out: list[dict] = []
+        for fr in rows:
+            try:
+                p = json.loads(fr.payload_json) if fr.payload_json else {}
+            except (ValueError, TypeError):
+                p = {}
+            if not isinstance(p, dict):
+                p = {}
+            bl = session.exec(
+                select(MemoryBaseline).where(
+                    MemoryBaseline.machine_id == machine_id,
+                    MemoryBaseline.path == (p.get("path") or ""),
+                )
+            ).first()
+            out.append({
+                "title": p.get("title", fr.rule_id),
+                "description": p.get("description", ""),
+                "severity": fr.severity,
+                "payload": p,
+                "baseline_id": bl.id if bl is not None else None,
+            })
+        return out
+
+    memory_drift_cards = _build_memory_cards()
+
     # Status map for badges in the existing skills/agents blocks. Key
     # composed in Jinja as "name|origin|parent_plugin".
     skill_status_map: dict[str, str] = {}
@@ -1045,6 +1095,8 @@ def machine_detail(
             "pending_agent_count": pending_agent_count,
             "agent_drift_cards": agent_drift_cards,
             "agent_baseline_status_map": agent_status_map,
+            "pending_memory_count": pending_memory_count,
+            "memory_drift_cards": memory_drift_cards,
             "network_suspicious_cards": recent_network_cards_for_machine(
                 session, machine_id
             ),
@@ -2063,6 +2115,68 @@ def machine_reject_agent_baseline(
     from ccguard.server.services import agent_baseline_service
     try:
         agent_baseline_service.reject_and_mark(
+            session, machine_id=machine_id, baseline_id=baseline_id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+# --- Память/инструкции (ASI06): приём и отклонение baseline -----------------
+
+
+@router.post("/machines/{machine_id}/memory-baseline/{baseline_id}/accept")
+def machine_accept_memory_baseline(
+    machine_id: str,
+    baseline_id: int,
+    request: Request,
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import memory_baseline_service
+    user_id = _resolve_user_id(session, sid)
+    try:
+        memory_baseline_service.accept_baseline(
+            session, machine_id=machine_id, baseline_id=baseline_id,
+            accepting_user=user_id,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/memory-baseline/accept-all-pending")
+def machine_accept_all_pending_memory_baselines(
+    machine_id: str,
+    request: Request,
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import memory_baseline_service
+    user_id = _resolve_user_id(session, sid)
+    memory_baseline_service.accept_all_pending(
+        session, machine_id=machine_id, accepting_user=user_id,
+    )
+    session.commit()
+    return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
+
+
+@router.post("/machines/{machine_id}/memory-baseline/{baseline_id}/reject")
+def machine_reject_memory_baseline(
+    machine_id: str,
+    baseline_id: int,
+    request: Request,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    from ccguard.server.services import memory_baseline_service
+    try:
+        memory_baseline_service.reject_and_mark(
             session, machine_id=machine_id, baseline_id=baseline_id,
         )
     except LookupError as e:

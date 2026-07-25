@@ -580,6 +580,41 @@ class SkillBaseline(SQLModel, table=True):
     accepted_by: str | None = None
 
 
+class MemoryBaseline(SQLModel, table=True):
+    """TOFU-эталон файлов памяти/инструкций Claude Code на машине (ASI06).
+
+    Память — прямые инструкции агенту (CLAUDE.md всех уровней и всё, что они
+    тянут через @import). Закладка здесь исполняется без единого подозрительного
+    вызова, потому что для агента это его собственная память. Поэтому за дрейфом
+    памяти следим так же, как за хуками и скиллами: доверие при первом контакте,
+    затем изменение отпечатка — повод посмотреть.
+
+    Идентификатор слота — (machine_id, path). Отпечаток — content_hash самого
+    файла; содержимое НЕ хранится (только хеш), как у канареек: память легко
+    содержит внутренние пути и секреты в примерах.
+
+    Переходы статуса как у SkillBaseline: pending → active (оператор принял) →
+    missing при тихом исчезновении.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+
+    path: str = Field(index=True)
+    # enterprise | user | project | project_local | subdir | ancestor | import
+    scope: str = Field(default="project", index=True)
+    content_hash: str
+    size_bytes: int = 0
+    # Провенанс цепочки @import: какой файл притянул этот. NULL — найден напрямую.
+    imported_by: str | None = None
+
+    status: str = Field(default="pending")
+    first_seen_at: datetime
+    last_seen_at: datetime
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
+
+
 class AgentBaseline(SQLModel, table=True):
     """TOFU baseline for Claude Code custom subagents per machine.
 

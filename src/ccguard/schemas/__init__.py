@@ -12,6 +12,7 @@ from ccguard.schemas.inventory import (
     HookEntry,
     InventoryReport,
     McpServerEntry,
+    MemoryEntry,
     PermissionsSnapshot,
     PluginEntry,
     SettingsSource,

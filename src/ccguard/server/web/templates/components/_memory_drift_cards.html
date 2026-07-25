@@ -1,0 +1,62 @@
+{# Карточки дрейфа памяти/инструкций (ASI06) с кнопками accept/reject.
+
+   Память — прямые инструкции агенту, поэтому уровень (scope) и провенанс
+   импорта показываем прямо на карточке: «project» и «внешний @import из home» —
+   разные по опасности события, и оператор должен видеть разницу сразу. #}
+{% for card in memory_drift_cards %}
+<article class="rounded-lg p-4 mb-3 ring-1 bg-amber-50 ring-amber-200">
+    <header class="flex items-center justify-between gap-2">
+        <h4 class="text-sm font-semibold text-amber-900">{{ card.title }}</h4>
+        <span class="cc-mono text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 bg-amber-700 text-white">
+            {{ card.severity }}
+        </span>
+    </header>
+    {% if card.description %}
+    <p class="text-[12px] mt-2 whitespace-pre-line text-amber-800">{{ card.description }}</p>
+    {% endif %}
+
+    <div class="mt-2 cc-mono text-[10px] text-slate-600 flex items-center gap-1.5 flex-wrap">
+        уровень:
+        <span class="rounded px-1 py-0.5 ring-1
+            {% if card.payload.scope in ['import', 'ancestor', 'enterprise'] %}bg-orange-100 text-orange-800 ring-orange-200{% else %}bg-slate-100 text-slate-700 ring-slate-200{% endif %}">
+            {{ card.payload.scope or '—' }}
+        </span>
+        {% if card.payload.imported_by %}
+        <span class="text-slate-400">притянут из</span>
+        <span class="rounded px-1 py-0.5 ring-1 bg-slate-100 text-slate-700 ring-slate-200 break-all">{{ card.payload.imported_by }}</span>
+        {% endif %}
+    </div>
+
+    <dl class="mt-3 text-[11px] cc-mono space-y-1">
+        {% if card.payload.path %}
+        <div class="flex gap-2"><dt class="text-slate-500 shrink-0">путь:</dt>
+            <dd class="text-slate-700 break-all">{{ card.payload.path }}</dd></div>
+        {% endif %}
+        {% if card.payload.old_hash or card.payload.new_hash %}
+        <div class="flex gap-2"><dt class="text-slate-500 shrink-0">было:</dt>
+            <dd class="text-red-700 break-all">{{ card.payload.old_hash or "—" }}</dd></div>
+        <div class="flex gap-2"><dt class="text-slate-500 shrink-0">стало:</dt>
+            <dd class="text-emerald-700 break-all">{{ card.payload.new_hash or "—" }}</dd></div>
+        {% endif %}
+    </dl>
+
+    {% if card.baseline_id %}
+    <div class="mt-3 flex items-center gap-2 flex-wrap">
+        <form method="POST" action="/machines/{{ machine.machine_id }}/memory-baseline/{{ card.baseline_id }}/accept" class="inline-block">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit"
+                    class="px-3 py-1.5 bg-emerald-700 text-white text-xs rounded-md hover:bg-emerald-800 transition-colors">
+                Принять baseline
+            </button>
+        </form>
+        <form method="POST" action="/machines/{{ machine.machine_id }}/memory-baseline/{{ card.baseline_id }}/reject" class="inline-block">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit"
+                    class="px-3 py-1.5 bg-slate-200 text-slate-800 text-xs rounded-md hover:bg-slate-300 transition-colors">
+                Отклонить
+            </button>
+        </form>
+    </div>
+    {% endif %}
+</article>
+{% endfor %}

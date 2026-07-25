@@ -12,6 +12,7 @@ from ccguard.agent.scan import agents as scan_agents
 from ccguard.agent.scan import commands as scan_commands
 from ccguard.agent.scan import hooks as scan_hooks
 from ccguard.agent.scan import mcp as scan_mcp
+from ccguard.agent.scan import memory as scan_memory
 from ccguard.agent.scan import permissions as scan_perms
 from ccguard.agent.scan import plugins as scan_plugins
 from ccguard.agent.scan import settings as scan_settings
@@ -74,6 +75,7 @@ def run_scan(claude_home: Path, project_dir: Path, machine_id: str, machine_labe
         permissions=scan_perms.extract(parsed),
         agents=scan_agents.scan_agents(claude_home),
         commands=scan_commands.scan_commands(claude_home),
+        memory_files=scan_memory.scan_memory(claude_home, project_dir),
         env_keys=_extract_env_keys(parsed),
         claude_code_version=None,
     )

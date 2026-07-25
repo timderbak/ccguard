@@ -14,6 +14,7 @@ from ccguard.server.services import (
     agent_baseline_service,
     hook_baseline_service,
     mcp_baseline_service,
+    memory_baseline_service,
     skill_baseline_service,
 )
 
@@ -104,6 +105,16 @@ def post_inventory(
         inventory_id=snapshot.id,
     )
     findings_stored += len(agent_findings)
+
+    # Память/инструкции (ASI06). Поле опционально: агент v0.1/v0.2 его не шлёт,
+    # тогда список пуст и baseline просто ничего не трогает (graceful degradation).
+    memory_findings = memory_baseline_service.update_and_detect(
+        session,
+        machine_id=inv.machine_id,
+        current_memory=list(inv.memory_files),
+        inventory_id=snapshot.id,
+    )
+    findings_stored += len(memory_findings)
 
     audit_stored = 0
     for a in payload.audit_events:

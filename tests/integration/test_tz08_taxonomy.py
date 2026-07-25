@@ -35,6 +35,7 @@ DETECTOR_KEYS = {
     "ai_trigger_escalation",
     "fleet_campaign",
     "toxic_flow",
+    "memory_baseline",
 }
 
 
@@ -79,7 +80,10 @@ def test_out_of_scope_not_in_gaps(tmp_path) -> None:
     assert oos  # we do load model-internal techniques
     assert oos.isdisjoint(uncovered)  # ...but none of them are "gaps"
     assert "AML.T0020" in oos  # poison-training-data is out of scope
-    assert "ASI06" in uncovered  # an in-scope agentic gap IS shown honestly
+    # ASI06 (Memory & Context Poisoning) БЫЛ честным пробелом; теперь его
+    # закрывает detector_key=memory_baseline (TOFU над CLAUDE.md + @import).
+    assert "ASI06" not in uncovered  # closed by the memory-baseline detector
+    assert "ASI07" in uncovered  # a still-open in-scope agentic gap, shown honestly
 
 
 # --- AC3: crosswalk works both directions ------------------------------------
