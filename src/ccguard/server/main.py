@@ -66,25 +66,37 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_enforcement_mode(_s)
         # Alert emitter knobs (disabled by default; operator sets the webhook).
         seed_alert_settings(_s)
-        # ТЗ-05: load the vetted ThreatIndicator core (idempotent; a broken
-        # seed file logs + loads nothing, never blocks startup).
-        indicator_seed_service.load_seed(_s)
-        # ТЗ-06: load ATLAS taxonomy, then migrate ТЗ-05 scalar technique
-        # attribution into the many-to-many junction. Both idempotent.
-        from ccguard.server.services import atlas_seed_service
-        atlas_seed_service.load_atlas_seed(_s)
-        atlas_seed_service.migrate_indicator_techniques(_s)
-        # ТЗ-08: load the cross-framework crosswalk (≈ links) and register the
-        # existing correlation detectors + their technique bindings. Both
-        # idempotent; broken seeds log + load nothing, never block startup.
-        from ccguard.server.services import taxonomy_seed_service
-        taxonomy_seed_service.load_crosswalk_seed(_s)
-        taxonomy_seed_service.load_detector_seed(_s)
-        # ТЗ-09: load kill-chain scenarios as data (idempotent). The universal
-        # chain_engine executes them in the scheduler tick beside the existing
-        # correlators (sequence_service is untouched).
-        from ccguard.server.services import chain_seed_service
-        chain_seed_service.load_chain_seed(_s)
+        # Reference-data seeds (indicators / taxonomy / crosswalk / detectors /
+        # chain scenarios). Each loader is idempotent, but idempotence still
+        # costs a probe per row (~180 ms of pure no-op work every restart), so
+        # skip the whole block when the on-disk seed files are byte-identical to
+        # what was already loaded. Edit any seed YAML (or ship an update) and the
+        # digest changes → the block runs normally.
+        from ccguard.server.services import seed_marker
+        _digest = seed_marker.reference_digest()
+        if seed_marker.is_current(_s, digest=_digest):
+            logger.debug("reference seeds up to date (%s) — skipping", _digest)
+        else:
+            # ТЗ-05: load the vetted ThreatIndicator core (idempotent; a broken
+            # seed file logs + loads nothing, never blocks startup).
+            indicator_seed_service.load_seed(_s)
+            # ТЗ-06: load ATLAS taxonomy, then migrate ТЗ-05 scalar technique
+            # attribution into the many-to-many junction. Both idempotent.
+            from ccguard.server.services import atlas_seed_service
+            atlas_seed_service.load_atlas_seed(_s)
+            atlas_seed_service.migrate_indicator_techniques(_s)
+            # ТЗ-08: load the cross-framework crosswalk (≈ links) and register the
+            # existing correlation detectors + their technique bindings. Both
+            # idempotent; broken seeds log + load nothing, never block startup.
+            from ccguard.server.services import taxonomy_seed_service
+            taxonomy_seed_service.load_crosswalk_seed(_s)
+            taxonomy_seed_service.load_detector_seed(_s)
+            # ТЗ-09: load kill-chain scenarios as data (idempotent). The universal
+            # chain_engine executes them in the scheduler tick beside the existing
+            # correlators (sequence_service is untouched).
+            from ccguard.server.services import chain_seed_service
+            chain_seed_service.load_chain_seed(_s)
+            seed_marker.mark_current(_s, digest=_digest)
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)

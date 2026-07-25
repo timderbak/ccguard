@@ -11,10 +11,10 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import yaml
 from sqlmodel import Session, select
 
 from ccguard.server.db.models import ChainScenario, ChainStep
+from ccguard.server.services import seed_yaml_cache
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ def _read_seed(seed_path: Path) -> list[dict]:
         if not seed_path.exists():
             log.warning("chain seed: file not found at %s — loading nothing", seed_path)
             return []
-        data = yaml.safe_load(seed_path.read_text()) or {}
+        data = seed_yaml_cache.load_yaml(seed_path) or {}
     except Exception as exc:  # noqa: BLE001 — broken seed must not crash boot
         log.warning("chain seed: failed to parse %s: %s", seed_path, exc)
         return []
