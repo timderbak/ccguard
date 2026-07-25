@@ -1202,6 +1202,42 @@ def skills_inventory_drill_partial(
     )
 
 
+@router.get("/findings/export")
+def findings_export(
+    request: Request,
+    format: str = "csv",
+    severity: str | None = None,
+    rule_id: str | None = None,
+    machine_id: str | None = None,
+    days: int | None = None,
+    _user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> Response:
+    """Скачать находки файлом: CSV для аудита, JSON для машинной обработки.
+
+    Фильтры те же, что на странице находок, — оператор отбирает глазами и
+    выгружает ровно то, что видит.
+    """
+    from ccguard.server.services import export_service
+
+    fmt = "json" if format == "json" else "csv"
+    rows = export_service.select_findings(
+        session,
+        severity=severity or None,
+        rule_id=rule_id or None,
+        machine_id=machine_id or None,
+        since_days=days,
+    )
+    body = export_service.to_json(rows) if fmt == "json" else export_service.to_csv(rows)
+    media = "application/json" if fmt == "json" else "text/csv"
+    name = export_service.filename(fmt)
+    return Response(
+        content=body,
+        media_type=f"{media}; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
 @router.get("/admin/canaries", response_class=HTMLResponse)
 def canaries_page(
     request: Request,

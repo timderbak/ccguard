@@ -26,10 +26,29 @@
 </style>
 
 <div class="max-w-[1200px] mx-auto">
-  <header class="mb-5">
-    <p class="cc-eyebrow">Детект · события</p>
-    <h1 class="text-3xl text-white mt-1">Находки <span class="text-slate-500 text-xl">{{ total_findings }}</span></h1>
-    <p class="text-sm text-slate-400 mt-1.5">События детекта — это <span class="text-slate-200">выходы</span> движков (в отличие от индикаторов-входов). Каждое привязано к машине, правилу и серьёзности.</p>
+  <header class="mb-5 flex items-start justify-between gap-4">
+    <div>
+      <p class="cc-eyebrow">Детект · события</p>
+      <h1 class="text-3xl text-white mt-1">Находки <span class="text-slate-500 text-xl">{{ total_findings }}</span></h1>
+      <p class="text-sm text-slate-400 mt-1.5">События детекта — это <span class="text-slate-200">выходы</span> движков (в отличие от индикаторов-входов). Каждое привязано к машине, правилу и серьёзности.</p>
+    </div>
+    {# Выгрузка сохраняет активные фильтры: человек скачивает ровно то, что видит
+       на экране, иначе файл не совпадёт с тем, что он только что отобрал. #}
+    {% set q %}{% if filters.severity %}&severity={{ filters.severity }}{% endif %}{% if filters.rule_id %}&rule_id={{ filters.rule_id|urlencode }}{% endif %}{% if filters.machine_id %}&machine_id={{ filters.machine_id|urlencode }}{% endif %}{% endset %}
+    <div class="flex items-center gap-2 shrink-0">
+      <a href="/findings/export?format=csv{{ q }}"
+         class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 border border-white/15 text-slate-300 rounded-md hover:bg-white/5 whitespace-nowrap"
+         title="Таблица для аудита и Excel — с учётом текущих фильтров">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+        CSV
+      </a>
+      <a href="/findings/export?format=json{{ q }}"
+         class="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 border border-white/15 text-slate-300 rounded-md hover:bg-white/5 whitespace-nowrap"
+         title="Для SIEM и скриптов — подробности сохраняются структурой">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>
+        JSON
+      </a>
+    </div>
   </header>
 
   <!-- severity summary = filter pills -->
