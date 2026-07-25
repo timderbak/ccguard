@@ -52,7 +52,7 @@ def _patch_httpx_client(monkeypatch: pytest.MonkeyPatch, handler: Handler) -> No
         timeout = kwargs.get("timeout")
         return real_client(transport=httpx.MockTransport(handler), timeout=timeout)
 
-    monkeypatch.setattr(engine.httpx, "Client", fake_client)
+    monkeypatch.setattr(httpx, "Client", fake_client)
 
 
 @pytest.fixture

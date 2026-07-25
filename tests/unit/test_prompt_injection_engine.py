@@ -16,6 +16,7 @@ Tests for ``_llama_guard_scan`` proper (Ollama transport) live in
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
 from ccguard.agent import prompt_injection_engine as engine
@@ -249,7 +250,7 @@ def test_llama_guard_model_missing_marker_via_404(
         def post(self, *args: object, **kwargs: object) -> _FakeResp:
             return _FakeResp()
 
-    monkeypatch.setattr(engine.httpx, "Client", _FakeClient)
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
 
     cfg = PromptInjectionConfig(
         enabled=True,
@@ -284,7 +285,7 @@ def test_llama_guard_unreachable_returns_none(
         def post(self, *args: object, **kwargs: object) -> None:
             raise _httpx.ConnectError("connection refused")
 
-    monkeypatch.setattr(engine.httpx, "Client", _BoomClient)
+    monkeypatch.setattr(httpx, "Client", _BoomClient)
 
     cfg = PromptInjectionConfig(
         enabled=True,

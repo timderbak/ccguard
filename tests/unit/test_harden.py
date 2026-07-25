@@ -83,3 +83,57 @@ def test_render_script_is_reviewable_sudo_bash() -> None:
     assert "set -euo pipefail" in script
     assert "managed-settings.json" in script
     assert "chflags schg" in script
+
+
+# --- защита среды запуска ---------------------------------------------------
+
+
+def test_runtime_root_is_taken_away_from_the_user():
+    # Защищать хук и оставлять запускаемый им код открытым на запись — то же
+    # самое, что закрыть дверь и оставить окно: подменяется не хук, а модуль,
+    # который хук вызовет.
+    steps = harden.harden_plan(
+        platform="linux",
+        enforce_shim=Path("/opt/ccguard/bin/ccguard-enforce"),
+        audit_shim=Path("/opt/ccguard/bin/ccguard-audit"),
+        policy_path=Path("/etc/ccguard/policy.yaml"),
+        runtime_root=Path("/opt/ccguard"),
+    )
+    argvs = [" ".join(s.argv) for s in steps if s.kind == "run"]
+    assert "chown -R root:root /opt/ccguard" in argvs
+    assert "chmod -R go-w /opt/ccguard" in argvs
+
+
+def test_runtime_root_is_optional_and_off_by_default():
+    # Обратная совместимость: старый вызов без указания среды запуска не должен
+    # внезапно начать менять права на каталогах, о которых не просили.
+    steps = harden.harden_plan(
+        platform="linux",
+        enforce_shim=Path("/opt/ccguard/bin/ccguard-enforce"),
+        audit_shim=Path("/opt/ccguard/bin/ccguard-audit"),
+        policy_path=Path("/etc/ccguard/policy.yaml"),
+    )
+    assert not any("-R" in s.argv for s in steps if s.kind == "run")
+
+
+def test_runtime_root_is_not_made_immutable():
+    # Неизменяемый флаг на дереве файлов превратил бы обновление агента в
+    # ручную операцию с правами администратора на каждой машине.
+    steps = harden.runtime_lock_steps(Path("/opt/ccguard"), platform="linux")
+    assert not any("chattr" in s.argv for s in steps)
+
+
+def test_deploy_script_locks_the_runtime_too():
+    # Скрипт раскатки и план укрепления должны закрывать одно и то же: иначе
+    # машины, поставленные централизованно, остались бы с открытым окном.
+    from sqlmodel import Session
+
+    from ccguard.server.db.session import init_db, make_engine
+    from ccguard.server.services import deploy_config_service as dcs
+
+    eng = make_engine("sqlite://")
+    init_db(eng)
+    with Session(eng) as s:
+        script = dcs.build_bundle(s, platform="linux")["install_script"]
+    assert "chown -R root:root /opt/ccguard" in script
+    assert "chmod -R go-w /opt/ccguard" in script

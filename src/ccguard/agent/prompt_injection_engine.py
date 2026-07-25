@@ -40,9 +40,10 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
-import httpx
+if TYPE_CHECKING:  # ``httpx`` импортируется лениво — см. ниже.
+    import httpx
 
 from ccguard.agent.prompt_injection_patterns import get_default_patterns
 from ccguard.agent.prompt_injection_safety import (
@@ -72,6 +73,12 @@ _LG_TIMEOUT_WARN_MS = 200
 # CR-04: module-level lazy httpx.Client so each LlamaGuard call reuses the
 # connection pool (no TCP+TLS handshake on every PreToolUse). Initialized
 # on first call and never closed — process is short-lived (CLI hook).
+#
+# Сам httpx тоже импортируется лениво, и это не мелочь: на уровне модуля он
+# стоит ~95 мс на импорт (тянет за собой rich и click), то есть съедал бы
+# почти весь бюджет проверки ещё до того, как та начнётся. Нужен он только
+# для необязательной проверки моделью, которая в большинстве установок
+# выключена — платить за неё всегда неправильно.
 _lg_client: httpx.Client | None = None
 _lg_timeout_warned: bool = False
 
@@ -337,6 +344,8 @@ def _llama_guard_scan(
     # (~5–30ms locally). Lazy-init keeps import cost on the PreToolUse hot
     # path at zero. The Client uses the per-call timeout so the cap is
     # enforced regardless of the lazy-init.
+    import httpx  # ленивый импорт: см. комментарий у _lg_client
+
     timeout_s = cfg.timeout_ms / 1000.0
     if _lg_client is None:
         _lg_client = httpx.Client(timeout=timeout_s)
