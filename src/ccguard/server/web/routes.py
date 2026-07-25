@@ -768,6 +768,7 @@ def machine_detail(
         recent_pi_read_cards_for_machine,
     )
     from ccguard.server.services import sensor_diagnosis
+    from ccguard.server.services import protection_incident_service
     from ccguard.server.db.models import MCPServerBaseline
     machine = session.get(Machine, machine_id)
     if machine is None:
@@ -1020,6 +1021,11 @@ def machine_detail(
             # Почему сенсор молчит (или не молчит). Отличает «сняли хуки» от
             # «ноутбук выключен» — без этого обе ситуации выглядят одинаково.
             "diagnosis": sensor_diagnosis.diagnose(session, machine),
+            # Незакрытый вопрос по этой машине. Живёт дольше состояния: защиту
+            # могли уже вернуть, а объяснения так и не дали.
+            "incident": protection_incident_service.open_for_machine(
+                session, machine_id
+            ),
             "enforce_blocks": enforce_blocks,
             "inventory": get_latest_inventory_json(session, machine_id),
             "findings": build_explainable_findings(findings),
@@ -1345,6 +1351,93 @@ def canary_delete(
 
     canary_service.delete_canary(session, canary_id)
     return RedirectResponse(url="/admin/canaries", status_code=303)
+
+
+@router.get("/admin/protection", response_class=HTMLResponse)
+def protection_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Состояние защиты по флоту + разбор машин, где её нет.
+
+    Совмещает два уровня намеренно: сверху — сколько машин под защитой прямо
+    сейчас, ниже — эпизоды, по которым ждут ответа человека. Разносить это по
+    двум страницам значит заставить оператора сверять их глазами.
+    """
+    from ccguard.server.services import protection_incident_service as pis
+    from ccguard.server.services import sensor_diagnosis
+
+    return templates.TemplateResponse(
+        request,
+        "protection.html",
+        {
+            "user": user,
+            "fleet": sensor_diagnosis.fleet_summary(session),
+            "diagnoses": sensor_diagnosis.diagnose_fleet(session),
+            "incidents": pis.list_incidents(session, unresolved_only=False),
+            "summary": pis.summary(session),
+            "states": {
+                "ok": sensor_diagnosis.OK, "idle": sensor_diagnosis.IDLE,
+                "hooks_removed": sensor_diagnosis.HOOKS_REMOVED,
+                "hooks_changed": sensor_diagnosis.HOOKS_CHANGED,
+                "daemon_down": sensor_diagnosis.DAEMON_DOWN,
+                "offline": sensor_diagnosis.OFFLINE,
+                "unknown": sensor_diagnosis.UNKNOWN,
+            },
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+@router.post("/admin/protection/{incident_id}/explain")
+def protection_explain(
+    incident_id: int,
+    request: Request,
+    explanation: str = Form(...),
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Записать причину, по которой на машине не было защиты."""
+    from ccguard.server.services import protection_incident_service as pis
+
+    try:
+        pis.explain(
+            session, incident_id,
+            text=explanation, who=_resolve_user_id(session, sid),
+        )
+    except pis.NotFound as e:
+        raise HTTPException(status_code=404) from e
+    except (pis.AlreadyClosed, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return RedirectResponse(url="/admin/protection", status_code=303)
+
+
+@router.post("/admin/protection/{incident_id}/review")
+def protection_review(
+    incident_id: int,
+    request: Request,
+    verdict: str = Form(...),
+    note: str = Form(""),
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Принять или отклонить объяснение — это и закрывает эпизод."""
+    from ccguard.server.services import protection_incident_service as pis
+
+    try:
+        pis.review(
+            session, incident_id,
+            accept=(verdict == "accept"), who=_resolve_user_id(session, sid),
+            note=note,
+        )
+    except pis.NotFound as e:
+        raise HTTPException(status_code=404) from e
+    except pis.AlreadyClosed as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return RedirectResponse(url="/admin/protection", status_code=303)
 
 
 @router.get("/admin/mcp-inventory", response_class=HTMLResponse)

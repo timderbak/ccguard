@@ -70,6 +70,32 @@
                 · события хука:
                 {% if _d.last_event_at %}{{ _d.last_event_at.isoformat(timespec="minutes") }}{% else %}нет за 6 ч{% endif %}
             </p>
+
+            {# Незакрытый вопрос по этой машине. Показывается даже когда защита
+               уже вернулась: состояние живёт минуты, а вопрос «почему сняли» —
+               недели. Если прятать его по факту возврата, спрашивать пришлось
+               бы только тех, кто забыл вернуть обратно. #}
+            {% if incident %}
+            <div class="mt-3 rounded-lg bg-white/60 ring-1 ring-slate-200 p-3">
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 ring-1
+                        {% if incident.status == 'open' %}bg-amber-50 text-amber-700 ring-amber-200
+                        {% else %}bg-violet-50 text-violet-700 ring-violet-200{% endif %}">
+                        {% if incident.status == 'open' %}ждёт объяснения{% else %}ждёт вердикта{% endif %}</span>
+                    <span class="cc-mono text-[11px] text-slate-500">
+                        открыт {{ incident.opened_at.isoformat(timespec="minutes") }}
+                        {%- if incident.recovered_at %} · защита вернулась {{ incident.recovered_at.isoformat(timespec="minutes") }}{% endif %}
+                    </span>
+                </div>
+                <p class="text-[13px] text-slate-600 mt-1.5">{{ incident.opened_title }}</p>
+                {% if incident.explanation %}
+                <p class="text-[13px] text-slate-600 mt-1.5 border-l-2 border-slate-300 pl-2">
+                    «{{ incident.explanation }}» — {{ incident.explained_by or '—' }}
+                </p>
+                {% endif %}
+                <a href="/admin/protection" class="inline-block cc-mono text-[11px] text-emerald-700 hover:underline mt-2">Разобрать →</a>
+            </div>
+            {% endif %}
         </div>
     </div>
 </section>

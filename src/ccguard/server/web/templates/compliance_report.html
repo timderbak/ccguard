@@ -53,6 +53,24 @@
     {% if r.fleet.silent %}
     <p class="text-xs text-amber-300/90 mt-3">Молчащие машины не наблюдались в этот период — их данные в отчёте не отражены.</p>
     {% endif %}
+
+    {# Разбор машин без защиты. Проверяющего интересует не факт, а наличие
+       процесса: спросили ли причину и кто принял решение. #}
+    {% if r.protection and r.protection.total %}
+    <h3 class="text-sm text-white mt-5 mb-2">Машины, оставшиеся без защиты</h3>
+    <div class="kpi">
+      <div><div class="v">{{ r.protection.total }}</div><div class="l">случаев за всё время</div></div>
+      <div><div class="v" {% if r.protection.awaiting_explanation %}style="color:#fbbf24"{% endif %}>{{ r.protection.awaiting_explanation }}</div><div class="l">без объяснения</div></div>
+      <div><div class="v">{{ r.protection.awaiting_review }}</div><div class="l">ждут вердикта</div></div>
+      <div><div class="v" style="color:#6ee7b7">{{ r.protection.accepted }}</div><div class="l">объяснение принято</div></div>
+      <div><div class="v" {% if r.protection.rejected %}style="color:#ff8aa0"{% endif %}>{{ r.protection.rejected }}</div><div class="l">объяснение отклонено</div></div>
+      <div><div class="v" {% if r.protection.still_unprotected %}style="color:#ff8aa0"{% endif %}>{{ r.protection.still_unprotected }}</div><div class="l">защита так и не вернулась</div></div>
+    </div>
+    <p class="text-xs text-slate-400 mt-2">
+      Случай не закрывается возвратом защиты — только решением человека. Иначе последовательность
+      «снял, сделал, вернул» не оставляла бы следа.
+    </p>
+    {% endif %}
   </section>
 
   {# 2. Что произошло. #}

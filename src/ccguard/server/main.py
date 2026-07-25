@@ -167,6 +167,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services.fleet_campaign_service import tick as fleet_campaign_tick
     from ccguard.server.services.canary_service import tick as canary_tick
     from ccguard.server.services.identity_service import tick as identity_tick
+    from ccguard.server.services.protection_incident_service import (
+        tick as protection_tick,
+    )
     from ccguard.server.services.risk_service import tick as risk_tick
     from ccguard.server.services.sensor_health_service import tick as sensor_health_tick
     from ccguard.server.services.sequence_service import tick as sequence_tick
@@ -215,6 +218,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     slow_chain_summary = slow_chain_tick(s)
                     drift_summary = drift_tick(s)
                     sensor_summary = sensor_health_tick(s)
+                    # Машины без защиты → эпизод с требованием объяснить причину.
+                    # Идёт сразу за проверкой тишины: она обновляет состояние,
+                    # а этот шаг превращает состояние в вопрос к человеку.
+                    protection_summary = protection_tick(s)
                     # Опасные действия, выполненные агентом БЕЗ подтверждений
                     # человеком (permission_mode = bypassPermissions/dontAsk).
                     identity_summary = identity_tick(s)
@@ -280,6 +287,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     sensor_summary["findings_emitted"],
                     len(sensor_summary["errors"]),
                 )
+                if protection_summary["opened"]:
+                    logger.warning(
+                        "protection tick: машин без защиты — новых эпизодов=%d",
+                        protection_summary["opened"],
+                    )
                 if canary_summary["findings_emitted"]:
                     logger.warning(
                         "canary tick: СРАБОТАЛА приманка — findings=%d",

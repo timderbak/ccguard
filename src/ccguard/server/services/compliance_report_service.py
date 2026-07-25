@@ -33,6 +33,7 @@ from ccguard.server.db.models import (
     FindingRecord,
     Machine,
     MCPServerBaseline,
+    ProtectionIncident,
     ThreatIndicator,
 )
 
@@ -151,6 +152,22 @@ def _decisions(session: Session, since: datetime) -> list[dict[str, Any]]:
                     "object": can.file_path,
                     "decision": "создана",
                 })
+        # Разбор машин, оставшихся без защиты. Отклонённые объяснения попадают
+        # сюда наравне с принятыми: отчёт, где видны только принятые решения,
+        # ничего не говорит о том, работает ли процесс.
+        for inc in session.exec(
+            select(ProtectionIncident).where(
+                ProtectionIncident.reviewed_by.is_not(None)  # type: ignore[attr-defined]
+            )
+        ):
+            if _within(inc.reviewed_at):
+                out.append({
+                    "at": inc.reviewed_at,
+                    "who": inc.reviewed_by,
+                    "what": "машина без защиты",
+                    "object": f"{inc.machine_id} ({inc.state}): {(inc.explanation or '—')[:60]}",
+                    "decision": "принято" if inc.status == "accepted" else "отклонено",
+                })
     except Exception as exc:  # noqa: BLE001 — отчёт не должен падать целиком
         log.warning("отчёт: не удалось собрать журнал решений: %s", exc)
 
@@ -165,6 +182,23 @@ def _canaries(session: Session) -> dict[str, Any]:
         "armed": sum(1 for c in rows if c.status == "armed"),
         "triggered": sum(1 for c in rows if c.status == "triggered"),
     }
+
+
+def _protection(session: Session) -> dict[str, Any]:
+    """Машины, оставшиеся без защиты, и что с этим сделали.
+
+    Отдельным разделом, а не строкой в охвате: проверяющего интересует не
+    столько сам факт, сколько наличие процесса — спросили ли причину, кто
+    принял решение, сколько вопросов остались без ответа. Незакрытые считаются
+    честно и показываются: скрывать их значит показывать не то, как есть.
+    """
+    try:
+        from ccguard.server.services import protection_incident_service as pis
+
+        return pis.summary(session)
+    except Exception as exc:  # noqa: BLE001 — отчёт не должен падать целиком
+        log.warning("отчёт: разбор машин без защиты недоступен: %s", exc)
+        return {}
 
 
 def _blocks(session: Session, since: datetime) -> dict[str, Any]:
@@ -207,6 +241,7 @@ def build_report(
         "findings": _findings(session, since),
         "coverage": _coverage(session),
         "canaries": _canaries(session),
+        "protection": _protection(session),
         "blocks": _blocks(session, since),
         "decisions": _decisions(session, since),
     }

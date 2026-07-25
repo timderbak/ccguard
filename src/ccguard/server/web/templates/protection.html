@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}Состояние защиты · ccguard{% endblock %}
+{% block content %}
+<style>
+  .prow{border-top:1px solid #ffffff0a}
+  .prow:hover{background:#ffffff05}
+  .stchip{font-family:"IBM Plex Mono",monospace;font-size:10px;border-radius:6px;padding:1px 7px;
+    border:1px solid transparent;white-space:nowrap;text-transform:uppercase}
+  .stchip.ok{color:#6ee7b7;background:#34d39912;border-color:#34d39938}
+  .stchip.warn{color:#fbbf24;background:#f59e0b12;border-color:#f59e0b38}
+  .stchip.bad{color:#fff;background:#e11d48;border-color:#e11d48}
+  .stchip.unk{color:#8f88a0;background:#ffffff08;border-color:#ffffff1a}
+  .sumchip{display:inline-flex;align-items:center;gap:7px;border-radius:9px;padding:5px 11px;border:1px solid var(--line);
+    background:var(--card2);font-size:12px;color:#b9b2c7}
+  .sumchip .n{font-family:"IBM Plex Mono",monospace;font-weight:700;color:#fff}
+  .inp{background:#15121c;border:1px solid #ffffff1a;border-radius:8px;color:#cdd6e4;font-size:13px;padding:8px 10px}
+  .inp:focus{outline:none;border-color:#8b5cf6aa}
+  .quote{border-left:2px solid #ffffff1f;padding-left:10px;color:#b9b2c7;font-size:13px}
+</style>
+<div class="max-w-[1200px] mx-auto">
+  <header class="mb-5">
+    <p class="cc-eyebrow">Контроль · состояние защиты</p>
+    <h1 class="text-3xl text-white mt-1">Состояние защиты</h1>
+    <p class="text-sm text-slate-400 mt-1.5 max-w-3xl">
+      Отсутствие сигнала само по себе ничего не значит: так выглядит и выключенный на выходные ноутбук,
+      и машина, с которой сняли хуки. Здесь эти случаи <span class="text-slate-200">различены</span> —
+      по двум независимым источникам: сигналу фоновой службы и событиям от хука аудита.
+      Там, где защиты нет, заводится эпизод: <span class="text-slate-200">у него спрашивают причину,
+      и она остаётся в журнале даже после того, как защиту вернули</span> — иначе
+      «снял, сделал, вернул» стиралось бы само собой.
+    </p>
+    <div class="mt-4 flex items-center gap-2.5 flex-wrap">
+      <span class="sumchip"><span class="n">{{ fleet.total }}</span> машин</span>
+      <span class="sumchip" style="border-color:#34d39938"><span class="n" style="color:#6ee7b7">{{ fleet.protected }}</span> под защитой</span>
+      {% if fleet.unprotected %}
+      <span class="sumchip" style="border-color:#e11d48"><span class="n" style="color:#ff8aa0">{{ fleet.unprotected }}</span> без защиты</span>
+      {% endif %}
+      {% if summary.awaiting_explanation %}
+      <span class="sumchip" style="border-color:#f59e0b55"><span class="n" style="color:#fbbf24">{{ summary.awaiting_explanation }}</span> ждут объяснения</span>
+      {% endif %}
+      {% if summary.awaiting_review %}
+      <span class="sumchip" style="border-color:#8b5cf655"><span class="n" style="color:#c9b6ff">{{ summary.awaiting_review }}</span> ждут вердикта</span>
+      {% endif %}
+    </div>
+  </header>
+
+  {# --- эпизоды: то, что требует действия человека, идёт первым --- #}
+  {% set unresolved = incidents|selectattr('status','in',['open','explained'])|list %}
+  {% if unresolved %}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-1">Требуют разбора <span class="text-slate-500">{{ unresolved|length }}</span></h2>
+    <p class="text-xs text-slate-500 mb-4">
+      Эпизод закрывает не машина, а человек: вернувшаяся защита фиксируется отметкой, но вопрос остаётся.
+    </p>
+    {% for inc in unresolved %}
+    <div class="prow py-4">
+      <div class="flex items-start justify-between gap-4 flex-wrap">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <a href="/machines/{{ inc.machine_id }}" class="cc-mono text-sm text-slate-200 hover:text-emerald-400">{{ inc.machine_id }}</a>
+            <span class="stchip {% if inc.recovered_at %}warn{% else %}bad{% endif %}">{{ inc.state }}</span>
+            {% if inc.status == 'open' %}
+            <span class="stchip warn">ждёт объяснения</span>
+            {% else %}
+            <span class="stchip" style="color:#c9b6ff;background:#8b5cf612;border-color:#8b5cf638">ждёт вердикта</span>
+            {% endif %}
+          </div>
+          <p class="text-sm text-slate-300 mt-1.5">{{ inc.opened_title }} — {{ inc.opened_detail }}</p>
+          <p class="cc-mono text-[11px] text-slate-500 mt-1.5">
+            открыт {{ inc.opened_at.isoformat(timespec="minutes") }}
+            {% if inc.last_state != inc.state %} · сейчас: {{ inc.last_state }}{% endif %}
+            {% if inc.recovered_at %} · защита вернулась {{ inc.recovered_at.isoformat(timespec="minutes") }}{% endif %}
+          </p>
+          {% if inc.explanation %}
+          <div class="quote mt-3">
+            «{{ inc.explanation }}»
+            <div class="cc-mono text-[11px] text-slate-500 mt-1">
+              {{ inc.explained_by or '—' }} · {{ inc.explained_at.isoformat(timespec="minutes") if inc.explained_at else '' }}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+
+      {% if inc.status == 'open' %}
+      <form method="POST" action="/admin/protection/{{ inc.id }}/explain" class="mt-3 flex gap-2 items-start flex-wrap">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="text" name="explanation" required class="inp flex-1 min-w-[320px]"
+               placeholder="Причина: что произошло на машине и почему" />
+        <button type="submit" class="text-sm px-3 py-2 rounded-md bg-white/10 text-slate-200 hover:bg-white/15">Записать причину</button>
+      </form>
+      {% else %}
+      <form method="POST" action="/admin/protection/{{ inc.id }}/review" class="mt-3 flex gap-2 items-start flex-wrap">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+        <input type="text" name="note" class="inp flex-1 min-w-[280px]" placeholder="Комментарий к решению (необязательно)" />
+        <button type="submit" name="verdict" value="accept"
+                class="text-sm px-3 py-2 rounded-md bg-emerald-600 text-white hover:bg-emerald-700">Принять</button>
+        <button type="submit" name="verdict" value="reject"
+                class="text-sm px-3 py-2 rounded-md bg-white/10 text-rose-300 hover:bg-white/15">Отклонить</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {# --- флот: диагноз по каждой машине --- #}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-3">Машины <span class="text-slate-500">{{ diagnoses|length }}</span></h2>
+    {% if diagnoses %}
+    <table class="w-full">
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-slate-500">
+          <th class="pb-2 font-semibold">Машина</th>
+          <th class="pb-2 font-semibold" style="width:190px">Состояние</th>
+          <th class="pb-2 font-semibold">Что происходит</th>
+          <th class="pb-2 font-semibold" style="width:150px">Сигнал</th>
+          <th class="pb-2 font-semibold" style="width:150px">События хука</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in diagnoses %}
+        <tr class="prow">
+          <td class="py-2.5 pr-3">
+            <a href="/machines/{{ d.machine_id }}" class="cc-mono text-[12px] text-slate-200 hover:text-emerald-400">{{ d.machine_id }}</a>
+          </td>
+          <td class="py-2.5 pr-3">
+            {# Цвет отражает, что мы УТВЕРЖДАЕМ: неизвестность не красится как взлом. #}
+            <span class="stchip
+              {% if d.protected and not d.needs_review %}ok
+              {% elif d.needs_review and d.protected %}warn
+              {% elif d.needs_review %}bad
+              {% else %}unk{% endif %}">{{ d.title }}</span>
+          </td>
+          <td class="py-2.5 pr-3 text-[12px] text-slate-400">{{ d.detail }}</td>
+          <td class="py-2.5 pr-3 cc-mono text-[11px] text-slate-500">
+            {{ d.last_heartbeat_at.isoformat(timespec="minutes") if d.last_heartbeat_at else 'никогда' }}
+          </td>
+          <td class="py-2.5 cc-mono text-[11px] text-slate-500">
+            {{ d.last_event_at.isoformat(timespec="minutes") if d.last_event_at else 'нет за 6 ч' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-slate-400">Машин пока нет. <a href="/admin/install-agent" class="text-emerald-400 hover:underline">Установить агента</a>.</p>
+    {% endif %}
+  </section>
+
+  {# --- закрытые: история решений, из неё же строится отчёт --- #}
+  {% set closed = incidents|selectattr('status','in',['accepted','rejected'])|list %}
+  {% if closed %}
+  <section class="cc-card p-5">
+    <h2 class="text-lg text-white mb-1">Разобранные <span class="text-slate-500">{{ closed|length }}</span></h2>
+    <p class="text-xs text-slate-500 mb-3">Отклонённые остаются в журнале наравне с принятыми — именно они интересны при разборе постфактум.</p>
+    <table class="w-full">
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-slate-500">
+          <th class="pb-2 font-semibold" style="width:150px">Машина</th>
+          <th class="pb-2 font-semibold" style="width:130px">Что было</th>
+          <th class="pb-2 font-semibold">Объяснение</th>
+          <th class="pb-2 font-semibold" style="width:110px">Решение</th>
+          <th class="pb-2 font-semibold" style="width:150px">Кто и когда</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inc in closed %}
+        <tr class="prow">
+          <td class="py-2.5 pr-3 cc-mono text-[12px] text-slate-300">{{ inc.machine_id }}</td>
+          <td class="py-2.5 pr-3 cc-mono text-[11px] text-slate-500">{{ inc.state }}</td>
+          <td class="py-2.5 pr-3 text-[12px] text-slate-400">
+            {{ inc.explanation or '—' }}
+            {% if inc.review_note %}<span class="text-slate-500"> · {{ inc.review_note }}</span>{% endif %}
+          </td>
+          <td class="py-2.5 pr-3">
+            <span class="stchip {% if inc.status == 'accepted' %}ok{% else %}bad{% endif %}">
+              {% if inc.status == 'accepted' %}принято{% else %}отклонено{% endif %}</span>
+          </td>
+          <td class="py-2.5 cc-mono text-[11px] text-slate-500">
+            {{ inc.reviewed_by or '—' }}<br>{{ inc.reviewed_at.isoformat(timespec="minutes") if inc.reviewed_at else '' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

@@ -611,6 +611,51 @@ class AgentBaseline(SQLModel, table=True):
     accepted_by: str | None = None
 
 
+class ProtectionIncident(SQLModel, table=True):
+    """Эпизод «на машине нет защиты» — вместе с процессом его разбора.
+
+    Диагноз (:mod:`ccguard.server.services.sensor_diagnosis`) отвечает на вопрос
+    «что происходит прямо сейчас». Этого мало: состояние живёт минуты, а вопрос
+    «почему на машине сняли хуки» живёт неделями и адресован человеку. Здесь
+    техническое наблюдение превращается в управляемый процесс: зафиксировали
+    момент → спросили причину → приняли или не приняли ответ.
+
+    Главное решение в модели: **возврат защиты не закрывает эпизод**. Если бы
+    закрывал, самая интересная последовательность — снял хуки, сделал что
+    хотел, вернул обратно — стиралась бы сама собой, и объяснений требовали бы
+    только от тех, кто забыл вернуть. Поэтому ``recovered_at`` фиксирует, что
+    защита вернулась, но статус остаётся ``open``, пока человек не ответил.
+
+    Открывается автоматически и ровно один на машину: пока эпизод не разобран,
+    повторные наблюдения обновляют его (``last_state``, ``last_checked_at``), а
+    не плодят новые записи. Иначе ноутбук, пролежавший выключенным неделю,
+    сгенерировал бы сотню одинаковых «инцидентов».
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    # Диагноз в момент открытия — что именно увидели тогда. Сохраняется вместе
+    # с формулировками, потому что через месяц объяснение читают без контекста.
+    state: str = Field(index=True)
+    opened_at: datetime = Field(default_factory=_utcnow, index=True)
+    opened_title: str
+    opened_detail: str
+    # Текущий диагноз: эпизод может «переехать» (сняли хуки → машина исчезла).
+    last_state: str
+    last_checked_at: datetime = Field(default_factory=_utcnow)
+    # Защита вернулась. НЕ закрывает эпизод — см. докстринг.
+    recovered_at: datetime | None = None
+    # open — ждём объяснения; explained — владелец ответил, ждём вердикта ИБ;
+    # accepted / rejected — вердикт вынесен, эпизод закрыт.
+    status: str = Field(default="open", index=True)
+    explanation: str | None = None
+    explained_by: str | None = None
+    explained_at: datetime | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
+
+
 class SettingsRecord(SQLModel, table=True):
     """Key/value store for admin-tunable server settings (Plan 03-01 D-04).
 
