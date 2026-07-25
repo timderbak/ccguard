@@ -1202,6 +1202,25 @@ def skills_inventory_drill_partial(
     )
 
 
+@router.get("/admin/report", response_class=HTMLResponse)
+def compliance_report_page(
+    request: Request,
+    days: int = 30,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Отчёт за период — документ для аудита, пригодный для печати в PDF."""
+    from ccguard.server.services import compliance_report_service
+
+    days = days if days in (7, 30, 90, 365) else 30
+    report = compliance_report_service.build_report(session, days=days)
+    return templates.TemplateResponse(
+        request,
+        "compliance_report.html",
+        {"user": user, "r": report, "days": days},
+    )
+
+
 @router.get("/findings/export")
 def findings_export(
     request: Request,

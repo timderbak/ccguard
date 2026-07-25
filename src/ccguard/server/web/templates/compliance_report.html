@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Отчёт за период · ccguard{% endblock %}
+{% block content %}
+<style>
+  /* При печати убираем навигацию и фон — на бумаге нужен документ, а не интерфейс. */
+  @media print {
+    aside, nav, .cc-nav-link, .no-print { display: none !important; }
+    body, .cc-card { background: #fff !important; color: #111 !important; }
+    .rep h1, .rep h2, .rep td, .rep th, .rep p { color: #111 !important; }
+    .rep .muted { color: #444 !important; }
+    a { text-decoration: none !important; color: #111 !important; }
+  }
+  .rep table{width:100%;border-collapse:collapse}
+  .rep th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#8f88a0;
+    padding:6px 8px;border-bottom:1px solid #ffffff14;font-weight:600}
+  .rep td{padding:6px 8px;border-bottom:1px solid #ffffff0a;font-size:13px;color:#cdd6e4}
+  .rep .num{font-family:"IBM Plex Mono",monospace}
+  .kpi{display:flex;gap:10px;flex-wrap:wrap}
+  .kpi > div{border:1px solid var(--line);border-radius:10px;padding:10px 14px;background:var(--card2);min-width:120px}
+  .kpi .v{font-family:"IBM Plex Mono",monospace;font-size:22px;color:#fff}
+  .kpi .l{font-size:11px;color:#8f88a0;margin-top:2px}
+  .gap{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#fbbf24;background:#f59e0b12;
+    border:1px solid #f59e0b33;border-radius:5px;padding:1px 6px;display:inline-block;margin:2px 2px 0 0}
+</style>
+<div class="max-w-[1000px] mx-auto rep">
+  <header class="mb-6 flex items-start justify-between gap-4">
+    <div>
+      <p class="cc-eyebrow">Отчёт</p>
+      <h1 class="text-3xl text-white mt-1">Контроль AI-агентов на рабочих машинах</h1>
+      <p class="text-sm text-slate-400 mt-1.5">
+        Период: <span class="num text-slate-200">{{ r.period_start.strftime('%d.%m.%Y') }} — {{ r.period_end.strftime('%d.%m.%Y') }}</span>
+        ({{ r.period_days }} дн.) · сформирован {{ r.generated_at.strftime('%d.%m.%Y %H:%M') }} UTC
+      </p>
+    </div>
+    <div class="no-print flex items-center gap-2 shrink-0">
+      {% for d in [7, 30, 90, 365] %}
+      <a href="/admin/report?days={{ d }}"
+         class="text-xs px-2.5 py-1.5 rounded-md border {% if days == d %}border-purple-400/50 text-purple-200 bg-purple-500/10{% else %}border-white/15 text-slate-400 hover:bg-white/5{% endif %}">{{ d }}д</a>
+      {% endfor %}
+      <button onclick="window.print()" class="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">Печать / PDF</button>
+    </div>
+  </header>
+
+  {# 1. Что под контролем. Без этой цифры остальные не значат ничего:
+     «ноль инцидентов» на нуле машин и на сотне — разные утверждения. #}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-3">1. Охват</h2>
+    <div class="kpi">
+      <div><div class="v">{{ r.fleet.total }}</div><div class="l">машин всего</div></div>
+      <div><div class="v" style="color:#6ee7b7">{{ r.fleet.active }}</div><div class="l">на связи в периоде</div></div>
+      <div><div class="v" {% if r.fleet.silent %}style="color:#fbbf24"{% endif %}>{{ r.fleet.silent }}</div><div class="l">молчат</div></div>
+    </div>
+    {% if r.fleet.silent %}
+    <p class="text-xs text-amber-300/90 mt-3">Молчащие машины не наблюдались в этот период — их данные в отчёте не отражены.</p>
+    {% endif %}
+  </section>
+
+  {# 2. Что произошло. #}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-3">2. События</h2>
+    <div class="kpi mb-4">
+      <div><div class="v" style="color:#ff8aa0">{{ r.findings.by_severity.critical }}</div><div class="l">критичных</div></div>
+      <div><div class="v">{{ r.findings.by_severity.block }}</div><div class="l">блокирующих</div></div>
+      <div><div class="v">{{ r.findings.by_severity.warn }}</div><div class="l">предупреждений</div></div>
+      <div><div class="v" style="color:#c9b6ff">{{ r.findings.correlations }}</div><div class="l">связанных цепочек</div></div>
+      <div><div class="v">{{ r.blocks.total }}</div><div class="l">действий заблокировано</div></div>
+      <div><div class="v" {% if r.blocks.fail_open %}style="color:#fbbf24"{% endif %}>{{ r.blocks.fail_open }}</div><div class="l">пропущено (сбой проверки)</div></div>
+    </div>
+    {% if r.blocks.fail_open %}
+    <p class="text-xs text-amber-300/90 mb-3">
+      «Пропущено» — случаи, когда защита не смогла принять решение и действие прошло.
+      Показано намеренно: отчёт, где видны только успехи, недостоверен.
+    </p>
+    {% endif %}
+    {% if r.findings.top_rules %}
+    <table>
+      <thead><tr><th>Правило</th><th style="width:90px">Событий</th></tr></thead>
+      <tbody>
+        {% for rule, n in r.findings.top_rules %}
+        <tr><td class="num text-[12px]">{{ rule }}</td><td class="num">{{ n }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-slate-400">За период событий не зафиксировано.</p>
+    {% endif %}
+  </section>
+
+  {# 3. Что средство умеет ловить — вместе с честными пробелами. #}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-3">3. Покрытие техник атак</h2>
+    <div class="kpi mb-3">
+      <div><div class="v" style="color:#6ee7b7">{{ r.coverage.covered }}</div><div class="l">техник закрыто</div></div>
+      <div><div class="v" style="color:#fbbf24">{{ r.coverage.uncovered }}</div><div class="l">пробелов</div></div>
+      <div><div class="v">{{ r.canaries.armed }}</div><div class="l">приманок взведено</div></div>
+      <div><div class="v" {% if r.canaries.triggered %}style="color:#ff8aa0"{% endif %}>{{ r.canaries.triggered }}</div><div class="l">приманок сработало</div></div>
+    </div>
+    {% if r.coverage.gaps %}
+    <p class="text-xs text-slate-400 mb-2">Незакрытые техники (показаны явно — понимание собственных границ важнее «всё зелёное»):</p>
+    <div>{% for g in r.coverage.gaps %}<span class="gap" title="{{ g.tactic }}">{{ g.id }} {{ g.name }}</span>{% endfor %}</div>
+    {% endif %}
+  </section>
+
+  {# 4. Кто принимал решения — контрольная область «управление изменениями». #}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-1">4. Журнал решений</h2>
+    <p class="text-xs text-slate-500 mb-3">Кто и что согласовал за период: изменения детект-правил и доверенных компонентов.</p>
+    {% if r.decisions %}
+    <table>
+      <thead><tr><th style="width:130px">Когда</th><th style="width:110px">Кто</th><th style="width:120px">Что</th><th>Объект</th><th style="width:110px">Решение</th></tr></thead>
+      <tbody>
+        {% for d in r.decisions %}
+        <tr>
+          <td class="num text-[12px]">{{ d.at.strftime('%d.%m.%Y %H:%M') if d.at else '—' }}</td>
+          <td>{{ d.who or '—' }}</td>
+          <td>{{ d.what }}</td>
+          <td class="num text-[12px] muted">{{ d.object }}</td>
+          <td>{{ d.decision }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="text-sm text-slate-400">За период изменений не вносилось.</p>
+    {% endif %}
+  </section>
+
+  <p class="text-xs text-slate-500 mt-4">
+    Отчёт построен из данных, собранных агентами на рабочих машинах. Все показатели — за указанный период;
+    полный перечень событий доступен выгрузкой в CSV/JSON на странице «Находки».
+  </p>
+</div>
+{% endblock %}
