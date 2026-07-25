@@ -362,6 +362,17 @@ def seed_demo(
 
     typer.echo(f"[seed-demo] scenario={scenario} machine={machine} → {server_url}")
 
+    # Сначала регистрируем машину, и только потом шлём события.
+    #
+    # Приём событий машину в реестр НЕ заводит: это разные потоки — аудит
+    # принимает поток действий, инвентарь регистрирует саму машину. Без
+    # регистрации демо-события ложатся на машину, которой для сервера не
+    # существует: страница /machines пуста, карточка машины отдаёт 404, и вся
+    # защитная логика (диагноз состояния, разбор эпизодов) эту машину не
+    # видит, потому что перебирает реестр. То есть демо показывало бы меньше
+    # половины продукта, обещая на выходе обратное.
+    _seed_demo_register_machine(server_url=server_url, token=token, machine=machine)
+
     # Загружаем модуль и зовём его main() с подменёнными argv — это явно,
     # без curl-зависимостей и без shell.
     spec = importlib.util.spec_from_file_location("_ccguard_attack_sim", sim_path)
@@ -372,16 +383,26 @@ def seed_demo(
     try:
         os.environ["CCGUARD_SERVER_URL"] = server_url
         os.environ["CCGUARD_AGENT_TOKEN"] = token
+        # Флаг адреса у симулятора называется --server (не --server-url):
+        # несовпадение имён роняло команду разбором аргументов.
         _sys.argv = [
             str(sim_path),
             "--scenario", scenario,
             "--machine", machine,
-            "--server-url", server_url,
+            "--server", server_url,
             "--token", token,
         ]
+        # Модуль обязан лежать в sys.modules ДО выполнения: симулятор
+        # использует отложенные аннотации (``from __future__ import
+        # annotations``), а @dataclass разбирает их через
+        # ``sys.modules[cls.__module__]``. Незарегистрированный модуль даёт
+        # там None и падение с невнятным «NoneType has no attribute __dict__»
+        # ещё на импорте — то есть команда не работала вовсе.
+        _sys.modules[spec.name] = mod
         spec.loader.exec_module(mod)
         rc = mod.main()
     finally:
+        _sys.modules.pop(spec.name, None)
         _sys.argv = saved_argv
         os.environ.clear()
         os.environ.update(saved_env)
@@ -389,8 +410,78 @@ def seed_demo(
     if rc:
         raise typer.Exit(code=int(rc))
     typer.echo(
-        "[seed-demo] готово. Открой /machines и /audit — должны появиться записи."
+        "[seed-demo] готово. Открой /machines, /audit и карточку машины "
+        f"/machines/{machine}."
     )
+
+
+def _seed_demo_register_machine(*, server_url: str, token: str, machine: str) -> None:
+    """Завести демо-машину в реестре и подать сигнал «я жива».
+
+    Только для ``seed-demo``. Инвентарь намеренно минимальный: цель — не
+    изобразить правдоподобный парк установленных расширений, а сделать машину
+    видимой, чтобы на демо-данных работали страницы и защитная логика.
+    Сигнал отправляется следом, иначе диагноз состояния честно скажет
+    «машина ни разу не присылала сигнал» — что для демонстрации бесполезно.
+
+    Сеть здесь может отказать (сервер не поднят, другой адрес), и это НЕ повод
+    ронять команду: события всё равно отправятся, а причина будет названа.
+    """
+    import json as _json
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+    from urllib import error as _urlerr
+    from urllib import request as _urlreq
+
+    base = server_url.rstrip("/")
+    now = _dt.now(_UTC).isoformat()
+
+    def _post(path: str, body: dict) -> tuple[int, str]:
+        req = _urlreq.Request(
+            f"{base}{path}",
+            data=_json.dumps(body).encode("utf-8"),
+            headers={"Content-Type": "application/json", "X-CCGuard-Token": token},
+            method="POST",
+        )
+        try:
+            with _urlreq.urlopen(req, timeout=10) as resp:  # noqa: S310 — свой сервер
+                return resp.status, resp.read().decode("utf-8", "replace")[:200]
+        except _urlerr.HTTPError as e:
+            return e.code, e.read().decode("utf-8", "replace")[:200]
+        except OSError as e:
+            return 0, str(e)
+
+    status, body = _post("/api/v1/inventory", {
+        "inventory": {
+            "schema_version": 1,
+            "machine_id": machine,
+            "machine_label": f"{machine} (demo)",
+            "timestamp": now,
+            "agent_version": "demo",
+            "os": "linux",
+        },
+    })
+    if status != 200:
+        typer.echo(
+            f"[seed-demo] машину зарегистрировать не удалось ({status}): {body}. "
+            "События всё равно отправим, но страница машины будет пустой.",
+            err=True,
+        )
+        return
+    typer.echo(f"[seed-demo] машина {machine} зарегистрирована")
+
+    hb_status, hb_body = _post("/api/v1/heartbeat", {
+        "machine_id": machine,
+        "agent_version": "demo",
+        "hooks_intact": True,
+        "expected_interval_sec": 900,
+    })
+    if hb_status != 200:
+        typer.echo(
+            f"[seed-demo] сигнал не принят ({hb_status}): {hb_body}. "
+            "Карточка машины покажет «нет данных» вместо «защита работает».",
+            err=True,
+        )
 
 
 if __name__ == "__main__":
