@@ -767,6 +767,7 @@ def machine_detail(
     from ccguard.server.services.pi_read_findings import (
         recent_pi_read_cards_for_machine,
     )
+    from ccguard.server.services import sensor_diagnosis
     from ccguard.server.db.models import MCPServerBaseline
     machine = session.get(Machine, machine_id)
     if machine is None:
@@ -1016,6 +1017,9 @@ def machine_detail(
         {
             "user": user,
             "machine": machine,
+            # Почему сенсор молчит (или не молчит). Отличает «сняли хуки» от
+            # «ноутбук выключен» — без этого обе ситуации выглядят одинаково.
+            "diagnosis": sensor_diagnosis.diagnose(session, machine),
             "enforce_blocks": enforce_blocks,
             "inventory": get_latest_inventory_json(session, machine_id),
             "findings": build_explainable_findings(findings),

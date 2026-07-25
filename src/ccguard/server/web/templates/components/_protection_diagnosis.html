@@ -1,0 +1,76 @@
+{# Диагноз состояния защиты на машине.
+
+   Отвечает не на вопрос «есть ли сигнал», а на вопрос «почему его нет».
+   Пустая тишина одинаково выглядит при выключенном ноутбуке и при снятых
+   хуках — оператору нужно видеть разницу, иначе он либо начнёт разбирать
+   каждое отсутствие сигнала, либо перестанет разбирать вообще.
+
+   Цвет выбирается по ДВУМ признакам, а не по одному ``protected``:
+
+   * красный — защиты нет И это требует разбора (сняли хуки, машина исчезла);
+   * янтарный — защита действует, но что-то отказало (упала фоновая служба);
+   * серый — состояние неизвестно (старый агент, установка не завершена).
+     Неизвестность намеренно НЕ красная: «мы не знаем» и «защиты нет» —
+     разные утверждения, и красить их одинаково значит врать оператору;
+   * обычная карточка — всё в порядке.
+
+   Ожидает в контексте ``diagnosis`` (ccguard.server.services.sensor_diagnosis).
+   Ничего не рисует, если диагноза нет. #}
+{% if diagnosis %}
+{% set _d = diagnosis %}
+{% set _bad = (not _d.protected) and _d.needs_review %}
+{% set _warn = _d.needs_review and _d.protected %}
+{% set _unknown = (not _d.protected) and (not _d.needs_review) %}
+<section class="mb-6 rounded-xl p-4 ring-1
+    {% if _bad %}bg-red-50 ring-red-200
+    {% elif _warn %}bg-amber-50 ring-amber-200
+    {% elif _unknown %}bg-slate-50 ring-slate-200
+    {% else %}bg-white shadow ring-transparent{% endif %}">
+    <div class="flex items-start gap-3">
+        <span class="grid place-items-center w-8 h-8 rounded-lg shrink-0
+            {% if _bad %}bg-red-100 text-red-600
+            {% elif _warn %}bg-amber-100 text-amber-700
+            {% elif _unknown %}bg-slate-200 text-slate-500
+            {% else %}bg-emerald-50 text-emerald-600{% endif %}">
+            {% if _bad or _warn %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+            {% elif _unknown %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg>
+            {% else %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+            {% endif %}
+        </span>
+        <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 flex-wrap">
+                <h3 class="font-semibold text-sm
+                    {% if _bad %}text-red-800{% elif _warn %}text-amber-800{% elif _unknown %}text-slate-600{% else %}text-slate-800{% endif %}">{{ _d.title }}</h3>
+                {# Метка про действие защиты. У неизвестного состояния её нет
+                   вообще: утверждать «не действует» без данных нельзя. #}
+                {% if _d.protected %}
+                <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200"
+                    title="Опасные вызовы на этой машине блокируются">защита действует</span>
+                {% elif not _unknown %}
+                <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 ring-1 bg-red-50 text-red-600 ring-red-200"
+                    title="Опасные вызовы на этой машине не блокируются">защита не действует</span>
+                {% else %}
+                <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 ring-1 bg-slate-100 text-slate-500 ring-slate-200"
+                    title="Машина не присылала данных о своём состоянии — судить о защите нельзя">состояние неизвестно</span>
+                {% endif %}
+                {% if _d.needs_review %}
+                <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 ring-1 bg-amber-50 text-amber-700 ring-amber-200">нужен разбор</span>
+                {% endif %}
+            </div>
+            <p class="text-sm mt-1 {% if _bad %}text-red-700{% elif _warn %}text-amber-800{% else %}text-slate-600{% endif %}">{{ _d.detail }}</p>
+            {# Две независимые отметки времени — на них и построен диагноз:
+               сигнал живёт отдельно от событий, и расхождение между ними
+               показывает, что именно отказало. #}
+            <p class="cc-mono text-[11px] text-slate-500 mt-2">
+                сигнал:
+                {% if _d.last_heartbeat_at %}{{ _d.last_heartbeat_at.isoformat(timespec="minutes") }}{% else %}никогда{% endif %}
+                · события хука:
+                {% if _d.last_event_at %}{{ _d.last_event_at.isoformat(timespec="minutes") }}{% else %}нет за 6 ч{% endif %}
+            </p>
+        </div>
+    </div>
+</section>
+{% endif %}
