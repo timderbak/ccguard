@@ -135,6 +135,10 @@ def _handle_tool_use(payload: AuditBatchIn, session: Session) -> AuditBatchOut:
                 signals_json=json.dumps(e.signals),
                 actor_user=e.actor_user,
                 session_id=e.session_id,
+                permission_mode=e.permission_mode,
+                agent_type=e.agent_type,
+                agent_id=e.agent_id,
+                prompt_id=e.prompt_id,
             )
         )
     session.commit()

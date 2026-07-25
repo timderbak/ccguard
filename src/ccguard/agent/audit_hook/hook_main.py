@@ -21,6 +21,10 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+# Lazy imports inside the Read-PI helper keep cold-path cost off the hot
+# path (most invocations are NOT Read). Imported at module scope nonetheless
+# because the helpers themselves are pure functions and tests monkeypatch them.
+from ccguard.agent import read_pi_scan as _read_pi_scan_mod
 from ccguard.agent.audit_hook.actor import detect_actor_user
 from ccguard.agent.audit_hook.buffer import ToolBufferDB
 from ccguard.agent.audit_hook.fingerprint import compute_fingerprint
@@ -29,10 +33,18 @@ from ccguard.agent.config import default_config_dir
 from ccguard.agent.signals import extract_signals
 from ccguard.agent.signals.overrides_loader import load_overrides
 
-# Lazy imports inside the Read-PI helper keep cold-path cost off the hot
-# path (most invocations are NOT Read). Imported at module scope nonetheless
-# because the helpers themselves are pure functions and tests monkeypatch them.
-from ccguard.agent import read_pi_scan as _read_pi_scan_mod
+
+def _str_or_none(value: Any, max_len: int) -> str | None:
+    """Строку — обрезать до ``max_len``, всё остальное — в None.
+
+    Payload хука приходит извне, поэтому каждое поле нормализуется: неверный
+    тип не должен ломать разбор, а длина ограничена тем же пределом, что и в
+    wire-схеме, чтобы событие не отбраковалось сервером при валидации.
+    """
+    if not isinstance(value, str):
+        return None
+    s = value.strip()
+    return s[:max_len] if s else None
 
 
 def _result_status_from_response(
@@ -78,6 +90,20 @@ def main_cli(stdin_text: str | None = None) -> int:
         session_id = data.get("session_id")
         if not isinstance(session_id, str):
             session_id = None
+
+        # Личность агента: «кто действовал и с какими правами». Всё это —
+        # верхнеуровневые поля payload'а (не внутри tool_input), поэтому их не
+        # затрагивает privacy-drop ниже. Ключевое — permission_mode: значения
+        # dontAsk / bypassPermissions означают, что агент работал БЕЗ
+        # подтверждений человеком.
+        permission_mode = _str_or_none(data.get("permission_mode"), 32)
+        # agent_type/agent_id приходят только внутри субагента; их отсутствие
+        # означает, что действовал основной агент.
+        agent_type = _str_or_none(data.get("agent_type"), 128)
+        agent_id = _str_or_none(data.get("agent_id"), 128)
+        # prompt_id (Claude Code v2.1.196+) связывает цепочку действий с одним
+        # запросом человека.
+        prompt_id = _str_or_none(data.get("prompt_id"), 128)
 
         tool_input = data.get("tool_input") or {}
         if not isinstance(tool_input, dict):
@@ -130,6 +156,10 @@ def main_cli(stdin_text: str | None = None) -> int:
                 signals=signals,
                 actor_user=actor_user,
                 session_id=session_id,
+                permission_mode=permission_mode,
+                agent_type=agent_type,
+                agent_id=agent_id,
+                prompt_id=prompt_id,
             )
             row_count = buf.row_count()
 

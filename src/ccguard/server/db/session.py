@@ -96,6 +96,13 @@ _TOOL_USE_SESSION_COLUMNS: tuple[tuple[str, str], ...] = (
     ("session_id", "ALTER TABLE tooluseevent ADD COLUMN session_id TEXT"),
     ("signals_json", "ALTER TABLE tooluseevent ADD COLUMN signals_json TEXT NOT NULL DEFAULT '[]'"),
     ("actor_user", "ALTER TABLE tooluseevent ADD COLUMN actor_user TEXT"),
+    # Личность агента: режим прав + какой субагент действовал + связка с одним
+    # запросом человека. Всё nullable — события от старых агентов остаются без
+    # атрибуции, а не помечаются ошибочно.
+    ("permission_mode", "ALTER TABLE tooluseevent ADD COLUMN permission_mode TEXT"),
+    ("agent_type", "ALTER TABLE tooluseevent ADD COLUMN agent_type TEXT"),
+    ("agent_id", "ALTER TABLE tooluseevent ADD COLUMN agent_id TEXT"),
+    ("prompt_id", "ALTER TABLE tooluseevent ADD COLUMN prompt_id TEXT"),
 )
 
 # Additive columns for Machine (ТЗ-07 sensor self-protection). create_all is a

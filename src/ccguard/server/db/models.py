@@ -154,6 +154,23 @@ class ToolUseEvent(SQLModel, table=True):
     # when NULL. Indexed because correlation filters on it. Additive column on
     # existing DBs is created by init_db's ALTER (create_all is a no-op there).
     session_id: str | None = Field(default=None, index=True)
+    # --- Личность агента: «кто действовал и с какими правами» ----------------
+    # Claude Code передаёт это в каждом вызове хука. Всё nullable: агенты
+    # v0.1/v0.2 не шлют, и такие события просто остаются без атрибуции.
+    #
+    # permission_mode — режим прав на момент вызова (default | plan |
+    # acceptEdits | auto | dontAsk | bypassPermissions). Значения dontAsk и
+    # bypassPermissions означают работу БЕЗ подтверждений человеком — для ИБ
+    # это то же, что «сотрудник отключил защиту», поэтому поле проиндексировано:
+    # по нему строится сводка «сколько машин работают без подтверждений».
+    permission_mode: str | None = Field(default=None, index=True)
+    # Заполняются, только когда действовал субагент; NULL = основной агент.
+    agent_type: str | None = Field(default=None, index=True)
+    agent_id: str | None = None
+    # Связывает цепочку действий с ОДНИМ запросом человека (Claude Code
+    # v2.1.196+) — по нему отличается «человек попросил несколько вещей» от
+    # «агент сам сделал десятки шагов после одной команды».
+    prompt_id: str | None = Field(default=None, index=True)
 
 
 class MachineBaseline(SQLModel, table=True):

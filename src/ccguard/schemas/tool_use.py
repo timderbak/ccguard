@@ -57,6 +57,32 @@ class ToolUseEventIn(SchemaBase):
     # scope. Not raw tool_input — it's an opaque session identifier, so storing
     # it does not breach the privacy contract above. Bounded for DoS hardening.
     session_id: str | None = Field(default=None, max_length=128)
+    # --- Личность агента («кто действовал и с какими правами») ---------------
+    # Claude Code кладёт эти поля в payload каждого хука; раньше мы их
+    # отбрасывали. Все опциональные: агент v0.1/v0.2 их не шлёт, и тогда
+    # событие просто остаётся без атрибуции, как раньше.
+    #
+    # Приватность: это метаданные и непрозрачные идентификаторы, а НЕ
+    # tool_input. Режим прав — перечисление, agent_type — имя субагента из
+    # конфигурации, остальное — служебные id. Контракт модуля не нарушается.
+    #
+    # permission_mode — режим прав на момент вызова:
+    #   default | plan | acceptEdits | auto | dontAsk | bypassPermissions.
+    # Именно он отвечает на вопрос «агент спрашивал разрешения или нет»:
+    # dontAsk и bypassPermissions означают работу без подтверждений человеком.
+    # Не валидируем Literal'ом намеренно — Anthropic добавляет режимы (auto
+    # появился позже), и незнакомое значение должно доехать как есть, а не
+    # обрушить приём всей пачки событий.
+    permission_mode: str | None = Field(default=None, max_length=32)
+    # agent_type/agent_id приходят ТОЛЬКО когда действует субагент
+    # (Explore, security-reviewer, плагин:агент). Их отсутствие = действовал
+    # основной агент.
+    agent_type: str | None = Field(default=None, max_length=128)
+    agent_id: str | None = Field(default=None, max_length=128)
+    # prompt_id связывает все действия, порождённые ОДНИМ запросом человека
+    # (Claude Code v2.1.196+). Ключ к отличию «человек попросил три вещи» от
+    # «агента увели, и он сам сделал сорок шагов».
+    prompt_id: str | None = Field(default=None, max_length=128)
 
     @field_validator("ts", mode="after")
     @classmethod
