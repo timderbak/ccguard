@@ -56,6 +56,11 @@ detectors:
     kind: correlation
     rule_ids: ioa.fleet_campaign
     description: "fleet_campaign_service.tick — groups AI-origin trigger findings (MCP rug-pull / skill-hook-agent drift) by the COMPROMISED COMPONENT's identity across the whole fleet; fires when one component lands on >= min_machines distinct machines in a window. The org-wide supply-chain campaign a per-endpoint EDR structurally cannot aggregate (robust to the identical-poison is_divergent blind spot)."
+  - detector_key: toxic_flow
+    name: Toxic flow / confused deputy (IOA)
+    kind: correlation
+    rule_ids: ioa.toxic_flow
+    description: "sequence_service.detect_toxic_flow — untrusted/external content (content.read.external) directly followed by a WEAPONIZED sink (agent-config self-tamper / persistence / destruction / suspicious-host exfil) carried out with the agent's own authority. The confused-deputy flow that needs no malware; catches the external→sink-direct case that exfil_sequence (needs a credential read) and staging_chain (needs a staging write) miss."
 
 # detector_key → technique bindings. framework duplicated for query convenience.
 mappings:
@@ -167,3 +172,19 @@ mappings:
     framework: attack
     control_type: DETECT
     relevance: primary
+  # toxic_flow: IPI-driven confused-deputy — untrusted content → weaponized sink.
+  - detector_key: toxic_flow
+    technique_id: ASI01
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: toxic_flow
+    technique_id: AML.T0051
+    framework: atlas
+    control_type: DETECT
+    relevance: primary
+  - detector_key: toxic_flow
+    technique_id: T1567
+    framework: attack
+    control_type: DETECT
+    relevance: secondary

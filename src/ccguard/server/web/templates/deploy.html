@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Раскатка · ccguard{% endblock %}
+{% block content %}
+<style>
+  .code{background:#0d0b12;border:1px solid #ffffff14;border-radius:10px;padding:12px 14px;
+    font-family:"IBM Plex Mono",monospace;font-size:12px;color:#cdd6e4;white-space:pre;
+    overflow-x:auto;line-height:1.55;max-height:420px}
+  .code.wrap{white-space:pre-wrap;word-break:break-all}
+  .tab{font-size:12px;padding:5px 12px;border-radius:8px;border:1px solid var(--line);color:#8f88a0}
+  .tab.on{border-color:#8b5cf6aa;color:#c9b6ff;background:#8b5cf612}
+  .inp{background:#15121c;border:1px solid #ffffff1a;border-radius:8px;color:#cdd6e4;font-size:13px;padding:8px 10px}
+  .inp:focus{outline:none;border-color:#8b5cf6aa}
+  .kv{font-family:"IBM Plex Mono",monospace;font-size:12px;color:#b9b2c7}
+  .step{border-left:2px solid #ffffff14;padding-left:14px;margin-left:6px}
+</style>
+<div class="max-w-[1100px] mx-auto">
+  <header class="mb-5">
+    <p class="cc-eyebrow">Управление · раскатка</p>
+    <h1 class="text-3xl text-white mt-1">Раскатка на парк машин</h1>
+    <p class="text-sm text-slate-400 mt-1.5 max-w-3xl">
+      Ставить агента руками на каждой машине нельзя: любой пропущенный ноутбук — это ровно та машина,
+      на которой ничего не видно. Раскатка идёт средствами, которые у вас уже есть: доменные политики,
+      профили управления устройствами, Ansible, образ рабочей станции. Всем им нужно одно и то же —
+      <span class="text-slate-200">готовый блок конфигурации и путь, куда его положить</span>. Здесь он и собран.
+    </p>
+    <div class="mt-4 flex items-center gap-2">
+      {% for p in platforms %}
+      <a href="/admin/deploy?platform={{ p }}" class="tab {% if p == platform %}on{% endif %}">
+        {% if p == 'linux' %}Linux{% elif p == 'darwin' %}macOS{% else %}Windows{% endif %}</a>
+      {% endfor %}
+    </div>
+  </header>
+
+  {# --- адрес сервера: без него агенты просто некуда пойдут --- #}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-1">Адрес сервера</h2>
+    <p class="text-xs text-slate-500 mb-3">Попадёт в конфиг каждой машины. Агенты будут ходить именно по нему.</p>
+    {% if b.server_url_guessed %}
+    <p class="text-xs text-amber-300/90 mb-3">
+      Адрес не задан и определён по текущему запросу — <span class="cc-mono">{{ b.server_url }}</span>.
+      За обратным прокси это часто внутренний адрес, по которому агенты не достучатся. Задайте явно.
+    </p>
+    {% endif %}
+    <form method="POST" action="/admin/deploy/server-url" class="flex gap-2 items-center flex-wrap">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <input type="hidden" name="platform" value="{{ platform }}" />
+      <input type="text" name="server_url" value="{{ b.server_url }}" class="inp flex-1 min-w-[320px]"
+             placeholder="https://ccguard.corp.local" />
+      <button type="submit" class="text-sm px-3 py-2 rounded-md bg-white/10 text-slate-200 hover:bg-white/15">Сохранить</button>
+    </form>
+  </section>
+
+  {# --- главный артефакт: блок для доменной политики --- #}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-1">1. Конфигурация Claude Code</h2>
+    <p class="text-sm text-slate-400 mb-1">
+      Этот файл принадлежит администратору, а не пользователю. Разработчик под своей учётной записью
+      изменить его не может — <span class="text-slate-200">на этом и держится устойчивость защиты</span>,
+      а не только её заметность. Именно его раскатывают доменной политикой или профилем управления.
+    </p>
+    <p class="kv mt-3 mb-1">Положить по пути:</p>
+    <div class="code wrap mb-3">{{ b.managed_settings_path }}</div>
+    <p class="kv mb-1">Содержимое:</p>
+    <div class="code">{{ b.managed_settings_json }}</div>
+    <p class="kv mt-3">
+      Ожидаемый отпечаток хуков: <span class="text-slate-300">{{ b.expected_hooks_hash or '—' }}</span>
+    </p>
+    <p class="text-xs text-slate-500 mt-1">
+      Сервер знает этот отпечаток заранее, поэтому сразу видит машины, где лежит не тот конфиг, который раскатывали.
+    </p>
+  </section>
+
+  {# --- конфиг агента: и объяснение, почему токена здесь нет --- #}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-1">2. Конфигурация агента</h2>
+    <p class="kv mt-3 mb-1">Положить по пути:</p>
+    <div class="code wrap mb-3">{{ b.agent_config_path }}</div>
+    <div class="code wrap">{{ b.agent_config }}</div>
+    <p class="text-xs text-amber-300/90 mt-3">
+      Токен намеренно оставлен подстановкой <span class="cc-mono">{{ b.token_placeholder }}</span>.
+      Один токен на весь образ означает, что его утечка даёт право писать данные за любую машину флота,
+      а отзыв — останавливает весь флот разом. Подставлять токен должно то же средство раскатки
+      из своего хранилища секретов; у доменных политик, профилей управления и Ansible оно есть.
+      Сами токены создаются на странице <a href="/settings" class="text-emerald-400 hover:underline">Настройки</a>.
+    </p>
+  </section>
+
+  {# --- скрипт: для тех, кто раскатывает через Ansible или образ --- #}
+  {% if b.install_script %}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-1">3. Скрипт установки</h2>
+    <p class="text-sm text-slate-400 mb-3">
+      Для Ansible или сборки образа. Запускается с правами администратора, токен берёт из переменной окружения
+      <span class="cc-mono text-slate-300">CCGUARD_AGENT_TOKEN</span>.
+      Исполняемые файлы агента кладутся в <span class="cc-mono text-slate-300">{{ b.install_root }}/bin</span> —
+      этот путь зашит в хуки как приоритетный.
+    </p>
+    <div class="code">{{ b.install_script }}</div>
+  </section>
+  {% else %}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-1">3. Скрипт установки</h2>
+    <p class="text-sm text-slate-400">
+      Для Windows скрипт не выдаётся: раскатка там идёт средствами домена, а выдать сюда неработающий
+      скрипт хуже, чем честно его не выдавать. Блок конфигурации выше применим как есть — его кладут
+      групповой политикой по указанному пути.
+    </p>
+  </section>
+  {% endif %}
+
+  {# --- проверка: раскатали ли то, что собирались --- #}
+  <section class="cc-card p-5">
+    <h2 class="text-lg text-white mb-1">Проверка раскатки</h2>
+    <p class="text-sm text-slate-400 mb-3">
+      Машины сравниваются по отпечатку хуков с тем конфигом, который здесь собран.
+      Машины, ещё не приславшие отпечаток, сюда не попадают: «не доложила» и «доложила другое» —
+      разные утверждения.
+    </p>
+    {% if drift %}
+    <table class="w-full">
+      <thead>
+        <tr class="text-left text-[11px] uppercase tracking-wide text-slate-500">
+          <th class="pb-2 font-semibold" style="width:180px">Машина</th>
+          <th class="pb-2 font-semibold">Отпечаток на машине</th>
+          <th class="pb-2 font-semibold" style="width:150px">Последний контакт</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in drift %}
+        <tr style="border-top:1px solid #ffffff0a">
+          <td class="py-2.5 pr-3">
+            <a href="/machines/{{ d.machine_id }}" class="cc-mono text-[12px] text-slate-200 hover:text-emerald-400">{{ d.machine_id }}</a>
+          </td>
+          <td class="py-2.5 pr-3 cc-mono text-[11px] text-amber-300/90">{{ d.reported[:24] }}…</td>
+          <td class="py-2.5 cc-mono text-[11px] text-slate-500">{{ d.last_seen.isoformat(timespec="minutes") if d.last_seen else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="text-xs text-amber-300/90 mt-3">
+      На этих машинах конфигурация хуков отличается от раскатанной. Причина может быть законной
+      (машина на другой платформе, установка в процессе), но проверить нужно.
+    </p>
+    {% else %}
+    <p class="text-sm text-emerald-300/90">Расхождений нет: у всех машин, приславших отпечаток, конфигурация совпадает с раскатанной.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

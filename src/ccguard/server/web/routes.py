@@ -201,6 +201,10 @@ def overview_page(
     pending_feeds = len(
         session.exec(select(ProposedSignal.id).where(ProposedSignal.status == "pending")).all()
     )
+    # Личность агента: на скольких машинах агент работает БЕЗ подтверждений
+    # человеком. Первый вопрос руководителя ИБ, поэтому место — на главной.
+    from ccguard.server.services.identity_service import fleet_permission_summary
+    identity = fleet_permission_summary(session)
     return templates.TemplateResponse(
         request,
         "overview.html",
@@ -215,6 +219,7 @@ def overview_page(
             "open_threats": open_threats,
             "active_threats": active_threats,
             "pending_feeds": pending_feeds,
+            "identity": identity,
             "csrf_token": _csrf_for(request),
         },
     )
@@ -574,6 +579,8 @@ def signals_catalog_page(
             "rows": rows,
         })
 
+    from ccguard.server.services.coverage_service import known_technique_ids
+
     return templates.TemplateResponse(
         request, "signals_catalog.html",
         {
@@ -582,6 +589,7 @@ def signals_catalog_page(
             "groups": groups,
             "total": len(CATALOG),
             "cat_count": len(groups),
+            "covered_techniques": known_technique_ids(session),
         },
     )
 
@@ -644,7 +652,7 @@ def indicators_page(
     pending = [r for r in rows if r.status == "pending"]
 
     def _iv(r: object) -> dict:
-        return {"type": r.indicator_type, "value": r.value, "kind": r.value_kind,
+        return {"id": r.id, "type": r.indicator_type, "value": r.value, "kind": r.value_kind,
                 "source": r.source, "source_ref": r.source_ref, "technique": r.technique,
                 "tactic": r.tactic, "weight": r.weight, "status": r.status,
                 "description": r.description}
@@ -664,11 +672,14 @@ def indicators_page(
             "rows": sorted(items, key=lambda i: (-i["weight"], i["value"])),
         })
 
+    from ccguard.server.services.coverage_service import known_technique_ids
+
     return templates.TemplateResponse(
         request, "indicators.html",
         {"user": user, "csrf_token": _csrf_for(request),
          "groups": groups, "pending": [_iv(r) for r in pending],
-         "total": len(active), "type_count": len(groups)},
+         "total": len(active), "type_count": len(groups),
+         "covered_techniques": known_technique_ids(session)},
     )
 
 
@@ -689,6 +700,7 @@ def attacks_page(
     recent = [{
         "scenario_key": m.scenario_key, "machine_id": m.machine_id,
         "session_id": m.session_id, "matched_at": m.matched_at,
+        "finding_id": m.finding_id,
         "steps": json.loads(m.matched_steps_json or "[]"),
     } for m in matches]
     return templates.TemplateResponse(
@@ -755,6 +767,8 @@ def machine_detail(
     from ccguard.server.services.pi_read_findings import (
         recent_pi_read_cards_for_machine,
     )
+    from ccguard.server.services import sensor_diagnosis
+    from ccguard.server.services import protection_incident_service
     from ccguard.server.db.models import MCPServerBaseline
     machine = session.get(Machine, machine_id)
     if machine is None:
@@ -1004,6 +1018,14 @@ def machine_detail(
         {
             "user": user,
             "machine": machine,
+            # Почему сенсор молчит (или не молчит). Отличает «сняли хуки» от
+            # «ноутбук выключен» — без этого обе ситуации выглядят одинаково.
+            "diagnosis": sensor_diagnosis.diagnose(session, machine),
+            # Незакрытый вопрос по этой машине. Живёт дольше состояния: защиту
+            # могли уже вернуть, а объяснения так и не дали.
+            "incident": protection_incident_service.open_for_machine(
+                session, machine_id
+            ),
             "enforce_blocks": enforce_blocks,
             "inventory": get_latest_inventory_json(session, machine_id),
             "findings": build_explainable_findings(findings),
@@ -1188,6 +1210,366 @@ def skills_inventory_drill_partial(
         "components/_skill_agent_drill.html",
         {"rows": rows, "kind": kind, "name": name},
     )
+
+
+@router.get("/admin/report", response_class=HTMLResponse)
+def compliance_report_page(
+    request: Request,
+    days: int = 30,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Отчёт за период — документ для аудита, пригодный для печати в PDF."""
+    from ccguard.server.services import compliance_report_service
+
+    days = days if days in (7, 30, 90, 365) else 30
+    report = compliance_report_service.build_report(session, days=days)
+    return templates.TemplateResponse(
+        request,
+        "compliance_report.html",
+        {"user": user, "r": report, "days": days},
+    )
+
+
+@router.get("/findings/export")
+def findings_export(
+    request: Request,
+    format: str = "csv",
+    severity: str | None = None,
+    rule_id: str | None = None,
+    machine_id: str | None = None,
+    days: int | None = None,
+    _user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> Response:
+    """Скачать находки файлом: CSV для аудита, JSON для машинной обработки.
+
+    Фильтры те же, что на странице находок, — оператор отбирает глазами и
+    выгружает ровно то, что видит.
+    """
+    from ccguard.server.services import export_service
+
+    fmt = "json" if format == "json" else "csv"
+    rows = export_service.select_findings(
+        session,
+        severity=severity or None,
+        rule_id=rule_id or None,
+        machine_id=machine_id or None,
+        since_days=days,
+    )
+    body = export_service.to_json(rows) if fmt == "json" else export_service.to_csv(rows)
+    media = "application/json" if fmt == "json" else "text/csv"
+    name = export_service.filename(fmt)
+    return Response(
+        content=body,
+        media_type=f"{media}; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
+
+
+@router.get("/admin/canaries", response_class=HTMLResponse)
+def canaries_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Приманки: подложенные фальшивые ключи и их состояние."""
+    from ccguard.server.services import canary_service
+
+    rows = canary_service.list_canaries(session)
+    return templates.TemplateResponse(
+        request,
+        "canaries.html",
+        {
+            "user": user,
+            "canaries": rows,
+            "recipes": canary_service.RECIPES,
+            "triggered_count": sum(1 for c in rows if c.status == "triggered"),
+            # Значение только что созданной приманки показывается РОВНО ОДИН раз.
+            # Ключ — идентификатор сессии (require_session возвращает именно его),
+            # чтобы значение увидел только тот, кто её создал.
+            "created": _CANARY_FLASH.pop(user, None),
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+# Одноразовая передача значения новой приманки на страницу после редиректа.
+# В базе значения нет и не будет: если она утечёт вместе со значениями,
+# атакующий получит список приманок и научится их обходить. Здесь оно живёт
+# ровно до первого показа оператору.
+_CANARY_FLASH: dict[str, dict] = {}
+
+
+@router.post("/admin/canaries/create")
+def canary_create(
+    request: Request,
+    token_type: str = Form(...),
+    file_path: str = Form(""),
+    machine_id: str = Form(""),
+    label: str = Form(""),
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Создать приманку и показать её значение — единственный раз."""
+    from ccguard.server.services import canary_service
+
+    user_id = _resolve_user_id(session, sid)
+    try:
+        created = canary_service.create_canary(
+            session,
+            token_type=token_type,
+            file_path=file_path.strip() or None,
+            machine_id=machine_id.strip() or None,
+            label=label.strip() or None,
+            created_by=user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    # Ключ — идентификатор сессии (тот же, что читает страница): значение увидит
+    # ровно тот, кто создал приманку, и ровно один раз.
+    _CANARY_FLASH[sid] = {
+        "file_path": created.token.file_path,
+        "file_content": created.file_content,
+        "instructions": created.instructions,
+        "token_type": created.token.token_type,
+    }
+    return RedirectResponse(url="/admin/canaries", status_code=303)
+
+
+@router.post("/admin/canaries/{canary_id}/delete")
+def canary_delete(
+    canary_id: int,
+    request: Request,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Убрать приманку (перестаёт раздаваться агентам)."""
+    from ccguard.server.services import canary_service
+
+    canary_service.delete_canary(session, canary_id)
+    return RedirectResponse(url="/admin/canaries", status_code=303)
+
+
+@router.get("/admin/deploy", response_class=HTMLResponse)
+def deploy_page(
+    request: Request,
+    platform: str = "linux",
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Готовый конфиг для массовой раскатки через домен / образ / Ansible."""
+    from ccguard.server.services import deploy_config_service
+
+    if platform not in deploy_config_service.SUPPORTED_PLATFORMS:
+        platform = "linux"
+    bundle = deploy_config_service.build_bundle(
+        session, platform=platform, fallback_url=str(request.base_url),
+    )
+    return templates.TemplateResponse(
+        request,
+        "deploy.html",
+        {
+            "user": user,
+            "b": bundle,
+            "platform": platform,
+            "platforms": deploy_config_service.SUPPORTED_PLATFORMS,
+            # Машины, чей отпечаток хуков не совпал с раскатанным конфигом.
+            # Проверка почти бесплатная: отпечаток уже приходит с сигналом.
+            "drift": deploy_config_service.config_drift(session, platform=platform),
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+@router.post("/admin/deploy/server-url")
+def deploy_set_server_url(
+    request: Request,
+    server_url: str = Form(...),
+    platform: str = Form("linux"),
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Задать публичный адрес сервера, который попадёт в раскатанный конфиг."""
+    from ccguard.server.services import deploy_config_service, settings_service
+
+    settings_service.set_setting(
+        session, deploy_config_service.SERVER_URL_KEY, server_url.strip(),
+    )
+    return RedirectResponse(url=f"/admin/deploy?platform={platform}", status_code=303)
+
+
+@router.get("/admin/protection", response_class=HTMLResponse)
+def protection_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Состояние защиты по флоту + разбор машин, где её нет.
+
+    Совмещает два уровня намеренно: сверху — сколько машин под защитой прямо
+    сейчас, ниже — эпизоды, по которым ждут ответа человека. Разносить это по
+    двум страницам значит заставить оператора сверять их глазами.
+    """
+    from ccguard.server.services import protection_incident_service as pis
+    from ccguard.server.services import sensor_diagnosis
+
+    return templates.TemplateResponse(
+        request,
+        "protection.html",
+        {
+            "user": user,
+            "fleet": sensor_diagnosis.fleet_summary(session),
+            "diagnoses": sensor_diagnosis.diagnose_fleet(session),
+            "incidents": pis.list_incidents(session, unresolved_only=False),
+            "summary": pis.summary(session),
+            "states": {
+                "ok": sensor_diagnosis.OK, "idle": sensor_diagnosis.IDLE,
+                "hooks_removed": sensor_diagnosis.HOOKS_REMOVED,
+                "hooks_changed": sensor_diagnosis.HOOKS_CHANGED,
+                "daemon_down": sensor_diagnosis.DAEMON_DOWN,
+                "offline": sensor_diagnosis.OFFLINE,
+                "unknown": sensor_diagnosis.UNKNOWN,
+            },
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+@router.post("/admin/protection/{incident_id}/explain")
+def protection_explain(
+    incident_id: int,
+    request: Request,
+    explanation: str = Form(...),
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Записать причину, по которой на машине не было защиты."""
+    from ccguard.server.services import protection_incident_service as pis
+
+    try:
+        pis.explain(
+            session, incident_id,
+            text=explanation, who=_resolve_user_id(session, sid),
+        )
+    except pis.NotFound as e:
+        raise HTTPException(status_code=404) from e
+    except (pis.AlreadyClosed, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return RedirectResponse(url="/admin/protection", status_code=303)
+
+
+@router.post("/admin/protection/{incident_id}/review")
+def protection_review(
+    incident_id: int,
+    request: Request,
+    verdict: str = Form(...),
+    note: str = Form(""),
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Принять или отклонить объяснение — это и закрывает эпизод."""
+    from ccguard.server.services import protection_incident_service as pis
+
+    try:
+        pis.review(
+            session, incident_id,
+            accept=(verdict == "accept"), who=_resolve_user_id(session, sid),
+            note=note,
+        )
+    except pis.NotFound as e:
+        raise HTTPException(status_code=404) from e
+    except pis.AlreadyClosed as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return RedirectResponse(url="/admin/protection", status_code=303)
+
+
+@router.get("/admin/mcp-inventory", response_class=HTMLResponse)
+def mcp_inventory_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Единая база MCP-серверов по всему флоту: список, хеши, расхождения
+    между хостами (supply-chain / tamper-сигнал), статус ревью
+    (проверено/не проверено)."""
+    from ccguard.server.services.mcp_fleet_service import aggregate_mcp_servers
+
+    rows = aggregate_mcp_servers(session)
+    return templates.TemplateResponse(
+        request,
+        "mcp_inventory.html",
+        {
+            "user": user,
+            "rows": rows,
+            "total": len(rows),
+            "divergent_count": sum(1 for r in rows if r.is_divergent),
+            "unreviewed_count": sum(1 for r in rows if not r.fully_reviewed),
+            # «Что люди сами себе понаставили» — серверы, объявленные в личном
+            # конфиге разработчика и не пришедшие с плагином.
+            "self_installed_count": sum(
+                1 for r in rows if r.primary_scope == "user" and not r.from_plugin
+            ),
+            "plugin_count": sum(1 for r in rows if r.from_plugin),
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+@router.get("/_partials/mcp-inventory/drill", response_class=HTMLResponse)
+def mcp_inventory_drill_partial(
+    request: Request,
+    name: str,
+    _user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """HTMX drill-down: по-машинные хеши + статус ревью для одного имени MCP."""
+    from ccguard.server.services.mcp_fleet_service import machines_for_mcp
+
+    rows = machines_for_mcp(session, name)
+    return templates.TemplateResponse(
+        request,
+        "components/_mcp_fleet_drill.html",
+        {"rows": rows, "name": name, "csrf_token": _csrf_for(request)},
+    )
+
+
+@router.post("/admin/mcp-inventory/review")
+def mcp_inventory_review(
+    request: Request,
+    machine_id: str = Form(...),
+    mcp_name: str = Form(...),
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Пометить один экземпляр MCP-сервера (на одной машине) проверенным."""
+    from ccguard.server.services import mcp_baseline_service
+
+    user_id = _resolve_user_id(session, sid)
+    mcp_baseline_service.mark_reviewed(session, machine_id, mcp_name, reviewed_by=user_id)
+    return RedirectResponse(url="/admin/mcp-inventory", status_code=303)
+
+
+@router.post("/admin/mcp-inventory/review-all")
+def mcp_inventory_review_all(
+    request: Request,
+    mcp_name: str = Form(...),
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Пометить ВСЕ непроверенные экземпляры этого MCP по всему флоту."""
+    from ccguard.server.services import mcp_baseline_service
+
+    user_id = _resolve_user_id(session, sid)
+    mcp_baseline_service.mark_reviewed_fleet_wide(session, mcp_name, reviewed_by=user_id)
+    return RedirectResponse(url="/admin/mcp-inventory", status_code=303)
 
 
 @router.get("/admin/proposed-signals", response_class=HTMLResponse)
@@ -1385,6 +1767,61 @@ def proposed_signals_trigger_discovery(
     return RedirectResponse(url="/admin/proposed-signals", status_code=303)
 
 
+@router.post("/admin/indicators/{row_id}/approve")
+def indicator_approve(
+    row_id: int,
+    request: Request,
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Promote a pending Path-2 indicator (e.g. an auto-collected IOC host) to
+    active — it ships to agents on the next policy sync."""
+    from ccguard.server.services import indicator_review_service as svc
+
+    try:
+        svc.approve(session, row_id, reviewed_by=user)
+    except svc.NotPending as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return RedirectResponse(url="/indicators", status_code=303)
+
+
+@router.post("/admin/indicators/{row_id}/reject")
+def indicator_reject(
+    row_id: int,
+    request: Request,
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Reject a pending Path-2 indicator — kept for provenance, never served."""
+    from ccguard.server.services import indicator_review_service as svc
+
+    try:
+        svc.reject(session, row_id, reviewed_by=user)
+    except svc.NotPending as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    return RedirectResponse(url="/indicators", status_code=303)
+
+
+@router.post("/admin/indicators/trigger-ioc-feeds")
+def indicator_trigger_ioc_feeds(
+    request: Request,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Run the IOC host-feed sweep ON DEMAND, instead of waiting for the daily
+    scheduler. Deterministic (no LLM). Reuses the same feed set as the scheduled
+    sweep; each feed is isolation-safe, so an offline source is logged, not
+    fatal. Fetched hosts land as pending indicators for review below."""
+    from ccguard.server.services import ioc_feed_service
+
+    feeds = getattr(request.app.state, "ioc_feeds", None) or ioc_feed_service.default_feeds()
+    ioc_feed_service.run_ioc_feeds(session, feeds=list(feeds))
+    return RedirectResponse(url="/indicators", status_code=303)
+
+
 @router.post("/machines/{machine_id}/suppress")
 def machine_suppress_signal(
     machine_id: str,
@@ -1428,7 +1865,7 @@ def machine_accept_mcp_baseline(
     machine_id: str,
     request: Request,
     mcp_name: str = Form(...),
-    _user: str = Depends(require_session),
+    sid: str = Depends(require_session),
     _csrf: None = Depends(require_csrf),
     session: Session = Depends(get_session),
 ) -> RedirectResponse:
@@ -1437,10 +1874,12 @@ def machine_accept_mcp_baseline(
     Используется когда админ подтвердил, что изменение description/definition
     легитимное (например, плагин действительно выпустил новый релиз и описание
     обновили). После accept последующий sync с тем же содержимым не будет
-    вызывать новое finding.
+    вызывать новое finding. Также помечает MCP как проверенный (fleet review
+    state), т.к. принятие изменения — это и есть ревью итогового состояния.
     """
     from ccguard.server.services import mcp_baseline_service
-    mcp_baseline_service.accept_baseline(session, machine_id, mcp_name)
+    user_id = _resolve_user_id(session, sid)
+    mcp_baseline_service.accept_baseline(session, machine_id, mcp_name, reviewed_by=user_id)
     return RedirectResponse(url=f"/machines/{machine_id}", status_code=303)
 
 
@@ -1809,14 +2248,25 @@ def _finding_detail_context(session: Session, finding) -> dict:
         ]
         for tid in sorted(set(tech_ids)):
             t = session.exec(select(Technique).where(Technique.technique_id == tid)).first()
-            techniques.append({"id": tid, "name": t.name if t else "", "url": t.url if t else None})
+            # ``covered`` gates the INTERNAL /coverage/{id} link: only techniques
+            # present in the catalog have a coverage page (others 404), so we link
+            # internally only when the row exists and fall back to MITRE otherwise.
+            techniques.append(
+                {"id": tid, "name": t.name if t else "", "url": t.url if t else None,
+                 "covered": t is not None}
+            )
 
     # catalog-signal finding (cred.read.*, c2.*, ...) — pull its ATT&CK technique
     if not techniques:
         from ccguard.server.web.finding_view import attack_url_for_signal, _SIGNAL_TO_TECHNIQUE
         tech = _SIGNAL_TO_TECHNIQUE.get(rid)
         if tech:
-            techniques.append({"id": tech, "name": "", "url": attack_url_for_signal(rid)})
+            t_row = session.exec(select(Technique).where(Technique.technique_id == tech)).first()
+            techniques.append(
+                {"id": tech, "name": t_row.name if t_row else "",
+                 "url": attack_url_for_signal(rid) or (t_row.url if t_row else None),
+                 "covered": t_row is not None}
+            )
 
     # source artifact: split the "<identity>::<snippet>" matched_pattern that the
     # PI / dangerous detectors compose, so the page shows WHAT was injected / WHERE.
@@ -2569,9 +3019,18 @@ def _settings_context(request: Request, session: Session, user: str) -> dict:
         network_allowlist = []
     # initial-render values for the inline usage counter
     usage = _llm_usage_summary(session)
+    from ccguard.server.services.alert_emitter import load_config as _load_alert_cfg
+    _alert = _load_alert_cfg(session)
     return {
         "user": user,
         "tokens": list_tokens(session),
+        "alert_settings": {
+            "enabled": _alert.enabled,
+            "webhook_url": _alert.webhook_url,
+            "min_severity": _alert.min_severity,
+            "format": _alert.fmt,
+            "telegram_chat_id": _alert.telegram_chat_id,
+        },
         "new_token": request.query_params.get("new_token"),
         "password_msg": request.query_params.get("password_msg"),
         "server_version": "0.1.0",
@@ -2656,6 +3115,59 @@ def admin_llm_settings_save(
     # the box was checked (HTML always sends "on" unless overridden).
     set_setting(session, "llm_scanner_enabled", "true" if enabled else "false")
     set_setting(session, "daily_call_budget", str(budget_int))
+    return RedirectResponse(url="/settings", status_code=303)
+
+
+@router.post("/admin/alert-settings")
+def admin_alert_settings_save(
+    request: Request,
+    webhook_url: str = Form(""),
+    min_severity: str = Form("block"),
+    alert_format: str = Form("generic"),
+    telegram_chat_id: str = Form(""),
+    enabled: str = Form(""),
+    reset_watermark: str = Form(""),
+    user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> Response:
+    """Persist the alert-emitter config (webhook URL, min severity, format).
+
+    On enable-or-URL-change (or an explicit "reset") the watermark is zeroed so
+    the next tick fast-forwards to now (no historical-backlog flood). Validation:
+    a non-empty URL must be http(s)://; enabling requires a URL.
+    """
+    from ccguard.server.services.settings_service import get_setting, set_setting
+
+    url = webhook_url.strip()
+    sev = min_severity if min_severity in ("info", "warn", "block", "critical") else "block"
+    fmt = alert_format if alert_format in ("generic", "slack", "telegram") else "generic"
+    is_enabled = bool(enabled)
+
+    err: str | None = None
+    if url and not (url.startswith("http://") or url.startswith("https://")):
+        err = "Webhook URL должен начинаться с http:// или https://."
+    elif is_enabled and not url:
+        err = "Чтобы включить алерты, задайте webhook URL."
+    elif is_enabled and fmt == "telegram" and not telegram_chat_id.strip():
+        err = "Для формата Telegram укажите chat_id."
+    if err is not None:
+        ctx = _settings_context(request, session, user)
+        ctx["alert_validation_error"] = err
+        return templates.TemplateResponse(request, "settings.html", ctx, status_code=200)
+
+    prev_url = (get_setting(session, "alert.webhook_url") or "").strip()
+    prev_enabled = (get_setting(session, "alert.enabled") or "false").lower() in ("1", "true", "yes")
+
+    set_setting(session, "alert.webhook_url", url)
+    set_setting(session, "alert.min_severity", sev)
+    set_setting(session, "alert.format", fmt)
+    set_setting(session, "alert.telegram_chat_id", telegram_chat_id.strip())
+    set_setting(session, "alert.enabled", "true" if is_enabled else "false")
+
+    if reset_watermark or (is_enabled and (not prev_enabled or url != prev_url)):
+        set_setting(session, "alert.last_finding_id", "0")
+
     return RedirectResponse(url="/settings", status_code=303)
 
 
@@ -3041,6 +3553,7 @@ def anomaly_detail(
                 sigma_display = "—"
         findings_vm.append(
             {
+                "id": r.id,
                 "discovered_at": r.discovered_at,
                 "observed_value": payload.get("observed_value", "—"),
                 "sigma_distance": sigma_display,

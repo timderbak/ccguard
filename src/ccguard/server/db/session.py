@@ -96,6 +96,13 @@ _TOOL_USE_SESSION_COLUMNS: tuple[tuple[str, str], ...] = (
     ("session_id", "ALTER TABLE tooluseevent ADD COLUMN session_id TEXT"),
     ("signals_json", "ALTER TABLE tooluseevent ADD COLUMN signals_json TEXT NOT NULL DEFAULT '[]'"),
     ("actor_user", "ALTER TABLE tooluseevent ADD COLUMN actor_user TEXT"),
+    # Личность агента: режим прав + какой субагент действовал + связка с одним
+    # запросом человека. Всё nullable — события от старых агентов остаются без
+    # атрибуции, а не помечаются ошибочно.
+    ("permission_mode", "ALTER TABLE tooluseevent ADD COLUMN permission_mode TEXT"),
+    ("agent_type", "ALTER TABLE tooluseevent ADD COLUMN agent_type TEXT"),
+    ("agent_id", "ALTER TABLE tooluseevent ADD COLUMN agent_id TEXT"),
+    ("prompt_id", "ALTER TABLE tooluseevent ADD COLUMN prompt_id TEXT"),
 )
 
 # Additive columns for Machine (ТЗ-07 sensor self-protection). create_all is a
@@ -111,6 +118,35 @@ _MACHINE_HEARTBEAT_COLUMNS: tuple[tuple[str, str], ...] = (
 _TOOL_USE_SESSION_INDEX_DDL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS ix_tooluseevent_session_id "
     "ON tooluseevent(session_id)",
+)
+
+# Additive column for MCPServerBaseline: the raw (secret-masked) definition text,
+# stored so the rug-pull change-classifier can compare old vs new semantically
+# (version bump vs binary swap) instead of only seeing the hash moved. Same
+# PRAGMA-guarded ADD COLUMN pattern — create_all is a no-op on existing tables.
+_MCP_BASELINE_ADDITIVE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("definition_preview", "ALTER TABLE mcpserverbaseline ADD COLUMN definition_preview TEXT"),
+)
+
+# Additive columns for MCPServerBaseline: fleet review state (pending/active +
+# who/when). ``status`` defaults every pre-existing row to 'pending' too — they
+# were never reviewed under the old schema either, so that default is honest,
+# not a silent promotion to 'active'. Same PRAGMA-guarded ADD COLUMN pattern.
+_MCP_BASELINE_REVIEW_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("status", "ALTER TABLE mcpserverbaseline ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"),
+    ("accepted_at", "ALTER TABLE mcpserverbaseline ADD COLUMN accepted_at TIMESTAMP"),
+    ("accepted_by", "ALTER TABLE mcpserverbaseline ADD COLUMN accepted_by TEXT"),
+)
+
+# Additive columns for MCPServerBaseline: provenance ("откуда MCP взялся").
+# Nullable / defaulted so rows written by pre-feature agents stay valid and
+# render as "источник неизвестен" rather than being mislabeled.
+_MCP_BASELINE_PROVENANCE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("scope", "ALTER TABLE mcpserverbaseline ADD COLUMN scope TEXT"),
+    ("origin", "ALTER TABLE mcpserverbaseline ADD COLUMN origin TEXT NOT NULL DEFAULT 'local'"),
+    ("parent_plugin", "ALTER TABLE mcpserverbaseline ADD COLUMN parent_plugin TEXT"),
+    ("source_marketplace", "ALTER TABLE mcpserverbaseline ADD COLUMN source_marketplace TEXT"),
+    ("source_path", "ALTER TABLE mcpserverbaseline ADD COLUMN source_path TEXT"),
 )
 
 # Composite UNIQUE for ThreatIndicator (ТЗ-05). Same idempotent pattern as the
@@ -236,6 +272,19 @@ def init_db(engine: Engine) -> None:
         }
         for col_name, ddl in _MACHINE_HEARTBEAT_COLUMNS:
             if col_name not in machine_cols:
+                conn.execute(text(ddl))
+        # Additive ALTER for MCPServerBaseline.definition_preview (rug-pull classifier).
+        mcp_baseline_cols = {
+            row[1] for row in conn.execute(text("PRAGMA table_info(mcpserverbaseline)"))
+        }
+        for col_name, ddl in _MCP_BASELINE_ADDITIVE_COLUMNS:
+            if col_name not in mcp_baseline_cols:
+                conn.execute(text(ddl))
+        for col_name, ddl in _MCP_BASELINE_REVIEW_COLUMNS:
+            if col_name not in mcp_baseline_cols:
+                conn.execute(text(ddl))
+        for col_name, ddl in _MCP_BASELINE_PROVENANCE_COLUMNS:
+            if col_name not in mcp_baseline_cols:
                 conn.execute(text(ddl))
         # Additive ALTER for Technique.in_scope (ТЗ-06 coverage fix; table
         # renamed atlastechnique→technique in ТЗ-08).

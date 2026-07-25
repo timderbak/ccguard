@@ -49,18 +49,83 @@ from sqlmodel import Session, select
 
 from ccguard.schemas import McpServerEntry
 from ccguard.server.db.models import FindingRecord, MCPServerBaseline
+from ccguard.server.services.hidden_unicode import scan_hidden_unicode
+from ccguard.server.services.mcp_change_classifier import (
+    Corroborator,
+    classify_definition_change,
+)
 
 # --- Constants -------------------------------------------------------------
 
 RULE_DESCRIPTION = "mcp.rug_pull.description_changed"
 RULE_DEFINITION = "mcp.rug_pull.definition_changed"
 RULE_TOOLS = "mcp.rug_pull.tools_changed"
+# A definition change the classifier judged a routine, expected update (a pinned
+# semver bumped and nothing else). Emitted at info so it is transparent/auditable
+# WITHOUT adding warn/critical noise — the anti-false-positive split.
+RULE_UPDATE_EXPECTED = "mcp.update.expected"
+# Hidden/invisible Unicode in an MCP description — an injection hidden from human
+# review but read by the LLM. Deterministic, zero-false-positive → critical.
+RULE_HIDDEN_UNICODE = "mcp.hidden_unicode"
 
 SEVERITY_DESCRIPTION = "critical"
-SEVERITY_DEFINITION = "warn"
+SEVERITY_DEFINITION = "warn"  # cautious default; the classifier may raise/lower it
 SEVERITY_TOOLS = "critical"
 
+# Classifier kinds that mean "routine update" → info under RULE_UPDATE_EXPECTED.
+_EXPECTED_CHANGE_KINDS = frozenset({"version_bump", "corroborated_update", "noop"})
+
 DESCRIPTION_PREVIEW_LEN = 200
+
+
+def _definition_text(entry: McpServerEntry) -> str:
+    """Rebuild the ``command args | url`` definition text from an entry.
+
+    Mirrors the agent's ``_definition_text`` (ccguard.agent.scan.mcp). Secrets are
+    already masked in ``command``/``args``/``url`` by the agent, so this is safe to
+    store as the baseline ``definition_preview`` for later semantic classification.
+    """
+    cmd = entry.command or ""
+    args_str = " ".join(entry.args or [])
+    url_s = entry.url or ""
+    return f"{cmd} {args_str} | {url_s}"
+
+
+def _hidden_unicode_finding(
+    machine_id: str, inventory_id: int | None, entry: McpServerEntry
+) -> FindingRecord | None:
+    """Emit a critical finding when the MCP description hides invisible/bidi/tag
+    Unicode. Deterministic and false-positive-free, so it fires even at FIRST
+    registration (the description is poison from day one)."""
+    result = scan_hidden_unicode(entry.description)
+    if not result.found:
+        return None
+    return _make_finding(
+        machine_id=machine_id,
+        inventory_id=inventory_id,
+        rule_id=RULE_HIDDEN_UNICODE,
+        severity="critical",
+        title=f"MCP '{entry.name}': скрытые Unicode-символы в описании",
+        description=(
+            f"Описание MCP-сервера '{entry.name}' содержит {result.summary()} — невидимые/"
+            "bidi/tag-символы, которые человек в ревью не видит, а LLM читает как инструкцию. "
+            "Классический приём сокрытия инъекции (Rules File Backdoor / GlassWorm)."
+        ),
+        source=entry.source,
+        recommendation=(
+            "Открой описание с показом невидимых символов (hex). Удали скрытые символы "
+            "или удали сервер — легитимному MCP они не нужны."
+        ),
+        matched_value=entry.name,
+        extra_payload={
+            "mcp_name": entry.name,
+            "hidden_count": result.count,
+            "hidden_categories": list(result.categories),
+            "hidden_samples": [
+                {"hex": h.hex, "name": h.name, "pos": h.position} for h in result.samples
+            ],
+        },
+    )
 
 
 # --- Helpers ---------------------------------------------------------------
@@ -115,6 +180,7 @@ def update_and_detect(
     current_mcps: list[McpServerEntry],
     *,
     inventory_id: int | None = None,
+    corroborator: Corroborator | None = None,
 ) -> list[FindingRecord]:
     """Diff ``current_mcps`` against persisted baselines and return findings.
 
@@ -169,10 +235,22 @@ def update_and_detect(
                     definition_hash=entry.definition_hash,
                     tools_hash=entry.tools_hash,
                     description_preview=_preview(entry.description),
+                    definition_preview=_definition_text(entry),
                     first_seen_at=now,
                     last_seen_at=now,
+                    status="pending",
+                    scope=getattr(entry, "scope", None),
+                    origin=getattr(entry, "origin", "local") or "local",
+                    parent_plugin=getattr(entry, "parent_plugin", None),
+                    source_marketplace=getattr(entry, "source_marketplace", None),
+                    source_path=entry.source,
                 )
             )
+            # Scan-on-first-registration for hidden Unicode: a description poisoned
+            # from day one is caught here even though the baseline itself is silent.
+            hidden = _hidden_unicode_finding(machine_id, inventory_id, entry)
+            if hidden is not None:
+                findings.append(hidden)
             continue
 
         # Existing baseline — diff.
@@ -233,33 +311,69 @@ def update_and_detect(
                     },
                 )
             )
+            # A description CHANGED to one carrying hidden Unicode → flag it too.
+            hidden = _hidden_unicode_finding(machine_id, inventory_id, entry)
+            if hidden is not None:
+                findings.append(hidden)
 
         if def_changed:
-            findings.append(
-                _make_finding(
-                    machine_id=machine_id,
-                    inventory_id=inventory_id,
-                    rule_id=RULE_DEFINITION,
-                    severity=SEVERITY_DEFINITION,
-                    title=f"MCP '{entry.name}' изменил command/args/url",
-                    description=(
-                        f"Команда запуска MCP-сервера '{entry.name}' изменилась — "
-                        "поменялся command, args или url. Это может быть подмена "
-                        "бинарника/endpoint'а."
-                    ),
-                    source=entry.source,
-                    recommendation=(
-                        "Сверь новый command/args с upstream-конфигом. Если изменение "
-                        "ожидаемо — обновить baseline; иначе — откатить."
-                    ),
-                    matched_value=entry.name,
-                    extra_payload={
-                        "mcp_name": entry.name,
-                        "old_hash": baseline.definition_hash,
-                        "new_hash": entry.definition_hash,
-                    },
-                )
+            # Anti-false-positive: don't blanket-warn on ANY command/args/url
+            # change. Classify old→new — a routine version bump is info (an
+            # expected update), a pin-drop / digest swap / target shift is
+            # warn/critical. ``baseline.definition_preview`` still holds the OLD
+            # text here (updated below), so this compares old vs new.
+            new_def_text = _definition_text(entry)
+            verdict = classify_definition_change(
+                baseline.definition_preview, new_def_text, corroborator=corroborator
             )
+            expected = verdict.kind in _EXPECTED_CHANGE_KINDS
+            common_payload = {
+                "mcp_name": entry.name,
+                "old_hash": baseline.definition_hash,
+                "new_hash": entry.definition_hash,
+                "change_kind": verdict.kind,
+                "change_rationale": verdict.rationale,
+            }
+            if expected:
+                findings.append(
+                    _make_finding(
+                        machine_id=machine_id,
+                        inventory_id=inventory_id,
+                        rule_id=RULE_UPDATE_EXPECTED,
+                        severity="info",
+                        title=f"MCP '{entry.name}' — обычное обновление",
+                        description=(
+                            f"Определение MCP-сервера '{entry.name}' изменилось, но "
+                            f"классификатор счёл это ожидаемым обновлением: {verdict.rationale}. "
+                            "Зафиксировано для прозрачности, не является тревогой."
+                        ),
+                        source=entry.source,
+                        recommendation="Действий не требуется; при сомнении сверь с upstream-релизом.",
+                        matched_value=entry.name,
+                        extra_payload=common_payload,
+                    )
+                )
+            else:
+                findings.append(
+                    _make_finding(
+                        machine_id=machine_id,
+                        inventory_id=inventory_id,
+                        rule_id=RULE_DEFINITION,
+                        severity=verdict.severity,
+                        title=f"MCP '{entry.name}' изменил command/args/url",
+                        description=(
+                            f"Команда запуска MCP-сервера '{entry.name}' изменилась — "
+                            f"{verdict.rationale}. Это может быть подмена бинарника/endpoint'а."
+                        ),
+                        source=entry.source,
+                        recommendation=(
+                            "Сверь новый command/args с upstream-конфигом. Если изменение "
+                            "ожидаемо — обновить baseline; иначе — откатить."
+                        ),
+                        matched_value=entry.name,
+                        extra_payload=common_payload,
+                    )
+                )
 
         if tools_changed:
             findings.append(
@@ -297,8 +411,29 @@ def update_and_detect(
             baseline.description_preview = _preview(entry.description)
         if entry.definition_hash is not None:
             baseline.definition_hash = entry.definition_hash
+            # Store the new definition text so the NEXT change classifies against
+            # it. Also backfills pre-feature baselines (was None → now populated).
+            baseline.definition_preview = _definition_text(entry)
         if entry.tools_hash is not None:
             baseline.tools_hash = entry.tools_hash
+        # Provenance refresh: an MCP can legitimately MOVE between configs (a
+        # dev-installed server later rolled out centrally as managed, or the
+        # other way round), so track the current source. Only overwrite when the
+        # agent actually sent a value — a v0.1 agent that omits provenance must
+        # not blank out what a newer agent already recorded.
+        entry_scope = getattr(entry, "scope", None)
+        if entry_scope is not None:
+            baseline.scope = entry_scope
+        entry_origin = getattr(entry, "origin", None)
+        if entry_origin:
+            baseline.origin = entry_origin
+            # parent_plugin/marketplace are meaningful only alongside their
+            # origin, so they move together with it (including back to None
+            # when a server stops being plugin-shipped).
+            baseline.parent_plugin = getattr(entry, "parent_plugin", None)
+            baseline.source_marketplace = getattr(entry, "source_marketplace", None)
+        if entry.source:
+            baseline.source_path = entry.source
         baseline.last_seen_at = now
         session.add(baseline)
 
@@ -334,6 +469,8 @@ def accept_baseline(
     session: Session,
     machine_id: str,
     mcp_name: str,
+    *,
+    reviewed_by: str | None = None,
 ) -> MCPServerBaseline | None:
     """Bump baseline hashes to the latest snapshot's hashes for this MCP.
 
@@ -341,6 +478,11 @@ def accept_baseline(
     legitimate, so we replace the stored hashes with the most recent
     inventory snapshot's hashes. Returns the updated row, or None if no
     baseline exists for this (machine, mcp) pair.
+
+    ``reviewed_by`` is optional (kept back-compat for existing callers that
+    don't track identity) — when given, also stamps the fleet review state
+    (pending -> active, accepted_by/accepted_at): accepting a drifted
+    definition IS a review of the resulting state.
 
     Implementation: pull the latest :class:`InventorySnapshot`, find the
     matching MCP entry, copy its hashes into the baseline row.
@@ -377,7 +519,70 @@ def accept_baseline(
             if isinstance(desc, str):
                 baseline.description_preview = _preview(desc)
             baseline.last_seen_at = datetime.now(UTC)
+            if reviewed_by is not None:
+                baseline.status = "active"
+                baseline.accepted_by = reviewed_by
+                baseline.accepted_at = datetime.now(UTC)
             session.add(baseline)
             session.commit()
             return baseline
     return None
+
+
+def mark_reviewed(
+    session: Session,
+    machine_id: str,
+    mcp_name: str,
+    *,
+    reviewed_by: str,
+) -> MCPServerBaseline | None:
+    """Mark one machine's MCP server as reviewed (pending -> active), with NO
+    hash change — distinct from :func:`accept_baseline`, which re-syncs hashes
+    after a drift finding. Used by the fleet inventory page's per-row "Пометить
+    проверенным" action: an admin looked at an MCP server that has no pending
+    drift and vouches for it as-is. Returns the updated row, or None if no
+    baseline exists for this (machine, mcp) pair.
+    """
+    baseline = session.exec(
+        select(MCPServerBaseline)
+        .where(MCPServerBaseline.machine_id == machine_id)
+        .where(MCPServerBaseline.mcp_name == mcp_name)
+    ).one_or_none()
+    if baseline is None:
+        return None
+    baseline.status = "active"
+    baseline.accepted_by = reviewed_by
+    baseline.accepted_at = datetime.now(UTC)
+    session.add(baseline)
+    session.commit()
+    session.refresh(baseline)
+    return baseline
+
+
+def mark_reviewed_fleet_wide(
+    session: Session,
+    mcp_name: str,
+    *,
+    reviewed_by: str,
+) -> int:
+    """Mark every PENDING instance of ``mcp_name`` across the whole fleet as
+    reviewed in one action. Returns the number of rows flipped (already-active
+    rows are left untouched — their existing accepted_by/accepted_at stand).
+    Used by the fleet inventory page's bulk action: reviewing one machine at a
+    time doesn't scale once the same MCP server sits on dozens of hosts.
+    """
+    rows = list(
+        session.exec(
+            select(MCPServerBaseline)
+            .where(MCPServerBaseline.mcp_name == mcp_name)
+            .where(MCPServerBaseline.status == "pending")
+        )
+    )
+    now = datetime.now(UTC)
+    for row in rows:
+        row.status = "active"
+        row.accepted_by = reviewed_by
+        row.accepted_at = now
+        session.add(row)
+    session.commit()
+    return len(rows)

@@ -103,6 +103,176 @@ scenarios:
       - {step_index: 1, tactic: credential-access, description: "read any secret"}
       - {step_index: 2, tactic: exfiltration, description: "ANY egress channel"}
 
+  # === P8 expansion: more AI-agent kill-chains (data, not code) ===========
+  # Each pairs clearly-suspicious stages, require_order=true to limit FP. Every
+  # stage is backed by an agent signal (chain_constants._SIGNAL_STAGE_RULES).
+
+  - scenario_key: recon_to_theft
+    name: "Разведка → доступ к секретам → вынос"
+    description: >-
+      Host/cloud/account discovery, then a secret read, then exfiltration. The
+      recon leg distinguishes a targeted sweep from an incidental secret read.
+    window_seconds: 600
+    severity: critical
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: discovery, description: "host/cloud/account enum"}
+      - {step_index: 1, tactic: credential-access, description: "read any secret"}
+      - {step_index: 2, tactic: exfiltration, description: "ANY egress channel"}
+
+  - scenario_key: collect_then_exfil
+    name: "Сбор/стейджинг → вынос"
+    description: >-
+      Dedicated collection (archive/clipboard/screen/db-dump) followed by
+      exfiltration — the deferred "stage now, leak later" pattern that the
+      minute-window exfil detector misses.
+    window_seconds: 900
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: collection, description: "archive/clipboard/db-dump staging"}
+      - {step_index: 1, tactic: exfiltration, description: "ANY egress channel"}
+
+  - scenario_key: privesc_to_destructive
+    name: "Повышение привилегий → деструктив"
+    description: >-
+      A privilege-escalation primitive (sudo/chmod/hosts/container-escape) then a
+      destructive impact — escalate first, then wipe/encrypt.
+    window_seconds: 600
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: privilege-escalation, description: "sudo/chmod/hosts/container escape"}
+      - {step_index: 1, tactic: impact, description: "destructive (rm -rf / DROP / dd / mkfs)"}
+
+  - scenario_key: c2_then_exfil
+    name: "C2 → вынос"
+    description: >-
+      An interactive command-and-control channel (reverse shell / tunnel) then
+      exfiltration over any channel — hands-on-keyboard data theft.
+    window_seconds: 900
+    severity: critical
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: command-and-control, description: "reverse shell / outbound tunnel"}
+      - {step_index: 1, tactic: exfiltration, description: "ANY egress channel"}
+
+  - scenario_key: evade_to_persist
+    name: "Ослепление защиты → закрепление"
+    description: >-
+      Disable the security tooling / clear logs (defense-evasion) then install
+      persistence — go dark, then entrench so the foothold survives the session.
+    window_seconds: 900
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: defense-evasion, description: "disable tooling / clear logs"}
+      - {step_index: 1, tactic: persistence, description: "rc/cron/systemd/authorized_keys"}
+
+  - scenario_key: injection_to_persist
+    name: "Внешний триггер → закрепление"
+    description: >-
+      External-content / MCP-delivered injection leads straight to persistence
+      (a hook/cron/agent-settings drop) with no secret step — the attacker
+      entrenches before doing anything noisy.
+    window_seconds: 600
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: initial-access, description: "external content / MCP injection"}
+      - {step_index: 1, tactic: persistence, description: "hook/cron/agent-settings drop"}
+
+  - scenario_key: full_intrusion
+    name: "Вторжение целиком: триггер → выполнение → доступ → вынос"
+    description: >-
+      The full four-stage story — an AI-origin trigger, code execution, a secret
+      read, then exfiltration. The strongest single-session signal of a real
+      compromise driven through the agent.
+    window_seconds: 900
+    severity: critical
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: initial-access, description: "external content / MCP / supply-chain entry"}
+      - {step_index: 1, tactic: execution, description: "pipe-to-shell / eval / inline code"}
+      - {step_index: 2, tactic: credential-access, description: "read any secret"}
+      - {step_index: 3, tactic: exfiltration, description: "ANY egress channel"}
+
+  - scenario_key: exec_evade_exfil
+    name: "Выполнение → ослепление → вынос"
+    description: >-
+      Code execution, then clearing history/logs or disabling tooling, then
+      exfiltration — run the payload, cover the tracks, leak the data.
+    window_seconds: 900
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: execution, description: "pipe-to-shell / eval"}
+      - {step_index: 1, tactic: defense-evasion, description: "clear history/logs / disable tooling"}
+      - {step_index: 2, tactic: exfiltration, description: "ANY egress channel"}
+
+  - scenario_key: recon_harvest_exfil
+    name: "Инъекция → энумерация → сбор ключей → вынос"
+    description: >-
+      The Nx "s1ngularity" pattern (Aug 2025, ITW): external/injected content
+      drives the agent to enumerate the host/filesystem, harvest every secret it
+      finds, then exfiltrate. The discovery step between the trigger and the
+      credential read is what distinguishes a targeted "read one known secret"
+      from a "sweep the box for anything valuable" harvest.
+    window_seconds: 600
+    severity: critical
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: initial-access, description: "external content / MCP / supply-chain injection"}
+      - {step_index: 1, tactic: discovery, description: "host / cloud / account / filesystem enumeration"}
+      - {step_index: 2, tactic: credential-access, description: "read any secret"}
+      - {step_index: 3, tactic: exfiltration, description: "ANY egress channel"}
+
+  - scenario_key: c2_command_to_impact
+    name: "C2-канал → входящая команда → разрушение"
+    description: >-
+      A reverse shell / outbound tunnel is followed by code execution and then a
+      destructive action — the operator (or an automated C2) pushes a command
+      down the channel and the agent runs it to wipe/DROP/overwrite. The
+      execution step between C2 and impact separates an active operator-driven
+      intrusion from an idle tunnel.
+    window_seconds: 600
+    severity: critical
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: command-and-control, description: "reverse shell / outbound tunnel"}
+      - {step_index: 1, tactic: execution, description: "pipe-to-shell / eval / inline code"}
+      - {step_index: 2, tactic: impact, description: "destructive (rm -rf / DROP / dd / mkfs)"}
+
+  - scenario_key: discover_cred_persist
+    name: "Энумерация → доступ к секрету → закрепление"
+    description: >-
+      Reconnaissance (host/cloud/account enum) followed by a secret read and then
+      persistence (rc/cron/systemd/hook/agent-settings). The footholding pattern:
+      map the box, grab a key, then plant a way back in — a slow intrusion that
+      ends in persistence rather than immediate exfil.
+    window_seconds: 900
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: discovery, description: "host / cloud / account enumeration"}
+      - {step_index: 1, tactic: credential-access, description: "read any secret"}
+      - {step_index: 2, tactic: persistence, description: "rc/cron/systemd/hook/agent-settings drop"}
+
+  - scenario_key: collect_exfil_evade
+    name: "Сбор → вынос → заметание следов"
+    description: >-
+      Data is staged/archived/clipboard-captured, exfiltrated over any channel,
+      and then history/logs are cleared or tooling disabled — steal the data and
+      cover the tracks. Distinct from the credential-led exfil_then_coverup: this
+      is a bulk-collection theft (archives, db dumps) rather than a single secret.
+    window_seconds: 900
+    severity: block
+    require_order: true
+    steps:
+      - {step_index: 0, tactic: collection, description: "archive / clipboard / db-dump staging"}
+      - {step_index: 1, tactic: exfiltration, description: "ANY egress channel"}
+      - {step_index: 2, tactic: defense-evasion, description: "clear history/logs / disable tooling"}
+
   # NOTE: a cred→lateral chain was intentionally NOT added — `ssh host <cmd>`
   # is the universal deploy/CI idiom, so `read .env` + `ssh deploy@prod restart`
   # would manufacture a finding on every deploy. lateral.remote_exec stays a

@@ -272,10 +272,29 @@ ccguard/
 
 ## Тестирование
 
-Локально через `uv`:
+**Demo-стенд одной командой** — поднять сервер, уже наполненный по одной находке
+каждого яруса (exfil-цепочка, low-and-slow, MCP/hook rug-pull, prompt-injection,
+anomaly, risk, sensor-silence, MOAT-эскалация, fleet-кампания), 4 машины,
+опубликованная policy и очередь предложенных сигналов. Ровно то, что нужно, чтобы
+«увидеть продукт» или показать коллеге — без ручного сева и ожидания планировщика:
 
 ```bash
-uv run pytest                # → 1443 passed, 15 skipped (e2e — окруженческие)
+scripts/demo-env.sh          # → http://127.0.0.1:8080 (admin / admin), данные уже внутри
+```
+
+**Self-test горячего пути** — прогнать батарею canned-атак через `enforce` без
+сервера и живого Claude Code (evil→deny always-on hard-ярусом даже без политики,
+benign→allow). Быстрый ответ на «не сломал ли я enforce»:
+
+```bash
+ccguard selftest             # exit 0 если все вердикты сошлись
+```
+
+Автотесты локально через `uv`:
+
+```bash
+uv run pytest                # полный прогон (e2e — skipped, окруженческие)
+uv run pytest -m "not integration"   # быстрая полоса: только юниты
 CCGUARD_E2E=1 uv run pytest  # + e2e против живого docker-стека
 ```
 

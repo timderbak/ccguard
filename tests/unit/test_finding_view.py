@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from ccguard.server.web.finding_view import (
     attack_url_for_signal,
     build_explainable_findings,
+    humanize_rule,
 )
 
 
@@ -37,6 +38,39 @@ def test_unrelated_finding_passes_through_without_explainer():
     assert len(rows) == 1
     assert rows[0]["rule_id"] == "anomaly.bash_calls_per_day"
     assert rows[0]["explainer"] is None
+
+
+def test_toxic_flow_explainer_renders_taint_to_sink():
+    payload = {
+        "taint_ts": "2026-05-30T12:00:00+00:00",
+        "taint_signal": "content.read.external",
+        "sink_ts": "2026-05-30T12:02:00+00:00",
+        "sink_signal": "config.agent_settings_edit",
+        "sink_class": "config_tamper",
+        "elapsed_seconds": 120.0,
+        "window_minutes": 15.0,
+    }
+    rows = build_explainable_findings([_fr("ioa.toxic_flow", payload, severity="critical")])
+    exp = rows[0]["explainer"]
+    assert exp is not None
+    assert exp["kind"] == "toxic_flow"
+    assert exp["taint"]["signal_id"] == "content.read.external"
+    assert exp["sink"]["signal_id"] == "config.agent_settings_edit"
+    assert exp["sink_class"] == "config_tamper"
+    assert exp["sink_label"] == "правка своего конфига (self-tamper)"
+    assert exp["elapsed_seconds"] == 120.0
+
+
+def test_toxic_flow_explainer_degrades_without_signals():
+    rows = build_explainable_findings([_fr("ioa.toxic_flow", {"sink_class": "exfil"})])
+    # missing taint/sink → no explainer; falls back to a details passthrough
+    assert rows[0]["explainer"] is None
+
+
+def test_humanize_toxic_flow_has_dedicated_label():
+    label = humanize_rule("ioa.toxic_flow")
+    assert "confused deputy" in label.lower()
+    assert label != "Скоррелированная атака"  # not the generic ioa. fallback
 
 
 def test_risk_finding_gets_score_and_contribution_explainer():

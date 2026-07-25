@@ -48,19 +48,15 @@ def check_hooks_intact(settings_path: Path) -> bool | None:
     return False
 
 
-def compute_hooks_hash(settings_path: Path) -> str | None:
-    """Stable hash of the ccguard hook CONFIG (event + matcher + command) across
-    settings.json. Detects drift the substring check misses — e.g. the hook
-    repointed to a decoy/no-op shim whose path still contains ``ccguard``.
-    Returns a sha256 hex digest, or None when undeterminable (missing/malformed)
-    or when no ccguard hook is present (removal is reported by
-    :func:`check_hooks_intact` as False, not by the hash)."""
-    try:
-        if not settings_path.exists():
-            return None
-        data = json.loads(settings_path.read_text())
-    except Exception:  # noqa: BLE001 — unknown, not "removed"
-        return None
+def hooks_hash_of_settings(data: object) -> str | None:
+    """Тот же хеш, но от уже разобранного содержимого настроек.
+
+    Вынесено из :func:`compute_hooks_hash` отдельно, потому что считать этот
+    хеш нужно и на сервере: раздавая корпоративный managed-конфиг, он должен
+    знать ОЖИДАЕМЫЙ отпечаток, чтобы потом сверить его с тем, что докладывают
+    машины. Общая функция гарантирует, что две стороны считают одинаково —
+    иначе сверка давала бы вечное расхождение на ровном месте.
+    """
     hooks = data.get("hooks") if isinstance(data, dict) else None
     if not isinstance(hooks, dict):
         return None
@@ -82,6 +78,22 @@ def compute_hooks_hash(settings_path: Path) -> str | None:
     entries.sort()
     blob = json.dumps(entries, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def compute_hooks_hash(settings_path: Path) -> str | None:
+    """Stable hash of the ccguard hook CONFIG (event + matcher + command) across
+    settings.json. Detects drift the substring check misses — e.g. the hook
+    repointed to a decoy/no-op shim whose path still contains ``ccguard``.
+    Returns a sha256 hex digest, or None when undeterminable (missing/malformed)
+    or when no ccguard hook is present (removal is reported by
+    :func:`check_hooks_intact` as False, not by the hash)."""
+    try:
+        if not settings_path.exists():
+            return None
+        data = json.loads(settings_path.read_text())
+    except Exception:  # noqa: BLE001 — unknown, not "removed"
+        return None
+    return hooks_hash_of_settings(data)
 
 
 def build_heartbeat(

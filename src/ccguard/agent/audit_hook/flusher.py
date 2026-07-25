@@ -250,6 +250,10 @@ def _run_flush_loop() -> None:
                         signals=r["signals"],
                         actor_user=r.get("actor_user"),
                         session_id=r.get("session_id"),
+                        permission_mode=r.get("permission_mode"),
+                        agent_type=r.get("agent_type"),
+                        agent_id=r.get("agent_id"),
+                        prompt_id=r.get("prompt_id"),
                     )
                     for r in rows
                 ]

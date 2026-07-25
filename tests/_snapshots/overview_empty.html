@@ -4,34 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ccguard — обзор</title>
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-              mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
-              display: ['"Plus Jakarta Sans"', 'ui-sans-serif', 'sans-serif'],
-            },
-            colors: {
-              ink: { 900: '#0b0810', 850: '#0e0b14', 800: '#16121f', 700: '#1b1626', 600: '#241d31' },
-              signal: '#34d399',
-              accent: { DEFAULT: '#a855f7', 2: '#c45cff', mag: '#e455c8' },
-            },
-            keyframes: {
-              ccRise: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
-              ccPulse: { '0%,100%': { opacity: '1' }, '50%': { opacity: '.35' } },
-            },
-            animation: { ccRise: 'ccRise .5s cubic-bezier(.22,1,.36,1) both', ccPulse: 'ccPulse 2.4s ease-in-out infinite' },
-          },
-        },
-      };
-    </script>
+    <!-- Self-hosted assets (no runtime CDN) — the console renders fully in an
+         air-gapped / on-prem install. Tailwind is a static build of the classes
+         used in the templates + the custom theme (ink/signal/accent, ccRise/
+         ccPulse) that used to live in the inline tailwind.config. Rebuild with
+         scripts/build-web-assets.sh after adding new utility classes. -->
+    <link rel="stylesheet" href="/static/vendor/tailwind.css" />
+    <link rel="stylesheet" href="/static/vendor/fonts.css" />
+    <script src="/static/vendor/htmx.min.js" defer></script>
     <style>
       :root {
         color-scheme: dark;
@@ -239,6 +219,14 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 11L15.8 7M8.2 13l7.6 4"/></svg>
                     Корреляции
                 </a>
+                <a href="/signals" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h3l2-7 4 14 2-7h3"/><path d="M19 9l2 3-2 3"/></svg>
+                    Сигналы
+                </a>
+                <a href="/finding-rules" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h13"/><path d="M18 11l2 2 3-3"/></svg>
+                    Правила
+                </a>
                 <a href="/anomalies" class="cc-nav-link">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2 6 4-14 2 8h6"/></svg>
                     Аномалии
@@ -251,7 +239,27 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.27 6.96 8.73 5.05 8.73-5.05"/><path d="M12 22.08V12"/></svg>
                     Артефакты
                 </a>
+                <a href="/admin/mcp-inventory" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                    MCP по флоту
+                </a>
+                <a href="/admin/canaries" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7a4 4 0 1 0-4 4h5l3 3v3a2 2 0 0 1-2 2H8a5 5 0 0 1-5-5V9a2 2 0 0 1 2-2z"/><circle cx="13" cy="6" r="0.6" fill="currentColor"/></svg>
+                    Приманки
+                </a>
+                <a href="/admin/report" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg>
+                    Отчёт
+                </a>
                 <p class="cc-nav-group">Управление</p>
+                <a href="/admin/protection" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="M9 12l2 2 4-4"/></svg>
+                    Состояние защиты
+                </a>
+                <a href="/admin/deploy" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m8 11 4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+                    Раскатка
+                </a>
                 <a href="/machines" class="cc-nav-link">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
                     Машины
@@ -267,6 +275,10 @@
                 <a href="/settings" class="cc-nav-link">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
                     Настройки
+                </a>
+                <a href="/admin/proposed-signals" class="cc-nav-link">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+                    Предложенные сигналы
                 </a>
             </nav>
             <div class="px-4 py-3 border-t border-white/5 flex items-center justify-between">
@@ -357,6 +369,9 @@
             <div class="text-xs text-slate-400">фида на согласовании</div>
         </div>
     </div>
+
+    
+    
 </div>
 
 

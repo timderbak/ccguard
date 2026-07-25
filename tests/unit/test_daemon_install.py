@@ -15,6 +15,20 @@ from ccguard.agent.daemon_install import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _force_user_scope(monkeypatch):
+    """Force the non-root (user-scope) path branch for every test in this file.
+
+    ``linux_systemd_unit_path`` returns a real system path (``/etc/systemd/system``)
+    when ``os.geteuid() == 0`` and ignores the monkeypatched ``Path.home``. When
+    the suite runs as root that (a) writes real files under ``/etc`` and (b) leaks
+    the unit file across tests (install → uninstall sees it → "dry_run" not
+    "absent"). Pinning geteuid to a non-zero uid keeps every test inside tmp_path
+    on root and non-root alike, with no effect on the already-non-root case.
+    """
+    monkeypatch.setattr("os.geteuid", lambda: 1000)
+
+
 def test_launchd_plist_contains_label_and_argv():
     body = launchd_plist_body(["/foo/.venv/bin/python", "-m", "ccguard.agent.daemon"],
                               log_dir=Path("/var/log/ccguard"))

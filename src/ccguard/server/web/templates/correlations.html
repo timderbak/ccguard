@@ -2,6 +2,7 @@
 {% block title %}Корреляции · ccguard{% endblock %}
 {% block content %}
 <div class="max-w-[1100px] mx-auto">
+  {% set active_tab = 'correlations' %}{% include 'components/_coverage_tabs.html' %}
   <header class="mb-6">
     <p class="cc-eyebrow">Детект · корреляции</p>
     <h1 class="text-3xl text-white mt-1">Корреляции</h1>

@@ -16,7 +16,7 @@
 
   <div class="space-y-3 mb-6">
   {% for s in scenarios %}
-    <div class="cc-card p-5">
+    <div class="cc-card p-5" id="scenario-{{ s.scenario_key }}">
       <div class="flex items-center justify-between gap-3 flex-wrap">
         <h2 class="text-base text-white">{{ s.name }}</h2>
         <div class="flex items-center gap-2">
@@ -38,9 +38,9 @@
     <p class="text-xs text-slate-500 mb-2">какие реальные сигналы заполнили каждую стадию</p>
     {% for m in recent %}
     <div class="border-t border-white/5 py-3">
-      <div class="flex items-center justify-between">
-        <span class="cc-mono text-xs text-white">{{ m.scenario_key }}</span>
-        <span class="text-xs text-slate-500">{{ m.machine_id }}{% if m.matched_at %} · {{ m.matched_at.strftime('%d.%m %H:%M') }}{% endif %}</span>
+      <div class="flex items-center justify-between gap-2">
+        {% if m.finding_id %}<a href="/findings/{{ m.finding_id }}" class="cc-mono text-xs text-white hover:underline" title="Открыть находку цепочки">{{ m.scenario_key }} →</a>{% else %}<span class="cc-mono text-xs text-white">{{ m.scenario_key }}</span>{% endif %}
+        <span class="text-xs text-slate-500"><a href="/machines/{{ m.machine_id }}" class="hover:underline hover:text-slate-300">{{ m.machine_id }}</a>{% if m.matched_at %} · {{ m.matched_at.strftime('%d.%m %H:%M') }}{% endif %}</span>
       </div>
       <div class="mt-2 flex items-center flex-wrap gap-1">
         {% for st in m.steps %}{% if not loop.first %}<span class="arrow">→</span>{% endif %}<span class="stepchip">{{ st.tactic }}{% if st.signal %}<span class="cc-mono text-slate-500 text-[9px]">{{ st.signal }}</span>{% endif %}</span>{% endfor %}

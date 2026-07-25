@@ -137,6 +137,11 @@ def test_drain_returns_typed_dict_shape(audit_buffer_path: Path) -> None:
             "signals",
             "actor_user",
             "session_id",
+            # личность агента: кто действовал и с какими правами
+            "permission_mode",
+            "agent_type",
+            "agent_id",
+            "prompt_id",
         }
 
 

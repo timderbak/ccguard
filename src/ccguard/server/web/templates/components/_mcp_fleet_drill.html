@@ -1,0 +1,36 @@
+{# HTMX drill-down: по-машинные хеши + статус ревью для одного имени MCP. #}
+<div class="mt-1 mb-1 pl-3 border-l border-white/10">
+    <p class="text-[9px] uppercase tracking-wide text-slate-500 cc-mono mb-1.5">MCP «{{ name }}» — на машинах</p>
+    {% if rows %}
+    <ul class="cc-mono text-[11px] space-y-1.5">
+        {% for r in rows %}
+        <li class="flex items-center gap-2 flex-wrap">
+            <a href="/machines/{{ r.machine_id }}" class="text-slate-300 hover:text-white hover:underline">{{ r.machine_id }}</a>
+            <span class="text-slate-600" title="{{ r.transport }}">{{ r.transport }}</span>
+            {% with scope = r.scope, plugin_label = (r.parent_plugin ~ '@' ~ (r.source_marketplace or 'unknown')) if r.origin == 'plugin' and r.parent_plugin else None %}
+              {% include "components/_mcp_source_badge.html" %}
+            {% endwith %}
+            {% if r.source_path %}<span class="text-slate-600 truncate" style="max-width: 16rem;" title="прописан в {{ r.source_path }}">{{ r.source_path }}</span>{% endif %}
+            {% if r.definition_hash %}<span class="text-slate-600 truncate" style="max-width: 10rem;" title="definition_hash {{ r.definition_hash }}">def#{{ r.definition_hash[:8] }}</span>{% endif %}
+            {% if r.tools_hash %}<span class="text-slate-600 truncate" style="max-width: 10rem;" title="tools_hash {{ r.tools_hash }}">tools#{{ r.tools_hash[:8] }}</span>{% endif %}
+            <span class="rounded px-1.5 py-0.5 text-[9px] font-semibold
+                {% if r.status == 'active' %}text-emerald-300 bg-emerald-500/10 ring-1 ring-emerald-500/30
+                {% else %}text-amber-300 bg-amber-500/10 ring-1 ring-amber-500/30{% endif %}">
+                {% if r.status == 'active' %}проверено{% else %}не проверено{% endif %}
+            </span>
+            {% if r.accepted_by %}<span class="text-slate-600">— {{ r.accepted_by }}</span>{% endif %}
+            {% if r.status != 'active' %}
+            <form method="POST" action="/admin/mcp-inventory/review" class="ml-auto">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+                <input type="hidden" name="machine_id" value="{{ r.machine_id }}" />
+                <input type="hidden" name="mcp_name" value="{{ name }}" />
+                <button class="text-[10px] px-2 py-1 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">Пометить проверенным</button>
+            </form>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-slate-500 text-[11px]">Ничего не найдено.</p>
+    {% endif %}
+</div>

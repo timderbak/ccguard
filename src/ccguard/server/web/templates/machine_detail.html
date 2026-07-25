@@ -27,6 +27,8 @@
     {% endif %}
 </header>
 
+{% include "components/_protection_diagnosis.html" %}
+
 <div class="grid grid-cols-2 gap-6">
     <section class="bg-white rounded-xl shadow p-5">
         <h3 class="font-semibold mb-4 flex items-center gap-2 text-slate-800">
@@ -250,7 +252,7 @@
                             {% else %}text-slate-500 bg-slate-100 ring-slate-300{% endif %}">
                             {{ f.severity }}
                         </span>
-                        <span class="cc-mono text-xs text-slate-700">{{ f.rule_id }}</span>
+                        <span class="cc-mono text-xs text-slate-700">{{ f.rule_id }}</span>{% if f.id %}<a href="/findings/{{ f.id }}" class="cc-mono text-[11px] text-emerald-700 hover:underline ml-auto shrink-0" title="Открыть страницу находки">детали →</a>{% endif %}
                     </summary>
                     <div class="ml-5 mt-2.5 text-xs text-slate-600 space-y-2">
                         {% if f.explainer.kind == 'risk' %}
@@ -368,7 +370,7 @@
                             {% else %}text-slate-500 bg-slate-100 ring-slate-300{% endif %}">
                             {{ f.severity }}
                         </span>
-                        <span class="cc-mono text-xs text-slate-700">{{ f.rule_id }}</span>
+                        <span class="cc-mono text-xs text-slate-700">{{ f.rule_id }}</span>{% if f.id %}<a href="/findings/{{ f.id }}" class="cc-mono text-[11px] text-emerald-700 hover:underline ml-auto shrink-0" title="Открыть страницу находки">детали →</a>{% endif %}
                         {% if f.details.title %}
                         <span class="text-xs text-slate-600">{{ f.details.title }}</span>
                         {% endif %}
@@ -398,7 +400,7 @@
                         {% else %}text-slate-500 bg-slate-100 ring-slate-300{% endif %}">
                         {{ f.severity }}
                     </span>
-                    <span class="cc-mono text-xs text-slate-700">{{ f.rule_id }}</span>
+                    <span class="cc-mono text-xs text-slate-700">{{ f.rule_id }}</span>{% if f.id %}<a href="/findings/{{ f.id }}" class="cc-mono text-[11px] text-emerald-700 hover:underline ml-auto shrink-0" title="Открыть страницу находки">детали →</a>{% endif %}
                 </div>
                 {% endif %}
             </li>

@@ -11,11 +11,15 @@ The catalog of signal → ATT&CK technique mapping is owned by
 from __future__ import annotations
 
 import json
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from ccguard.agent.signals.catalog import CATALOG
 from ccguard.server.services.risk_constants import RISK_RULE_ID
-from ccguard.server.services.sequence_constants import SEQUENCE_RULE_ID
+from ccguard.server.services.sequence_constants import (
+    SEQUENCE_RULE_ID,
+    TOXIC_FLOW_RULE_ID,
+)
 from ccguard.server.services.slow_chain_constants import SLOW_CHAIN_RULE_ID
 from ccguard.server.services.supply_chain_escalation_service import (
     RULE_ID as AI_TRIGGER_RULE_ID,
@@ -32,6 +36,7 @@ _RULE_LABELS_EXACT: dict[str, str] = {
     "ioa.fleet_campaign": "Орг-кампания: один компонент на N машинах",
     SLOW_CHAIN_RULE_ID: "Медленная kill-chain (растянута на дни)",
     SEQUENCE_RULE_ID: "Цепочка кражи → вынос",
+    TOXIC_FLOW_RULE_ID: "Toxic flow: внешний контент → оружейное действие (confused deputy)",
     RISK_RULE_ID: "Повышенный риск активности",
     "sensor.hook_drift": "Дрейф конфигурации hook (repoint/подмена шима)",
     "sensor.silent": "Сенсор замолчал (агент мёртв/заглушен)",
@@ -140,6 +145,34 @@ def _sequence_explainer(payload: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+_TOXIC_SINK_LABELS: dict[str, str] = {
+    "config_tamper": "правка своего конфига (self-tamper)",
+    "persistence": "закрепление (persistence)",
+    "destructive": "разрушение (impact)",
+    "exfil": "вынос на подозрительный хост",
+}
+
+
+def _toxic_flow_explainer(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Break down ``ioa.toxic_flow``: untrusted/external content (the taint)
+    directly followed by a weaponized sink carried out with the agent's own
+    authority — the confused-deputy flow exfil_sequence/staging_chain miss."""
+    taint_signal = payload.get("taint_signal")
+    sink_signal = payload.get("sink_signal")
+    if not taint_signal or not sink_signal:
+        return None
+    sink_class = str(payload.get("sink_class", ""))
+    return {
+        "kind": "toxic_flow",
+        "taint": _signal_card(str(taint_signal)) | {"ts": payload.get("taint_ts")},
+        "sink": _signal_card(str(sink_signal)) | {"ts": payload.get("sink_ts")},
+        "sink_class": sink_class,
+        "sink_label": _TOXIC_SINK_LABELS.get(sink_class, sink_class),
+        "elapsed_seconds": float(payload.get("elapsed_seconds", 0.0) or 0.0),
+        "window_minutes": float(payload.get("window_minutes", 0.0) or 0.0),
+    }
+
+
 def _slow_chain_explainer(payload: dict[str, Any]) -> dict[str, Any] | None:
     """Break down an ``ioa.slow_chain`` finding: the distinct advanced kill-chain
     stages a machine touched across the long horizon, each with its own window.
@@ -211,6 +244,7 @@ def _explainer_for(rule_id: str, payload_json: str) -> dict[str, Any] | None:
         SEQUENCE_RULE_ID,
         SLOW_CHAIN_RULE_ID,
         AI_TRIGGER_RULE_ID,
+        TOXIC_FLOW_RULE_ID,
         "ioa.fleet_campaign",
     ):
         return None
@@ -226,6 +260,8 @@ def _explainer_for(rule_id: str, payload_json: str) -> dict[str, Any] | None:
         return _risk_explainer(payload)
     if rule_id == SEQUENCE_RULE_ID:
         return _sequence_explainer(payload)
+    if rule_id == TOXIC_FLOW_RULE_ID:
+        return _toxic_flow_explainer(payload)
     if rule_id == AI_TRIGGER_RULE_ID:
         return _ai_trigger_explainer(payload)
     if rule_id == "ioa.fleet_campaign":

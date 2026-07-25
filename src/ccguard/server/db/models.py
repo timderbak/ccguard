@@ -154,6 +154,66 @@ class ToolUseEvent(SQLModel, table=True):
     # when NULL. Indexed because correlation filters on it. Additive column on
     # existing DBs is created by init_db's ALTER (create_all is a no-op there).
     session_id: str | None = Field(default=None, index=True)
+    # --- Личность агента: «кто действовал и с какими правами» ----------------
+    # Claude Code передаёт это в каждом вызове хука. Всё nullable: агенты
+    # v0.1/v0.2 не шлют, и такие события просто остаются без атрибуции.
+    #
+    # permission_mode — режим прав на момент вызова (default | plan |
+    # acceptEdits | auto | dontAsk | bypassPermissions). Значения dontAsk и
+    # bypassPermissions означают работу БЕЗ подтверждений человеком — для ИБ
+    # это то же, что «сотрудник отключил защиту», поэтому поле проиндексировано:
+    # по нему строится сводка «сколько машин работают без подтверждений».
+    permission_mode: str | None = Field(default=None, index=True)
+    # Заполняются, только когда действовал субагент; NULL = основной агент.
+    agent_type: str | None = Field(default=None, index=True)
+    agent_id: str | None = None
+    # Связывает цепочку действий с ОДНИМ запросом человека (Claude Code
+    # v2.1.196+) — по нему отличается «человек попросил несколько вещей» от
+    # «агент сам сделал десятки шагов после одной команды».
+    prompt_id: str | None = Field(default=None, index=True)
+
+
+class CanaryToken(SQLModel, table=True):
+    """Приманка: файл, который выглядит как настоящий ключ, но мёртв.
+
+    Смысл в том, что у такого файла НЕТ ни одного законного применения — он
+    ничего не открывает, ни один инструмент к нему не обращается. Поэтому любое
+    обращение означает, что кто-то целенаправленно ищет секреты, и ложных
+    срабатываний не бывает по построению (а не «мы удачно настроили правила»).
+
+    Значение приманки здесь НЕ хранится — только ``value_sha256``. Причина не
+    формальная: если база сервера утечёт вместе со значениями, атакующий
+    получит список приманок и научится их обходить, а вся затея держится ровно
+    на том, что отличить приманку от настоящего ключа он не может. Значение
+    показывается оператору один раз при создании и больше нигде не появляется.
+
+    Детект переиспользует уже готовый путь раздачи: при создании заводится
+    :class:`ThreatIndicator` типа ``sensitive_path``, который агенты получают с
+    политикой и превращают в сигнал ``cred.read.store_<id>``. Его id хранится в
+    ``indicator_id`` — по нему сработка привязывается обратно к приманке.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    # Тип приманки — определяет формат значения и куда её кладут:
+    # aws_key | github_pat | slack_token | dotenv | ssh_key
+    token_type: str = Field(index=True)
+    # Куда оператор кладёт файл. Он же раздаётся агентам как чувствительный путь.
+    file_path: str = Field(index=True)
+    # NULL = приманка общая для всего флота; иначе — конкретная машина.
+    machine_id: str | None = Field(default=None, index=True)
+    # Отпечаток значения. Нужен, чтобы позже уметь опознать утечку самого
+    # значения (в команде, в сетевом запросе), не храня его открытым.
+    value_sha256: str
+    # armed = разложена и ждёт; triggered = кто-то к ней обратился.
+    status: str = Field(default="armed", index=True)
+    label: str | None = None
+    indicator_id: int | None = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+    created_by: str | None = None
+    triggered_at: datetime | None = None
+    # Машина и пользователь, на которых приманка сработала впервые.
+    triggered_machine_id: str | None = None
+    triggered_actor: str | None = None
 
 
 class MachineBaseline(SQLModel, table=True):
@@ -410,11 +470,38 @@ class MCPServerBaseline(SQLModel, table=True):
     description_hash: str | None = None
     definition_hash: str | None = None
     description_preview: str | None = None
+    # Raw (secret-masked) definition text — ``command args | url`` — stored so a
+    # later diff can classify the CHANGE semantically (version bump vs binary
+    # swap), not just note that the hash moved. Without it the anti-false-positive
+    # classifier has only the new side. Nullable/back-compat: pre-feature rows and
+    # v0.1 agents leave it None and the classifier falls back to "opaque change".
+    definition_preview: str | None = None
     # P4b: hash of the runtime tool list (tools/list). Optional/back-compat:
     # old agents send None and the tools-drift diff is skipped for that row.
     tools_hash: str | None = None
     first_seen_at: datetime = Field(default_factory=_utcnow)
     last_seen_at: datetime = Field(default_factory=_utcnow)
+    # Fleet review state (проверено/не проверено): every MCP starts unreviewed,
+    # mirroring the Hook/Skill/AgentBaseline pending->active pattern. Unlike
+    # those three, MCP has no missing/removed state -- disappearance stays
+    # silent for v0.2 (see module docstring in mcp_baseline_service).
+    status: str = Field(default="pending")  # pending | active
+    accepted_at: datetime | None = None
+    accepted_by: str | None = None
+    # Provenance ("откуда этот MCP взялся") — denormalized from McpServerEntry,
+    # same source-tracking shape SkillBaseline/AgentBaseline already carry.
+    #   scope:  managed = раскатано организацией | user = поставил себе сам |
+    #           project = лежит в репозитории | project_local = локально в проекте
+    #   origin: local | plugin (+ parent_plugin / source_marketplace when plugin)
+    # All nullable: a v0.1/v0.2 agent doesn't send them, and the UI then says
+    # "источник неизвестен" instead of guessing.
+    scope: str | None = Field(default=None, index=True)
+    origin: str = Field(default="local")
+    parent_plugin: str | None = None
+    source_marketplace: str | None = None
+    # Config file the entry was declared in — the audit answer to "где именно
+    # это прописано" when an admin needs to go and remove it.
+    source_path: str | None = None
 
 
 class HookBaseline(SQLModel, table=True):
@@ -522,6 +609,51 @@ class AgentBaseline(SQLModel, table=True):
     last_seen_at: datetime
     accepted_at: datetime | None = None
     accepted_by: str | None = None
+
+
+class ProtectionIncident(SQLModel, table=True):
+    """Эпизод «на машине нет защиты» — вместе с процессом его разбора.
+
+    Диагноз (:mod:`ccguard.server.services.sensor_diagnosis`) отвечает на вопрос
+    «что происходит прямо сейчас». Этого мало: состояние живёт минуты, а вопрос
+    «почему на машине сняли хуки» живёт неделями и адресован человеку. Здесь
+    техническое наблюдение превращается в управляемый процесс: зафиксировали
+    момент → спросили причину → приняли или не приняли ответ.
+
+    Главное решение в модели: **возврат защиты не закрывает эпизод**. Если бы
+    закрывал, самая интересная последовательность — снял хуки, сделал что
+    хотел, вернул обратно — стиралась бы сама собой, и объяснений требовали бы
+    только от тех, кто забыл вернуть. Поэтому ``recovered_at`` фиксирует, что
+    защита вернулась, но статус остаётся ``open``, пока человек не ответил.
+
+    Открывается автоматически и ровно один на машину: пока эпизод не разобран,
+    повторные наблюдения обновляют его (``last_state``, ``last_checked_at``), а
+    не плодят новые записи. Иначе ноутбук, пролежавший выключенным неделю,
+    сгенерировал бы сотню одинаковых «инцидентов».
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    # Диагноз в момент открытия — что именно увидели тогда. Сохраняется вместе
+    # с формулировками, потому что через месяц объяснение читают без контекста.
+    state: str = Field(index=True)
+    opened_at: datetime = Field(default_factory=_utcnow, index=True)
+    opened_title: str
+    opened_detail: str
+    # Текущий диагноз: эпизод может «переехать» (сняли хуки → машина исчезла).
+    last_state: str
+    last_checked_at: datetime = Field(default_factory=_utcnow)
+    # Защита вернулась. НЕ закрывает эпизод — см. докстринг.
+    recovered_at: datetime | None = None
+    # open — ждём объяснения; explained — владелец ответил, ждём вердикта ИБ;
+    # accepted / rejected — вердикт вынесен, эпизод закрыт.
+    status: str = Field(default="open", index=True)
+    explanation: str | None = None
+    explained_by: str | None = None
+    explained_at: datetime | None = None
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    review_note: str | None = None
 
 
 class SettingsRecord(SQLModel, table=True):

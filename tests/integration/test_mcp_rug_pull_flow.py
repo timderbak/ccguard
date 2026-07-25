@@ -89,7 +89,7 @@ def test_description_change_emits_finding_visible_in_api(
     assert f["severity"] == "critical"
 
 
-def test_definition_change_emits_warn_finding(
+def test_definition_swap_to_tmp_binary_emits_critical_finding(
     client: TestClient, auth_headers: dict[str, str]
 ) -> None:
     # First snapshot baseline command=npx.
@@ -127,7 +127,42 @@ def test_definition_change_emits_warn_finding(
         headers=auth_headers,
     )
     assert fr.json()["total"] == 1
-    assert fr.json()["findings"][0]["finding"]["severity"] == "warn"
+    # A swap to a /tmp binary is a target_shift → the classifier escalates it to
+    # critical (was a blanket warn before the anti-false-positive classifier).
+    assert fr.json()["findings"][0]["finding"]["severity"] == "critical"
+
+
+def test_pinned_version_bump_is_expected_update_not_warn(
+    client: TestClient, auth_headers: dict[str, str]
+) -> None:
+    """Anti-false-positive end-to-end: a pinned semver bump surfaces as an
+    info ``mcp.update.expected`` finding, NOT a warn rug-pull — so a fleet of
+    daily-updating MCP servers does not drown the operator in warnings."""
+    from ccguard.agent.scan.mcp import _definition_text, _hash_text
+
+    def _versioned(version: str) -> McpServerEntry:
+        args = ["-y", f"notion-mcp@{version}"]
+        return McpServerEntry(
+            name="notion", transport="stdio", command="npx", args=args, env_keys=[],
+            source="/test/.claude.json", description="tool",
+            description_hash=_hash_text("tool"),
+            definition_hash=_hash_text(_definition_text("npx", args, None)),
+        )
+
+    client.post("/api/v1/inventory", json=_payload("m-bump", [_versioned("1.2.3")]),
+                headers=auth_headers)
+    r = client.post("/api/v1/inventory", json=_payload("m-bump", [_versioned("1.3.0")]),
+                    headers=auth_headers)
+    assert r.status_code == 200
+
+    # No warn/critical rug-pull finding…
+    warn = client.get("/api/v1/findings?rule_id=mcp.rug_pull.definition_changed",
+                      headers=auth_headers)
+    assert warn.json()["total"] == 0
+    # …but a transparent info record of the expected update.
+    info = client.get("/api/v1/findings?rule_id=mcp.update.expected", headers=auth_headers)
+    assert info.json()["total"] == 1
+    assert info.json()["findings"][0]["finding"]["severity"] == "info"
 
 
 def test_accept_baseline_then_same_change_no_new_finding(

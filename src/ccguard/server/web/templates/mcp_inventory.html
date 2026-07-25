@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}ccguard — MCP по флоту{% endblock %}
+{% block content %}
+<style>
+  .mcprow{border-top:1px solid #ffffff0a}
+  .mcprow:hover{background:#ffffff05}
+  .mcpname{color:#e7e2f0;font-size:13px}
+  .mcpname:hover{color:#fff;text-decoration:underline}
+  .verchip{font-family:"IBM Plex Mono",monospace;font-size:10px;color:#9cc8ff;background:#5aa9ff12;
+    border:1px solid #5aa9ff2e;border-radius:5px;padding:1px 6px}
+  .verchip.div{color:#ff8aa0;background:#ff547012;border-color:#ff547047}
+  .divbadge{font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+    color:#fff;background:#e11d48;border-radius:5px;padding:1px 6px}
+  .sumchip{display:inline-flex;align-items:center;gap:7px;border-radius:9px;padding:5px 11px;border:1px solid var(--line);
+    background:var(--card2);font-size:12px;color:#b9b2c7}
+  .sumchip .n{font-family:"IBM Plex Mono",monospace;font-weight:700;color:#fff}
+  .revbar{width:60px;height:4px;border-radius:99px;background:#ffffff10;overflow:hidden;display:inline-block;vertical-align:middle}
+  .revbar>span{display:block;height:100%;background:linear-gradient(90deg,#059669,#34d399)}
+  .srcbadge{display:inline-flex;align-items:center;gap:4px;font-family:"IBM Plex Mono",monospace;font-size:10px;
+    border-radius:6px;padding:1px 7px;border:1px solid transparent;white-space:nowrap}
+  .srcbadge.s-managed{color:#6ee7b7;background:#34d39914;border-color:#34d39940}
+  .srcbadge.s-plugin{color:#c9b6ff;background:#a855f714;border-color:#a855f740}
+  .srcbadge.s-project{color:#9cc8ff;background:#5aa9ff14;border-color:#5aa9ff40}
+  .srcbadge.s-user{color:#fcd34d;background:#f59e0b14;border-color:#f59e0b40}
+  .srcbadge.s-unknown{color:#8f88a0;background:#ffffff08;border-color:#ffffff1a}
+  .mixbadge{font-family:"IBM Plex Mono",monospace;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+    color:#fdba74;background:#fb923c14;border:1px solid #fb923c47;border-radius:5px;padding:1px 6px}
+</style>
+<div class="max-w-[1200px] mx-auto">
+  <header class="mb-5">
+    <p class="cc-eyebrow">Детект · supply chain</p>
+    <h1 class="text-3xl text-white mt-1">MCP по флоту <span class="text-slate-500 text-xl">{{ total }}</span></h1>
+    <p class="text-sm text-slate-400 mt-1.5 max-w-3xl">Единая база MCP-серверов по всем машинам — какие установлены, <span class="text-slate-200">откуда взялись</span>, сколько их хешей (hash — цифровой отпечаток содержимого) совпадает между хостами, и какие проверены администратором вручную. Одно имя с разными хешами на разных машинах = <span class="text-rose-300">расхождение</span>: тот же сервер запускает разный код на разных хостах — сильный сигнал supply-chain-компрометации.</p>
+    <div class="mt-4 flex items-center gap-2.5 flex-wrap">
+      <span class="sumchip"><span class="n">{{ total }}</span> серверов</span>
+      {% if self_installed_count > 0 %}<span class="sumchip" style="border-color:#f59e0b47;color:#fcd34d"><span class="n" style="color:#fcd34d">{{ self_installed_count }}</span> поставили сами</span>{% endif %}
+      {% if plugin_count > 0 %}<span class="sumchip" style="border-color:#a855f747;color:#c9b6ff"><span class="n" style="color:#c9b6ff">{{ plugin_count }}</span> из плагинов</span>{% endif %}
+      {% if divergent_count > 0 %}<span class="sumchip" style="border-color:#ff547047;color:#ff8aa0"><span class="n" style="color:#ff8aa0">{{ divergent_count }}</span> расхождений</span>{% endif %}
+      {% if unreviewed_count > 0 %}<span class="sumchip" style="border-color:#f59e0b47;color:#fbbf24"><span class="n" style="color:#fbbf24">{{ unreviewed_count }}</span> не полностью проверено</span>{% endif %}
+    </div>
+  </header>
+
+  {% if rows %}
+  <section class="cc-card p-0 overflow-hidden">
+    <div>
+      {% for r in rows %}
+      <div class="mcprow px-5 py-3.5">
+        <div class="flex items-center gap-2 flex-wrap">
+          <button class="mcpname cc-mono text-left"
+                  hx-get="/_partials/mcp-inventory/drill?name={{ r.mcp_name|urlencode }}"
+                  hx-target="next .cc-drill" hx-swap="innerHTML">{{ r.mcp_name }}</button>
+          <span class="text-slate-600 text-[11px]">{{ r.transport }}</span>
+          {% with scope = r.primary_scope, plugin_label = r.plugin_label %}
+            {% include "components/_mcp_source_badge.html" %}
+          {% endwith %}
+          {% if r.scope_is_mixed %}<span class="mixbadge" title="На разных машинах прописан по-разному — где-то централизованно, где-то вручную">разные источники</span>{% endif %}
+          {% if r.is_divergent %}<span class="divbadge">расхождение</span>{% endif %}
+          <span class="ml-auto cc-mono text-[10px] text-slate-500">{{ r.machines_total }} маш.</span>
+        </div>
+        <div class="mt-2 flex flex-wrap gap-1.5 items-center">
+          <span class="cc-mono text-[9px] uppercase tracking-wide text-slate-600">версии</span>
+          {% for h, n in r.versions.items() %}
+          <span class="verchip {% if r.is_divergent %}div{% endif %}" title="definition_hash {{ h }} · {{ n }} маш.">#{{ h[:8] }} · {{ n }}</span>
+          {% endfor %}
+        </div>
+        <div class="mt-2 flex items-center gap-2 flex-wrap">
+          <span class="revbar"><span style="width:{{ (100 * r.machines_reviewed / r.machines_total)|round|int if r.machines_total else 0 }}%"></span></span>
+          <span class="cc-mono text-[10px] text-slate-500">{{ r.machines_reviewed }}/{{ r.machines_total }} проверено</span>
+          {% if not r.fully_reviewed %}
+          <form method="POST" action="/admin/mcp-inventory/review-all" class="ml-auto">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <input type="hidden" name="mcp_name" value="{{ r.mcp_name }}" />
+            <button class="text-[10px] px-2.5 py-1 border border-emerald-500/30 text-emerald-300 rounded-md hover:bg-emerald-500/10">Пометить весь флот проверенным</button>
+          </form>
+          {% endif %}
+        </div>
+        <div class="cc-drill text-[11px] mt-2"></div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <div class="cc-card p-6">
+    <p class="text-slate-400 text-sm">Пока ни одного MCP-сервера в базе. Сделай <span class="cc-mono text-slate-300">ccguard sync</span> с агента.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

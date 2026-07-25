@@ -27,9 +27,9 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Iterable
 
 log = logging.getLogger(__name__)
 
@@ -228,6 +228,86 @@ def detect_staging_chain(
     return None
 
 
+@dataclass(frozen=True)
+class ToxicFlowMatch:
+    """A matched taint→weaponized-sink pair (toxic-flow / confused-deputy IOA).
+
+    ``sink_class`` buckets the sink for triage: ``config_tamper`` / ``persistence``
+    / ``destructive`` / ``exfil``. Persisted into ``FindingRecord.payload_json``.
+    """
+
+    taint_ts: datetime
+    taint_signal: str
+    sink_ts: datetime
+    sink_signal: str
+    sink_class: str
+    elapsed_seconds: float
+
+
+def _classify_toxic_sink(sig: str, config_tamper_sink: str) -> str:
+    if sig == config_tamper_sink:
+        return "config_tamper"
+    if sig.startswith("persist."):
+        return "persistence"
+    if sig.startswith("impact."):
+        return "destructive"
+    return "exfil"
+
+
+def detect_toxic_flow(
+    events: Iterable[SequenceInputEvent],
+    window_minutes: float,
+    *,
+    taint_signal: str,
+    sink_exact: frozenset[str],
+    sink_prefixes: tuple[str, ...],
+    config_tamper_sink: str,
+) -> ToxicFlowMatch | None:
+    """Return the first taint→weaponized-sink pair within ``window_minutes``.
+
+    The confused-deputy flow: external/untrusted content ingested by the agent
+    (``taint_signal``) is followed IN TIME by a weaponized sink action — one of
+    ``sink_exact`` or any signal starting with ``sink_prefixes``. The sink must be
+    a STRICTLY LATER event than the taint (the external content must PRECEDE the
+    action it drives); a single event that is both is not a flow.
+
+    "First" = the earliest taint event that has any qualifying sink at
+    ``sink.ts > taint.ts`` within window; within it, the earliest sink wins.
+
+    Pure function — no DB, mirrors :func:`detect_exfil_sequence`. Session grouping
+    happens in the orchestrator.
+    """
+    sorted_events = sorted(events, key=lambda e: e.ts)
+    if not sorted_events:
+        return None
+
+    def _sink_hit(ev: SequenceInputEvent) -> str | None:
+        for s in ev.signals:
+            if s in sink_exact or s.startswith(sink_prefixes):
+                return s
+        return None
+
+    window = timedelta(minutes=window_minutes)
+    for i, taint_evt in enumerate(sorted_events):
+        if taint_signal not in taint_evt.signals:
+            continue
+        for later in sorted_events[i + 1 :]:
+            gap = later.ts - taint_evt.ts
+            if gap > window:
+                break
+            sink = _sink_hit(later)
+            if sink is not None:
+                return ToxicFlowMatch(
+                    taint_ts=taint_evt.ts,
+                    taint_signal=taint_signal,
+                    sink_ts=later.ts,
+                    sink_signal=sink,
+                    sink_class=_classify_toxic_sink(sink, config_tamper_sink),
+                    elapsed_seconds=gap.total_seconds(),
+                )
+    return None
+
+
 # --- Orchestrator ---------------------------------------------------------
 # Imports kept here (not at top) to keep the pure kernel above dependency-free.
 
@@ -243,6 +323,7 @@ from ccguard.server.services import settings_service  # noqa: E402
 from ccguard.server.services._utc import aware_utc  # noqa: E402
 from ccguard.server.services.sequence_constants import (  # noqa: E402
     ALLOWLISTED_WRITE_MARKERS,
+    CONFIG_TAMPER_SINK,
     CRED_PREFIX,
     DEFAULT_LOOKBACK_HOURS,
     DEFAULT_STAGING_THRESHOLDS,
@@ -256,6 +337,10 @@ from ccguard.server.services.sequence_constants import (  # noqa: E402
     STAGING_RULE_ID,
     STAGING_SUPPRESSED_RULE_ID,
     STAGING_TRIGGER_PREFIXES,
+    TAINT_SOURCE_SIGNAL,
+    TOXIC_FLOW_RULE_ID,
+    TOXIC_SINK_EXACT,
+    TOXIC_SINK_PREFIXES,
 )
 
 # Severity ordering for dedup: a benign finding must never shadow a worse one.
@@ -612,17 +697,83 @@ def evaluate_one_staging(session: Session, machine_id: str) -> FindingRecord | N
     return finding
 
 
-def tick(session: Session) -> dict[str, object]:
-    """Detect exfil sequences AND staging chains for every machine in one pass.
+def evaluate_one_toxic_flow(session: Session, machine_id: str) -> FindingRecord | None:
+    """Detect a toxic-flow (confused-deputy) chain for one machine.
 
-    Both detectors run from this single scheduler tick (ТЗ-02 §4) — no separate
-    scheduler. They are independent: a machine can emit one, both, or neither.
+    Untrusted/external content (``content.read.external``) followed IN TIME by a
+    weaponized sink — config self-tamper, persistence, destruction, or exfil to a
+    suspicious host — correlated within each session independently. Emits
+    ``ioa.toxic_flow`` (critical): the sink set is curated to be unambiguously
+    dangerous and requires a genuine external-content precursor, so a benign
+    external read alone never fires. One finding per machine per day (dedup).
+    """
+    window_min, lookback_h = _load_tunables(session)
+    now = datetime.now(UTC)
+    since = now - timedelta(hours=lookback_h)
+    events = _load_events(session, machine_id, since)
+    if not events:
+        return None
+
+    best: tuple[ToxicFlowMatch, str | None] | None = None
+    for key, group_events in _group_by_session(events).items():
+        m = detect_toxic_flow(
+            group_events,
+            window_min,
+            taint_signal=TAINT_SOURCE_SIGNAL,
+            sink_exact=TOXIC_SINK_EXACT,
+            sink_prefixes=TOXIC_SINK_PREFIXES,
+            config_tamper_sink=CONFIG_TAMPER_SINK,
+        )
+        if m is None:
+            continue
+        sid = None if key is _NO_SESSION else str(key)
+        # Earliest taint across groups wins (mirrors evaluate_one).
+        if best is None or m.taint_ts < best[0].taint_ts:
+            best = (m, sid)
+
+    if best is None:
+        return None
+    match, matched_session_id = best
+
+    if _same_day_finding_exists(session, machine_id, now, rule_id=TOXIC_FLOW_RULE_ID):
+        return None
+
+    payload = {
+        "taint_ts": match.taint_ts.isoformat(),
+        "taint_signal": match.taint_signal,
+        "sink_ts": match.sink_ts.isoformat(),
+        "sink_signal": match.sink_signal,
+        "sink_class": match.sink_class,
+        "elapsed_seconds": match.elapsed_seconds,
+        "window_minutes": window_min,
+        "lookback_hours": lookback_h,
+        "session_id": matched_session_id,
+    }
+    finding = FindingRecord(
+        machine_id=machine_id,
+        inventory_id=None,
+        rule_id=TOXIC_FLOW_RULE_ID,
+        severity="critical",
+        discovered_at=now,
+        payload_json=json.dumps(payload, allow_nan=False),
+    )
+    session.add(finding)
+    session.commit()
+    session.refresh(finding)
+    return finding
+
+
+def tick(session: Session) -> dict[str, object]:
+    """Detect exfil sequences, staging chains AND toxic flows in one pass.
+
+    All three detectors run from this single scheduler tick — no separate
+    scheduler. They are independent: a machine can emit any subset or none.
     """
     machines = list(session.exec(select(Machine)))
     emitted = 0
     errors: list[str] = []
     for m in machines:
-        for detector in (evaluate_one, evaluate_one_staging):
+        for detector in (evaluate_one, evaluate_one_staging, evaluate_one_toxic_flow):
             try:
                 if detector(session, m.machine_id) is not None:
                     emitted += 1

@@ -203,11 +203,40 @@ CATALOG: tuple[Signal, ...] = (
         "T1555.003",
         _p(
             r"(login\s+data|cookies\.sqlite|cookies\.binarycookies|formhistory\.sqlite"
-            # Chromium-family profile cookie / login stores (macOS/Linux paths).
-            r"|/(google/chrome|chromium|microsoft\s*edge|bravesoftware|vivaldi|opera\s*software)/"
-            r"[^/]+/(cookies|login\s*data|web\s*data)\b)"
+            # Firefox saved-password store: key4.db/key3.db is the NSS master key
+            # (unambiguous — no dev tool reads it) + logins.json is the encrypted
+            # blob; stealing Firefox creds needs the pair.
+            r"|key[34]\.db\b"
+            r"|(?:mozilla|firefox)[^\n]*/logins\.json"
+            # Chromium-family cookie/login/webdata stores AND ``Local State`` — the
+            # file holding the AES key that decrypts Chrome's Login Data/Cookies, so
+            # attackers grab it alongside Login Data. Separator ``[/-]`` covers both
+            # the Linux ``google-chrome`` dir and the macOS ``Google/Chrome`` path.
+            r"|/(google[/-]chrome|chromium|microsoft\s*edge|bravesoftware|vivaldi|opera\s*software)/"
+            r"(?:[^/\n]+/(cookies|login\s*data|web\s*data)|local\s*state)\b"
+            # Bulk-copy / archive of a whole browser profile — steal creds+cookies
+            # offline in one shot.
+            r"|\b(?:cp|rsync|tar|zip|7z|scp)\b[^\n]*"
+            r"(?:\.config/(?:google-chrome|chromium|bravesoftware)|\.mozilla/firefox"
+            r"|library/application\s*support/(?:google/chrome|firefox)))"
         ),
-        "Access to browser credential / cookie stores",
+        "Access to browser credential / cookie / key stores (incl. profile bulk-copy)",
+    ),
+    Signal(
+        "cred.read.password_manager",
+        "T1555.005",
+        _p(
+            # KeePass / KeePassXC database (.kdbx modern, .kdb legacy — also DB2
+            # keystores, which are themselves a credential store worth flagging).
+            r"(\.kdbx?\b"
+            # GNOME keyring / KDE KWallet vault files.
+            r"|\.local/share/keyrings/|login\.keyring\b|\bkdewallet\b|\.kwl\b"
+            # macOS Keychain FILE read/copy (the `security` CLI path is os_keychain).
+            r"|login\.keychain(?:-db)?\b"
+            # Windows Credential Manager enumeration.
+            r"|\bvaultcmd\b|\bcmdkey\s+/list\b|rundll32[^\n]*keymgr)"
+        ),
+        "Access to a password-manager / credential-vault store (KeePass / keyring / KWallet / Keychain file / Windows Credential Manager)",
     ),
     Signal(
         "cred.read.git",
@@ -1041,6 +1070,79 @@ CATALOG: tuple[Signal, ...] = (
         "T1074",
         _p(r"/\.git/"),
         "Write to a VCS internal dir (benign-staging allowlist marker)",
+    ),
+    # --- ATT&CK coverage-gap batch 3: ransomware encryption, dynamic-linker
+    # hijack, shell-history creds, timestamp forgery. Regular (regex-loop)
+    # signals; each is behavior-gated so ordinary dev work stays quiet. ---------
+    Signal(
+        "impact.encrypt",
+        "T1486",
+        # Ransomware (data encrypted for impact). We already catch the PREP
+        # (impact.inhibit_recovery deletes backups) but not the encrypt itself.
+        # Gated on the mass / destroy-original shape so a single benign
+        # `openssl enc`/`gpg -c` of one file stays quiet:
+        #  * 7z archive with BOTH a password and -sdel (delete source after);
+        #  * find … -exec <crypto> — encrypt every matched file;
+        #  * a for/while loop that encrypts then rm/shred each file;
+        #  * output written with a ransom extension (.locked/.encrypted/.crypted);
+        #  * gpg --encrypt-files / --multifile (its native mass-encrypt flags);
+        #  * rename to a ransom extension.
+        _p(
+            r"\b(?:7za?|7zr)\s+a\b(?=[^\n]*\s-p)(?=[^\n]*-sdel)"
+            r"|\bfind\b[^\n]*-exec\s+(?:openssl\s+enc\b"
+            r"|gpg\b(?=[^\n]*(?:--symmetric|--encrypt|\s-c\b))|ccrypt\b)"
+            r"|\b(?:for|while)\b[^\n]*;\s*do\b"
+            r"(?=[^\n]*(?:openssl\s+enc|gpg\b[^\n]*\s-c\b|ccrypt))"
+            r"[^\n]*;\s*(?:rm|shred|unlink)\b"
+            r"|\bopenssl\s+enc\b[^\n]*-out\s+\S+\.(?:locked|encrypted|crypted)\b"
+            r"|\bgpg\b[^\n]*--(?:encrypt-files|multifile)\b"
+            r"|\bmv\b[^\n]*\.(?:locked|encrypted|crypted)\b"
+        ),
+        "Ransomware — mass file encryption for impact (encrypt+destroy / ransom extension)",
+    ),
+    Signal(
+        "persist.preload",
+        "T1574.006",
+        # Dynamic-linker hijack (LD_PRELOAD/ld.so.preload) + narrow PATH
+        # interception. Any write to the global /etc/ld.so.preload; LD_PRELOAD /
+        # LD_LIBRARY_PATH pointing at a .so / attacker dir; LD_PRELOAD persisted
+        # into a shell rc; or PATH PREPENDED with a world-writable dir. A normal
+        # `export PATH=$HOME/bin:$PATH` (not /tmp,/dev/shm,/var/tmp,.) stays quiet.
+        _p(
+            r"/etc/ld\.so\.preload\b"
+            r"|\bld_preload\s*=\s*\S*\.(?:so|dylib)\b"
+            r"|\bld_library_path\s*=\s*(?:/tmp|/dev/shm|/var/tmp|\.)[:/]"
+            r"|\bld_preload\b[^\n]*>>?[^\n]*"
+            r"(?:\.bashrc|\.bash_profile|\.profile|\.zshrc|/etc/environment)"
+            r"|\bexport\s+path\s*=\s*(?:/tmp|/dev/shm|/var/tmp|\.)[:/]"
+        ),
+        "Dynamic-linker hijack (LD_PRELOAD / ld.so.preload) or PATH interception",
+    ),
+    Signal(
+        "cred.read.shell_history",
+        "T1552.003",
+        # Harvest a shell / REPL / DB-client history file — commands (and pasted
+        # secrets) live there. Distinct from defense.clear_history (which ERASES
+        # it). The `history` builtin alone (listing) stays quiet — only the FILE.
+        _p(
+            r"\.(?:bash|zsh|sh|ash|ksh|python|node_repl|mysql|psql|rediscli"
+            r"|irb|sqlite|mongo|php)_history\b"
+            r"|\bfish_history\b|\.zhistory\b|\.lesshst\b"
+            r"|(?:^|[\s/~])\.history\b"
+        ),
+        "Read of a shell / REPL / client history file (credential harvest)",
+    ),
+    Signal(
+        "defense.timestomp",
+        "T1070.006",
+        # Timestamp forgery (anti-forensics): touch cloning another file's time
+        # (-r/--reference) or setting an explicit time (-t/--time), or macOS
+        # SetFile -d/-m. Plain `touch file` / `touch -a`/`-m` (to NOW) stays quiet.
+        _p(
+            r"\btouch\b[^\n]*\s(?:-r\b|--reference[=\s]|-t\s|--time[=\s])"
+            r"|\bsetfile\b[^\n]*\s-[dm]\b"
+        ),
+        "Timestamp forgery — touch -r/-t clone/backdate (anti-forensics)",
     ),
     # ТЗ-IMPACT: data-destruction signals. ACTION signals — emission is gated on
     # a destructive Bash command hitting a SENSITIVE (non-allowlisted) target in

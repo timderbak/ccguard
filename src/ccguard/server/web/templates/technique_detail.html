@@ -117,7 +117,7 @@
         <div class="flex items-center gap-2 mb-2">
           <span class="cc-sev {% if s.severity in ['critical','block'] %}cc-sev-block{% else %}cc-sev-warn{% endif %}">{{ s.severity }}</span>
           <span class="text-sm text-white">{{ s.name }}</span>
-          <span class="cc-mono text-[10px] text-slate-600 ml-auto">{{ s.scenario_key }}</span>
+          <a href="/attacks#scenario-{{ s.scenario_key }}" class="cc-mono text-[10px] text-slate-600 hover:text-slate-300 hover:underline ml-auto" title="Открыть сценарий в «Атаках»">{{ s.scenario_key }} →</a>
         </div>
         <div class="flex items-center flex-wrap gap-1">
           {% for st in s.steps %}{% if not loop.first %}<span class="arrow">→</span>{% endif %}<span class="stchip {% if st.tactic == t.tactic %}hit{% endif %}">{{ st.tactic }}{% if st.optional %} ?{% endif %}</span>{% endfor %}

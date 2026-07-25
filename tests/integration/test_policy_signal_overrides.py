@@ -1,14 +1,11 @@
 """/api/v1/policy injects approved catalog overrides + ETag invalidates on change."""
 from __future__ import annotations
 
-import json
-
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
 from ccguard.server.services import proposed_signal_service as svc
 from ccguard.server.services.settings_service import set_setting
-
 
 _VALID = {
     "id": "cred.read.session_cookie",
@@ -61,3 +58,114 @@ def test_corrupt_setting_override_value_is_skipped(client: TestClient, auth_head
     assert resp.status_code == 200
     # Corrupt entries dropped silently, valid endpoint still returns 200.
     assert resp.json().get("signal_overrides", []) == []
+
+
+# --- ThreatIndicator → served overrides (indicators become live detection) ---
+
+
+def _add_dangerous_indicator(session: Session, pattern: str) -> None:
+    from ccguard.server.db.models import ThreatIndicator
+
+    session.add(
+        ThreatIndicator(
+            indicator_type="dangerous_command", value=pattern, value_kind="regex",
+            source="manual", technique="T1059", tactic="execution",
+            status="active", enabled=True, description="test danger",
+        )
+    )
+    session.commit()
+
+
+def test_active_dangerous_indicator_is_served_and_detects(client: TestClient, auth_headers):
+    """An active dangerous_command indicator is served on the same wire and, fed
+    to the agent extractor, actually fires — closing the 'indicators added but
+    never used' gap."""
+    with Session(client.app.state.engine) as s:
+        _add_dangerous_indicator(s, r"wget\s+.*169\.254\.169\.254")  # cloud metadata SSRF
+    body = client.get("/api/v1/policy", headers=auth_headers).json()
+    overrides = body.get("signal_overrides", [])
+    ind_ovs = [o for o in overrides if str(o["id"]).startswith("indicator.")]
+    assert len(ind_ovs) == 1
+
+    # End-to-end: the served override, handed to the agent extractor, detects.
+    from ccguard.agent.signals.extractor import extract_signals
+
+    sigs = extract_signals(
+        "Bash", {"command": "wget http://169.254.169.254/latest/meta-data/"},
+        overrides=ind_ovs,
+    )
+    assert ind_ovs[0]["id"] in sigs
+
+
+def test_etag_changes_when_an_indicator_is_added(client: TestClient, auth_headers):
+    etag_before = client.get("/api/v1/policy", headers=auth_headers).headers["ETag"]
+    with Session(client.app.state.engine) as s:
+        _add_dangerous_indicator(s, r"nc\s+-e\s+/bin/sh")
+    etag_after = client.get("/api/v1/policy", headers=auth_headers).headers["ETag"]
+    assert etag_before != etag_after
+
+
+# --- suspicious_host indicators merge into policy host rules ----------------
+
+
+def _add_host_indicator(session: Session, host: str, source: str = "manual") -> None:
+    from ccguard.server.db.models import ThreatIndicator
+
+    session.add(
+        ThreatIndicator(
+            indicator_type="suspicious_host", value=host, value_kind="exact",
+            source=source, technique="T1567", tactic="exfiltration",
+            status="active", enabled=True, description="test exfil host",
+        )
+    )
+    session.commit()
+
+
+def test_suspicious_host_indicator_merges_into_policy_rules(client: TestClient, auth_headers):
+    """An added suspicious_host indicator appears in the served policy's
+    suspicious_host_rules — as a warn rule, via the proper host mechanism."""
+    with Session(client.app.state.engine) as s:
+        _add_host_indicator(s, "exfil.attacker.test")
+    body = client.get("/api/v1/policy", headers=auth_headers).json()
+    rules = body.get("suspicious_host_rules", [])
+    mine = [r for r in rules if r.get("pattern") == "exfil.attacker.test"]
+    assert len(mine) == 1
+    assert mine[0]["severity"] == "warn"
+    assert str(mine[0]["id"]).startswith("indicator/")
+
+
+def test_store_host_rules_deduped_by_pattern(client: TestClient, auth_headers):
+    """Two indicators with the SAME host pattern (different sources = two rows)
+    yield only ONE served rule — patterns are deduped, no duplicate host rules."""
+    with Session(client.app.state.engine) as s:
+        _add_host_indicator(s, "dup.host.test", source="src-a")
+        _add_host_indicator(s, "dup.host.test", source="src-b")
+    rules = client.get("/api/v1/policy", headers=auth_headers).json()["suspicious_host_rules"]
+    assert sum(1 for r in rules if r["pattern"] == "dup.host.test") == 1
+
+
+# --- sensitive_path indicators served on the update channel -----------------
+
+
+def _add_path_indicator(session: Session, path: str, source: str = "manual") -> None:
+    from ccguard.server.db.models import ThreatIndicator
+
+    session.add(
+        ThreatIndicator(
+            indicator_type="sensitive_path", value=path, value_kind="exact",
+            source=source, technique="T1552.001", tactic="credential-access",
+            status="active", enabled=True, description="test secret path",
+        )
+    )
+    session.commit()
+
+
+def test_added_sensitive_path_served_but_os_standard_excluded(client: TestClient, auth_headers):
+    with Session(client.app.state.engine) as s:
+        _add_path_indicator(s, "~/.config/acme/api_token", source="manual")   # served
+        _add_path_indicator(s, "~/.ssh/id_ed25519", source="os-standard")     # baked → excluded
+    overrides = client.get("/api/v1/policy", headers=auth_headers).json().get("signal_overrides", [])
+    path_ovs = [o for o in overrides if str(o["id"]).startswith("cred.read.store_")]
+    assert len(path_ovs) == 1  # only the manual one; os-standard stays baked
+    import re
+    assert re.search(path_ovs[0]["pattern"], "cat ~/.config/acme/api_token")  # pattern matches

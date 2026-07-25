@@ -115,6 +115,85 @@ indicators:
     weight: 4.0
     description: "git stored credentials"
 
+  # --- T1555 Credentials from Password Stores: browser stores, OS keyrings,
+  # password managers. Runtime detection is the baked cred.read.browser /
+  # cred.read.password_manager catalog signals; source os-standard marks these as
+  # the baked baseline (excluded from live serving so no double-count), and the
+  # rows bind T1555.003/.005 to the coverage map so browser/password theft shows
+  # covered rather than as an honest gap.
+  - indicator_type: sensitive_path
+    value: "~/.mozilla/firefox/*/key4.db"
+    value_kind: glob
+    source: os-standard
+    technique: T1555.003
+    tactic: credential-access
+    weight: 5.0
+    description: "Firefox NSS master-key DB (key4.db) — decrypts saved logins"
+  - indicator_type: sensitive_path
+    value: "~/.mozilla/firefox/*/logins.json"
+    value_kind: glob
+    source: os-standard
+    technique: T1555.003
+    tactic: credential-access
+    weight: 5.0
+    description: "Firefox saved-logins store (logins.json)"
+  - indicator_type: sensitive_path
+    value: "~/.config/google-chrome/*/Login Data"
+    value_kind: glob
+    source: os-standard
+    technique: T1555.003
+    tactic: credential-access
+    weight: 5.0
+    description: "Chrome saved-password DB (Login Data)"
+  - indicator_type: sensitive_path
+    value: "~/.config/google-chrome/Local State"
+    value_kind: exact
+    source: os-standard
+    technique: T1555.003
+    tactic: credential-access
+    weight: 5.0
+    description: "Chrome Local State — holds the AES key that decrypts Login Data/Cookies"
+  - indicator_type: sensitive_path
+    value: "~/.config/chromium/*/Login Data"
+    value_kind: glob
+    source: os-standard
+    technique: T1555.003
+    tactic: credential-access
+    weight: 5.0
+    description: "Chromium saved-password DB (Login Data)"
+  - indicator_type: sensitive_path
+    value: "~/Library/Application Support/Google/Chrome/*/Login Data"
+    value_kind: glob
+    source: os-standard
+    technique: T1555.003
+    tactic: credential-access
+    weight: 5.0
+    description: "Chrome saved-password DB (macOS)"
+  - indicator_type: sensitive_path
+    value: "*.kdbx"
+    value_kind: glob
+    source: os-standard
+    technique: T1555.005
+    tactic: credential-access
+    weight: 5.0
+    description: "KeePass password database (.kdbx)"
+  - indicator_type: sensitive_path
+    value: "~/.local/share/keyrings/*"
+    value_kind: glob
+    source: os-standard
+    technique: T1555.005
+    tactic: credential-access
+    weight: 5.0
+    description: "GNOME keyring credential store"
+  - indicator_type: sensitive_path
+    value: "~/Library/Keychains/login.keychain-db"
+    value_kind: exact
+    source: os-standard
+    technique: T1555.005
+    tactic: credential-access
+    weight: 5.0
+    description: "macOS login Keychain file"
+
   # =========================================================================
   # source: atomic-red-team — commands from MITRE techniques, filtered to what
   # an AI agent can actually run (Bash/Read/Write). Windows/registry/PowerShell

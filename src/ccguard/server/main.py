@@ -10,8 +10,19 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
-from ccguard.server.api import audit, findings, health, heartbeat, inventory, machines, policy, scan
+from ccguard.server.api import (
+    audit,
+    deploy,
+    findings,
+    health,
+    heartbeat,
+    inventory,
+    machines,
+    policy,
+    scan,
+)
 from ccguard.server.config import ServerConfig
 from ccguard.server.db.session import init_db, make_engine
 from ccguard.server.policy_loader import PolicyLoader
@@ -33,6 +44,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     from ccguard.server.services import indicator_seed_service
     from ccguard.server.services.settings_service import (
+        seed_alert_settings,
         seed_enforcement_mode,
         seed_llm_settings,
         seed_risk_settings,
@@ -62,25 +74,39 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         seed_sequence_settings(_s)
         # Behavioral Detection Stage 5: seed enforcement_mode = observe.
         seed_enforcement_mode(_s)
-        # ТЗ-05: load the vetted ThreatIndicator core (idempotent; a broken
-        # seed file logs + loads nothing, never blocks startup).
-        indicator_seed_service.load_seed(_s)
-        # ТЗ-06: load ATLAS taxonomy, then migrate ТЗ-05 scalar technique
-        # attribution into the many-to-many junction. Both idempotent.
-        from ccguard.server.services import atlas_seed_service
-        atlas_seed_service.load_atlas_seed(_s)
-        atlas_seed_service.migrate_indicator_techniques(_s)
-        # ТЗ-08: load the cross-framework crosswalk (≈ links) and register the
-        # existing correlation detectors + their technique bindings. Both
-        # idempotent; broken seeds log + load nothing, never block startup.
-        from ccguard.server.services import taxonomy_seed_service
-        taxonomy_seed_service.load_crosswalk_seed(_s)
-        taxonomy_seed_service.load_detector_seed(_s)
-        # ТЗ-09: load kill-chain scenarios as data (idempotent). The universal
-        # chain_engine executes them in the scheduler tick beside the existing
-        # correlators (sequence_service is untouched).
-        from ccguard.server.services import chain_seed_service
-        chain_seed_service.load_chain_seed(_s)
+        # Alert emitter knobs (disabled by default; operator sets the webhook).
+        seed_alert_settings(_s)
+        # Reference-data seeds (indicators / taxonomy / crosswalk / detectors /
+        # chain scenarios). Each loader is idempotent, but idempotence still
+        # costs a probe per row (~180 ms of pure no-op work every restart), so
+        # skip the whole block when the on-disk seed files are byte-identical to
+        # what was already loaded. Edit any seed YAML (or ship an update) and the
+        # digest changes → the block runs normally.
+        from ccguard.server.services import seed_marker
+        _digest = seed_marker.reference_digest()
+        if seed_marker.is_current(_s, digest=_digest):
+            logger.debug("reference seeds up to date (%s) — skipping", _digest)
+        else:
+            # ТЗ-05: load the vetted ThreatIndicator core (idempotent; a broken
+            # seed file logs + loads nothing, never blocks startup).
+            indicator_seed_service.load_seed(_s)
+            # ТЗ-06: load ATLAS taxonomy, then migrate ТЗ-05 scalar technique
+            # attribution into the many-to-many junction. Both idempotent.
+            from ccguard.server.services import atlas_seed_service
+            atlas_seed_service.load_atlas_seed(_s)
+            atlas_seed_service.migrate_indicator_techniques(_s)
+            # ТЗ-08: load the cross-framework crosswalk (≈ links) and register the
+            # existing correlation detectors + their technique bindings. Both
+            # idempotent; broken seeds log + load nothing, never block startup.
+            from ccguard.server.services import taxonomy_seed_service
+            taxonomy_seed_service.load_crosswalk_seed(_s)
+            taxonomy_seed_service.load_detector_seed(_s)
+            # ТЗ-09: load kill-chain scenarios as data (idempotent). The universal
+            # chain_engine executes them in the scheduler tick beside the existing
+            # correlators (sequence_service is untouched).
+            from ccguard.server.services import chain_seed_service
+            chain_seed_service.load_chain_seed(_s)
+            seed_marker.mark_current(_s, digest=_digest)
     app.state.config = cfg
     app.state.engine = engine
     app.state.policy_loader = PolicyLoader(file_path=Path(cfg.policy_path), engine=engine)
@@ -143,29 +169,54 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         shutdown_scheduler,
         start_scheduler,
     )
-    from ccguard.server.services import discovery_service
+    from ccguard.server.services import discovery_service, ioc_feed_service
+    from ccguard.server.services.alert_emitter import emit_new_alerts
     from ccguard.server.services.anomaly_service import tick as anomaly_tick
     from ccguard.server.services.chain_engine import tick as chain_tick
     from ccguard.server.services.drift_service import tick as drift_tick
+    from ccguard.server.services.fleet_campaign_service import tick as fleet_campaign_tick
+    from ccguard.server.services.canary_service import tick as canary_tick
+    from ccguard.server.services.identity_service import tick as identity_tick
+    from ccguard.server.services.protection_incident_service import (
+        tick as protection_tick,
+    )
     from ccguard.server.services.risk_service import tick as risk_tick
     from ccguard.server.services.sensor_health_service import tick as sensor_health_tick
     from ccguard.server.services.sequence_service import tick as sequence_tick
     from ccguard.server.services.slow_chain_service import tick as slow_chain_tick
+    from ccguard.server.services.source_monitors import default_monitors
     from ccguard.server.services.supply_chain_escalation_service import (
         tick as ai_escalation_tick,
     )
-    from ccguard.server.services.fleet_campaign_service import tick as fleet_campaign_tick
-    from ccguard.server.services.source_monitors import default_monitors
 
     _DISCOVERY_MONITORS = tuple(default_monitors())
     # Same monitor set reachable by the manual "run discovery now" admin trigger
     # (routes.py), so the on-demand sweep and the scheduled sweep never drift.
     app.state.discovery_monitors = list(_DISCOVERY_MONITORS)
 
+    _IOC_FEEDS = tuple(ioc_feed_service.default_feeds())
+    # Same feed set reachable by the manual "run IOC feeds now" admin trigger.
+    app.state.ioc_feeds = list(_IOC_FEEDS)
+
     if is_disabled():
         logger.info("anomaly scheduler disabled via CCGUARD_DISABLE_SCHEDULER")
     else:
         import asyncio
+
+        def _maybe_review_mcp_descriptions(s: _SessionTick) -> dict | None:
+            """LLM second-opinion sweep, gated on the scanner being enabled AND
+            an initialized ScanService. Returns None when gated off so the tick
+            logs nothing; never raises (its own try/except is in the caller)."""
+            scan_svc = getattr(app.state, "scan_service", None)
+            if scan_svc is None:
+                return None
+            from ccguard.server.services.settings_service import get_setting
+            if (get_setting(s, "llm_scanner_enabled") or "false").lower() != "true":
+                return None
+            from ccguard.server.services import mcp_llm_review
+            return mcp_llm_review.review_descriptions(
+                s, scanner=mcp_llm_review.make_llm_scanner(scan_svc)
+            )
 
         def _tick_job_sync() -> None:
             try:
@@ -177,12 +228,32 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     slow_chain_summary = slow_chain_tick(s)
                     drift_summary = drift_tick(s)
                     sensor_summary = sensor_health_tick(s)
+                    # Машины без защиты → эпизод с требованием объяснить причину.
+                    # Идёт сразу за проверкой тишины: она обновляет состояние,
+                    # а этот шаг превращает состояние в вопрос к человеку.
+                    protection_summary = protection_tick(s)
+                    # Опасные действия, выполненные агентом БЕЗ подтверждений
+                    # человеком (permission_mode = bypassPermissions/dontAsk).
+                    identity_summary = identity_tick(s)
+                    # Обращения к приманкам: ложных срабатываний тут не бывает
+                    # по построению, поэтому сразу critical, без порогов.
+                    canary_summary = canary_tick(s)
                     # The moat correlator runs LAST so it sees every trigger /
                     # ioa.* finding the other engines just emitted this tick.
                     ai_escalation_summary = ai_escalation_tick(s)
                     # Fleet-scope campaign sweep (org-wide): same compromised
                     # component across N machines → ioa.fleet_campaign.
                     fleet_campaign_summary = fleet_campaign_tick(s)
+                    # Push new findings (>= configured severity) to the operator
+                    # webhook. Disabled by default; best-effort, never breaks the
+                    # tick. Runs LAST so it sees every finding emitted above.
+                    alert_summary = emit_new_alerts(s)
+                    # Out-of-band LLM second-opinion on MCP description rug-pulls.
+                    # The inventory handler is sync and the scanner async, so the
+                    # rug-pull finding is emitted WITHOUT a verdict; this sweep
+                    # attaches one after the fact. Gated on the scanner being
+                    # enabled AND initialized; best-effort.
+                    mcp_review_summary = _maybe_review_mcp_descriptions(s)
                 logger.info(
                     "anomaly tick: machines=%d findings=%d errors=%d",
                     summary["machines_evaluated"],
@@ -226,12 +297,47 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     sensor_summary["findings_emitted"],
                     len(sensor_summary["errors"]),
                 )
+                if protection_summary["opened"]:
+                    logger.warning(
+                        "protection tick: машин без защиты — новых эпизодов=%d",
+                        protection_summary["opened"],
+                    )
+                if canary_summary["findings_emitted"]:
+                    logger.warning(
+                        "canary tick: СРАБОТАЛА приманка — findings=%d",
+                        canary_summary["findings_emitted"],
+                    )
+                logger.info(
+                    "identity tick: machines=%d findings=%d errors=%d",
+                    identity_summary["machines_evaluated"],
+                    identity_summary["findings_emitted"],
+                    len(identity_summary["errors"]),
+                )
                 logger.info(
                     "ai_escalation tick: machines=%d findings=%d errors=%d",
                     ai_escalation_summary["machines_evaluated"],
                     ai_escalation_summary["findings_emitted"],
                     len(ai_escalation_summary["errors"]),
                 )
+                logger.info(
+                    "fleet_campaign tick: campaigns=%d errors=%d",
+                    fleet_campaign_summary["campaigns_emitted"],
+                    len(fleet_campaign_summary["errors"]),
+                )
+                if alert_summary.get("enabled"):
+                    logger.info(
+                        "alert emit: emitted=%s failed=%s considered=%s",
+                        alert_summary.get("emitted"),
+                        alert_summary.get("failed"),
+                        alert_summary.get("considered"),
+                    )
+                if mcp_review_summary and mcp_review_summary.get("reviewed"):
+                    logger.info(
+                        "mcp llm review: reviewed=%s errors=%s candidates=%s",
+                        mcp_review_summary.get("reviewed"),
+                        mcp_review_summary.get("errors"),
+                        mcp_review_summary.get("candidates"),
+                    )
                 # Rule Discovery sweep — once-per-day, gated by
                 # discovery.last_run_at. Needs app.state.signal_drafter (the
                 # self-hosted Ollama default, or Anthropic fallback); if no
@@ -252,6 +358,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                                 disc_summary["deduped"],
                                 disc_summary["drafter_errors"],
                             )
+                # IOC host-feed sweep — once-per-day, gated by
+                # ioc_feed.last_run_at. Deterministic (no LLM), so it runs
+                # regardless of the drafter: fetched hosts land as pending
+                # indicators for admin review, never auto-live.
+                from datetime import UTC as _IUTC
+                from datetime import datetime as _idt
+                with _SessionTick(engine) as s3:
+                    if ioc_feed_service.should_run(s3, now=_idt.now(_IUTC)):
+                        ioc_summary = ioc_feed_service.run_ioc_feeds(
+                            s3, feeds=list(_IOC_FEEDS)
+                        )
+                        logger.info(
+                            "ioc_feed tick: inserted=%d deduped=%d invalid=%d feed_errors=%d",
+                            ioc_summary["inserted"],
+                            ioc_summary["deduped"],
+                            ioc_summary["invalid"],
+                            len(ioc_summary["feed_errors"]),
+                        )
             except Exception:  # noqa: BLE001 — scheduler job must not crash the loop
                 logger.exception("scheduled tick raised")
 
@@ -311,7 +435,12 @@ def create_app() -> FastAPI:
     app.include_router(audit.router)
     app.include_router(heartbeat.router)
     app.include_router(scan.router)
+    app.include_router(deploy.router)
     app.include_router(web_router)
+    # Self-hosted UI assets (Tailwind build, htmx, fonts) — no runtime CDN, so
+    # the console renders fully in an air-gapped / on-prem install.
+    _static_dir = Path(__file__).parent / "web" / "static"
+    app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
     return app
 
 

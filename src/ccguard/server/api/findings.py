@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field, ValidationError
 from sqlmodel import Session, select
 
@@ -58,6 +59,41 @@ class _FindingsBatchIn(BaseModel):
     schema_version: str
     machine_id: str = Field(min_length=1, max_length=128)
     findings: list[_FindingWire] = Field(min_length=1, max_length=_MAX_FINDINGS_PER_BATCH)
+
+
+@router.get("/findings/export")
+def export_findings(
+    format: str = Query(default="csv", pattern="^(csv|json)$"),
+    severity: str | None = Query(default=None, pattern="^(info|warn|block|critical)$"),
+    rule_id: str | None = Query(default=None),
+    machine_id: str | None = Query(default=None),
+    days: int | None = Query(default=None, ge=1, le=3650),
+    session: Session = Depends(get_session),
+    _token: str = Depends(require_token),
+) -> Response:
+    """Машинная выгрузка находок — чтобы SIEM могла забирать их по расписанию.
+
+    Тот же сериализатор, что и у кнопки в интерфейсе: расхождение между тем, что
+    выгружает человек, и тем, что забирает автоматика, — источник трудных споров
+    при разборе инцидента, поэтому формат ровно один.
+    """
+    from ccguard.server.services import export_service
+
+    rows = export_service.select_findings(
+        session, severity=severity, rule_id=rule_id, machine_id=machine_id, since_days=days
+    )
+    if format == "json":
+        return Response(
+            content=export_service.to_json(rows),
+            media_type="application/json; charset=utf-8",
+        )
+    return Response(
+        content=export_service.to_csv(rows),
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{export_service.filename("csv")}"'
+        },
+    )
 
 
 @router.get("/findings")

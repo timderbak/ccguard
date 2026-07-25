@@ -60,6 +60,11 @@ CATALOG: tuple[FindingRule, ...] = (
                 "Триггер → скрытая/временная запись (staging) [→ опц. egress]; аддитивный скоринг."),
     FindingRule("ioa.staging_chain.suppressed", "info", "finding", "sequence_service",
                 "Тот же staging-паттерн, но запись — build/пакетный кэш или VCS; шум, подавлен."),
+    FindingRule("ioa.toxic_flow", "critical", "finding", "sequence_service",
+                "Confused-deputy: внешний/недоверенный контент → «оружейный» сток "
+                "(правка своего конфига · persistence · разрушение · exfil на sketchy-хост) "
+                "властью самого агента. Ловит то, что exfil_sequence (нужен cred-read) и "
+                "staging_chain (нужна fs-запись) пропускают."),
     FindingRule("ioa.chain.<scenario_key>", "по политике", "finding", "chain_engine",
                 "Data-driven сценарий: последовательность стадий kill-chain завершилась в окне."),
     FindingRule("ioa.slow_chain", "warn", "finding", "slow_chain_service",
@@ -68,13 +73,29 @@ CATALOG: tuple[FindingRule, ...] = (
                 "МОАТ: AI-триггер (rug-pull/drift/PI) → последующая endpoint-эскалация на машине."),
     FindingRule("ioa.fleet_campaign", "critical", "finding", "fleet_campaign_service",
                 "Один скомпрометированный компонент на ≥N машинах флота — орг-уровневая кампания."),
+    FindingRule("canary.triggered", "critical", "finding", "canary_service",
+                "Обращение к приманке — подложенному фальшивому ключу. У такого файла нет "
+                "законных причин для чтения, поэтому ложное срабатывание невозможно "
+                "по построению: сразу critical, без порогов и накопления риска."),
+    FindingRule("identity.unattended_risk", "warn", "finding", "identity_service",
+                "Опасные действия выполнены в режиме БЕЗ подтверждений человеком "
+                "(permission_mode = bypassPermissions/dontAsk). Сам режим — не находка "
+                "(норма для CI); срабатывает только на совпадении «без надзора + опасное действие»."),
     # --- Rug-pull / TOFU baseline -----------------------------------------
     FindingRule("mcp.rug_pull.description_changed", "critical", "finding", "mcp_baseline_service",
                 "Описание MCP изменилось после первой регистрации (описание идёт в LLM как инструкция)."),
     FindingRule("mcp.rug_pull.tools_changed", "critical", "finding", "mcp_baseline_service",
                 "Runtime tools/list MCP подменён — имена/описания инструментов изменены."),
-    FindingRule("mcp.rug_pull.definition_changed", "warn", "finding", "mcp_baseline_service",
-                "Изменились command/args/url запуска MCP (возможная подмена бинарника/endpoint)."),
+    FindingRule("mcp.rug_pull.definition_changed", "warn→critical", "finding", "mcp_baseline_service",
+                "Изменились command/args/url запуска MCP — классификатор отличает подозрительное "
+                "(pin-drop · digest-swap · target-shift) от обычного bump'а; severity по вердикту."),
+    FindingRule("mcp.update.expected", "info", "finding", "mcp_baseline_service",
+                "Изменение определения MCP, классифицированное как обычное обновление (bump версии "
+                "по пину) — зафиксировано для прозрачности, НЕ тревога (анти-фалз-позитив)."),
+    FindingRule("mcp.hidden_unicode", "critical", "finding", "mcp_baseline_service",
+                "Скрытые Unicode-символы (невидимые/bidi/tag) в описании MCP — инъекция, невидимая "
+                "человеку, но читаемая LLM (Rules File Backdoor / GlassWorm). Детерминированно, "
+                "срабатывает даже при первой регистрации."),
     FindingRule("hook.rug_pull.content", "block", "finding", "hook_baseline_service",
                 "Содержимое скрипта хука изменилось без правки settings.json — та же команда, новый payload."),
     FindingRule("hook.rug_pull.command", "warn", "finding", "hook_baseline_service",

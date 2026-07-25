@@ -30,7 +30,11 @@ class PolicySection(BaseModel):
 
 class SyncSection(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    interval_minutes: int = 60
+    # 15 min matches the daemon's established cadence (DaemonConfig default) and
+    # is what the daemon now actually honors + reports in the heartbeat's
+    # ``expected_interval_sec``. Was 60 but never wired, so real deployments ran
+    # at 15 — this default preserves that observed behavior.
+    interval_minutes: int = 15
 
 
 class AgentConfig(BaseModel):

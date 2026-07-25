@@ -39,6 +39,10 @@ CREATE TABLE IF NOT EXISTS events (
   signals TEXT NOT NULL DEFAULT '[]',
   actor_user TEXT,
   session_id TEXT,
+  permission_mode TEXT,
+  agent_type TEXT,
+  agent_id TEXT,
+  prompt_id TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_events_id ON events(id);
@@ -55,6 +59,10 @@ class BufferRow(TypedDict):
     signals: list[str]
     actor_user: str | None
     session_id: str | None
+    permission_mode: str | None
+    agent_type: str | None
+    agent_id: str | None
+    prompt_id: str | None
 
 
 class ToolBufferDB:
@@ -114,6 +122,12 @@ class ToolBufferDB:
                 self.conn.execute(
                     "ALTER TABLE events ADD COLUMN session_id TEXT"
                 )
+            # Forward-add agent-identity columns (кто действовал и с какими
+            # правами). Тот же приём: metadata-only ALTER под защитой PRAGMA,
+            # у старых строк остаётся NULL.
+            for col in ("permission_mode", "agent_type", "agent_id", "prompt_id"):
+                if col not in cols:
+                    self.conn.execute(f"ALTER TABLE events ADD COLUMN {col} TEXT")
         return self
 
     def __exit__(
@@ -137,6 +151,10 @@ class ToolBufferDB:
         signals: list[str] | None = None,
         actor_user: str | None = None,
         session_id: str | None = None,
+        permission_mode: str | None = None,
+        agent_type: str | None = None,
+        agent_id: str | None = None,
+        prompt_id: str | None = None,
     ) -> None:
         """Insert a single event under BEGIN IMMEDIATE + COMMIT."""
         signals_json = json.dumps(signals or [])
@@ -144,9 +162,11 @@ class ToolBufferDB:
         try:
             self.conn.execute(
                 "INSERT INTO events"
-                "(ts, tool_name, fingerprint, decision, result_status, signals, actor_user, session_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (ts, tool_name, fingerprint, decision, result_status, signals_json, actor_user, session_id),
+                "(ts, tool_name, fingerprint, decision, result_status, signals, actor_user, session_id,"
+                " permission_mode, agent_type, agent_id, prompt_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ts, tool_name, fingerprint, decision, result_status, signals_json, actor_user, session_id,
+                 permission_mode, agent_type, agent_id, prompt_id),
             )
             self.conn.execute("COMMIT")
         except Exception:
@@ -168,7 +188,8 @@ class ToolBufferDB:
         batches whose rows are still in the buffer.
         """
         cur = self.conn.execute(
-            "SELECT id, ts, tool_name, fingerprint, decision, result_status, signals, actor_user, session_id "
+            "SELECT id, ts, tool_name, fingerprint, decision, result_status, signals, actor_user, session_id,"
+            " permission_mode, agent_type, agent_id, prompt_id "
             "FROM events WHERE id > ? ORDER BY id ASC LIMIT ?",
             (after_id, limit),
         )
@@ -191,6 +212,10 @@ class ToolBufferDB:
                     signals=signals,
                     actor_user=str(row[7]) if row[7] is not None else None,
                     session_id=str(row[8]) if row[8] is not None else None,
+                    permission_mode=str(row[9]) if row[9] is not None else None,
+                    agent_type=str(row[10]) if row[10] is not None else None,
+                    agent_id=str(row[11]) if row[11] is not None else None,
+                    prompt_id=str(row[12]) if row[12] is not None else None,
                 )
             )
         return out
