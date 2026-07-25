@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Приманки · ccguard{% endblock %}
+{% block content %}
+<style>
+  .canrow{border-top:1px solid #ffffff0a}
+  .canrow:hover{background:#ffffff05}
+  .statechip{font-family:"IBM Plex Mono",monospace;font-size:10px;border-radius:6px;padding:1px 7px;
+    border:1px solid transparent;white-space:nowrap}
+  .statechip.armed{color:#6ee7b7;background:#34d39912;border-color:#34d39938}
+  .statechip.triggered{color:#fff;background:#e11d48;border-color:#e11d48}
+  .baitbox{background:#0d0b12;border:1px solid #ffffff14;border-radius:10px;padding:12px 14px;
+    font-family:"IBM Plex Mono",monospace;font-size:12px;color:#cdd6e4;white-space:pre-wrap;word-break:break-all}
+  .sumchip{display:inline-flex;align-items:center;gap:7px;border-radius:9px;padding:5px 11px;border:1px solid var(--line);
+    background:var(--card2);font-size:12px;color:#b9b2c7}
+  .sumchip .n{font-family:"IBM Plex Mono",monospace;font-weight:700;color:#fff}
+</style>
+<div class="max-w-[1200px] mx-auto">
+  <header class="mb-5">
+    <p class="cc-eyebrow">Детект · приманки</p>
+    <h1 class="text-3xl text-white mt-1">Приманки <span class="text-slate-500 text-xl">{{ canaries|length }}</span></h1>
+    <p class="text-sm text-slate-400 mt-1.5 max-w-3xl">
+      Файл, который выглядит как настоящий ключ доступа, но ничего не открывает. У него
+      <span class="text-slate-200">нет ни одного законного применения</span> — ни один инструмент и ни один
+      разработчик не имеет причин его читать. Поэтому любое обращение означает, что кто-то целенаправленно
+      ищет секреты, и <span class="text-slate-200">ложных срабатываний здесь не бывает по построению</span>.
+      Типичная атака на агента — «собери переменные окружения и файлы с ключами»; агент честно выполнит
+      и наткнётся на приманку.
+    </p>
+    <div class="mt-4 flex items-center gap-2.5 flex-wrap">
+      <span class="sumchip"><span class="n">{{ canaries|selectattr('status','equalto','armed')|list|length }}</span> взведено</span>
+      {% if triggered_count > 0 %}
+      <span class="sumchip" style="border-color:#e11d48;color:#ff8aa0"><span class="n" style="color:#ff8aa0">{{ triggered_count }}</span> СРАБОТАЛО</span>
+      {% endif %}
+    </div>
+  </header>
+
+  {# Значение приманки показывается ровно один раз — в базе его нет. #}
+  {% if created %}
+  <section class="cc-card p-5 mb-4" style="border:1px solid #34d39947">
+    <h2 class="text-lg text-white mb-1">Приманка создана — сохрани файл сейчас</h2>
+    <p class="text-xs text-amber-300/90 mb-3">
+      Это единственный показ: значение нигде не сохраняется. Если база сервера когда-нибудь утечёт,
+      атакующий не должен получить список приманок — иначе он просто начнёт их обходить.
+    </p>
+    <div class="text-xs text-slate-400 mb-1">Положи по пути:</div>
+    <div class="baitbox mb-3">{{ created.file_path }}</div>
+    <div class="text-xs text-slate-400 mb-1">Содержимое файла:</div>
+    <div class="baitbox mb-3">{{ created.file_content }}</div>
+    <p class="text-xs text-slate-400">{{ created.instructions }}</p>
+  </section>
+  {% endif %}
+
+  {# --- создание --- #}
+  <section class="cc-card p-5 mb-4">
+    <h2 class="text-lg text-white mb-3">Создать приманку</h2>
+    <form method="POST" action="/admin/canaries/create" class="flex flex-wrap gap-3 items-end">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <label class="block">
+        <span class="text-xs text-slate-400 block mb-1">Тип</span>
+        <select name="token_type" class="text-sm px-3 py-2 rounded-md bg-[#15121c] border border-white/10 text-slate-200">
+          {% for key, r in recipes.items() %}
+          <option value="{{ key }}">{{ r.title }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="block">
+        <span class="text-xs text-slate-400 block mb-1">Путь (пусто — по умолчанию)</span>
+        <input type="text" name="file_path" placeholder="~/.aws/credentials.bak"
+               class="text-sm px-3 py-2 w-64 rounded-md bg-[#15121c] border border-white/10 text-slate-200" />
+      </label>
+      <label class="block">
+        <span class="text-xs text-slate-400 block mb-1">Машина (пусто — весь флот)</span>
+        <input type="text" name="machine_id" placeholder="laptop-alice"
+               class="text-sm px-3 py-2 w-48 rounded-md bg-[#15121c] border border-white/10 text-slate-200" />
+      </label>
+      <label class="block">
+        <span class="text-xs text-slate-400 block mb-1">Пометка</span>
+        <input type="text" name="label" placeholder="для чего"
+               class="text-sm px-3 py-2 w-40 rounded-md bg-[#15121c] border border-white/10 text-slate-200" />
+      </label>
+      <button class="text-sm px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700">Создать</button>
+    </form>
+    <p class="text-xs text-slate-500 mt-3">
+      Пути по умолчанию намеренно соседние с настоящими («забытая копия»): класть приманку
+      <span class="text-slate-300">вместо</span> рабочего файла нельзя — настоящий
+      <span class="cc-mono">~/.aws/credentials</span> законно читает AWS CLI, и приманка срывалась бы
+      на обычной работе.
+    </p>
+  </section>
+
+  {# --- список --- #}
+  {% if canaries %}
+  <section class="cc-card p-0 overflow-hidden">
+    <div>
+      {% for c in canaries %}
+      <div class="canrow px-5 py-3.5 {% if c.status == 'triggered' %}bg-rose-500/5{% endif %}">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="cc-mono text-[13px] text-slate-200">{{ c.file_path }}</span>
+          <span class="statechip {{ c.status }}">{% if c.status == 'triggered' %}СРАБОТАЛА{% else %}взведена{% endif %}</span>
+          <span class="text-[11px] text-slate-500">{{ recipes[c.token_type].title if c.token_type in recipes else c.token_type }}</span>
+          {% if c.machine_id %}<span class="text-[11px] text-slate-500">· только {{ c.machine_id }}</span>{% endif %}
+          {% if c.label %}<span class="text-[11px] text-slate-500">· {{ c.label }}</span>{% endif %}
+          <form method="POST" action="/admin/canaries/{{ c.id }}/delete" class="ml-auto"
+                onsubmit="return confirm('Убрать приманку? Она перестанет раздаваться агентам.')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+            <button class="text-[11px] px-2.5 py-1 bg-white text-red-600 border border-red-200 rounded-md hover:bg-red-50">Убрать</button>
+          </form>
+        </div>
+        {% if c.status == 'triggered' %}
+        <div class="mt-2 text-xs text-rose-300">
+          Сработала {{ c.triggered_at.strftime('%d.%m.%Y %H:%M') if c.triggered_at else '' }}
+          {% if c.triggered_machine_id %}на <a href="/machines/{{ c.triggered_machine_id }}" class="underline">{{ c.triggered_machine_id }}</a>{% endif %}
+          {% if c.triggered_actor %}· пользователь {{ c.triggered_actor }}{% endif %}
+          — считай ключи на этой машине скомпрометированными и ротируй их.
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+  {% else %}
+  <div class="cc-card p-6">
+    <p class="text-slate-400 text-sm">Приманок пока нет. Создай первую — и любое обращение к ней станет
+      немедленным сигналом, что кто-то ищет секреты на машине.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -73,6 +73,10 @@ CATALOG: tuple[FindingRule, ...] = (
                 "МОАТ: AI-триггер (rug-pull/drift/PI) → последующая endpoint-эскалация на машине."),
     FindingRule("ioa.fleet_campaign", "critical", "finding", "fleet_campaign_service",
                 "Один скомпрометированный компонент на ≥N машинах флота — орг-уровневая кампания."),
+    FindingRule("canary.triggered", "critical", "finding", "canary_service",
+                "Обращение к приманке — подложенному фальшивому ключу. У такого файла нет "
+                "законных причин для чтения, поэтому ложное срабатывание невозможно "
+                "по построению: сразу critical, без порогов и накопления риска."),
     FindingRule("identity.unattended_risk", "warn", "finding", "identity_service",
                 "Опасные действия выполнены в режиме БЕЗ подтверждений человеком "
                 "(permission_mode = bypassPermissions/dontAsk). Сам режим — не находка "

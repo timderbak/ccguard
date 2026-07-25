@@ -173,6 +173,49 @@ class ToolUseEvent(SQLModel, table=True):
     prompt_id: str | None = Field(default=None, index=True)
 
 
+class CanaryToken(SQLModel, table=True):
+    """Приманка: файл, который выглядит как настоящий ключ, но мёртв.
+
+    Смысл в том, что у такого файла НЕТ ни одного законного применения — он
+    ничего не открывает, ни один инструмент к нему не обращается. Поэтому любое
+    обращение означает, что кто-то целенаправленно ищет секреты, и ложных
+    срабатываний не бывает по построению (а не «мы удачно настроили правила»).
+
+    Значение приманки здесь НЕ хранится — только ``value_sha256``. Причина не
+    формальная: если база сервера утечёт вместе со значениями, атакующий
+    получит список приманок и научится их обходить, а вся затея держится ровно
+    на том, что отличить приманку от настоящего ключа он не может. Значение
+    показывается оператору один раз при создании и больше нигде не появляется.
+
+    Детект переиспользует уже готовый путь раздачи: при создании заводится
+    :class:`ThreatIndicator` типа ``sensitive_path``, который агенты получают с
+    политикой и превращают в сигнал ``cred.read.store_<id>``. Его id хранится в
+    ``indicator_id`` — по нему сработка привязывается обратно к приманке.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    # Тип приманки — определяет формат значения и куда её кладут:
+    # aws_key | github_pat | slack_token | dotenv | ssh_key
+    token_type: str = Field(index=True)
+    # Куда оператор кладёт файл. Он же раздаётся агентам как чувствительный путь.
+    file_path: str = Field(index=True)
+    # NULL = приманка общая для всего флота; иначе — конкретная машина.
+    machine_id: str | None = Field(default=None, index=True)
+    # Отпечаток значения. Нужен, чтобы позже уметь опознать утечку самого
+    # значения (в команде, в сетевом запросе), не храня его открытым.
+    value_sha256: str
+    # armed = разложена и ждёт; triggered = кто-то к ней обратился.
+    status: str = Field(default="armed", index=True)
+    label: str | None = None
+    indicator_id: int | None = Field(default=None, index=True)
+    created_at: datetime = Field(default_factory=_utcnow)
+    created_by: str | None = None
+    triggered_at: datetime | None = None
+    # Машина и пользователь, на которых приманка сработала впервые.
+    triggered_machine_id: str | None = None
+    triggered_actor: str | None = None
+
+
 class MachineBaseline(SQLModel, table=True):
     """Cached per-machine per-metric anomaly baseline (Phase 2 / Plan 02-01).
 

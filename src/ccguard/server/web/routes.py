@@ -1202,6 +1202,92 @@ def skills_inventory_drill_partial(
     )
 
 
+@router.get("/admin/canaries", response_class=HTMLResponse)
+def canaries_page(
+    request: Request,
+    user: str = Depends(require_session),
+    session: Session = Depends(get_session),
+) -> HTMLResponse:
+    """Приманки: подложенные фальшивые ключи и их состояние."""
+    from ccguard.server.services import canary_service
+
+    rows = canary_service.list_canaries(session)
+    return templates.TemplateResponse(
+        request,
+        "canaries.html",
+        {
+            "user": user,
+            "canaries": rows,
+            "recipes": canary_service.RECIPES,
+            "triggered_count": sum(1 for c in rows if c.status == "triggered"),
+            # Значение только что созданной приманки показывается РОВНО ОДИН раз.
+            # Ключ — идентификатор сессии (require_session возвращает именно его),
+            # чтобы значение увидел только тот, кто её создал.
+            "created": _CANARY_FLASH.pop(user, None),
+            "csrf_token": _csrf_for(request),
+        },
+    )
+
+
+# Одноразовая передача значения новой приманки на страницу после редиректа.
+# В базе значения нет и не будет: если она утечёт вместе со значениями,
+# атакующий получит список приманок и научится их обходить. Здесь оно живёт
+# ровно до первого показа оператору.
+_CANARY_FLASH: dict[str, dict] = {}
+
+
+@router.post("/admin/canaries/create")
+def canary_create(
+    request: Request,
+    token_type: str = Form(...),
+    file_path: str = Form(""),
+    machine_id: str = Form(""),
+    label: str = Form(""),
+    sid: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Создать приманку и показать её значение — единственный раз."""
+    from ccguard.server.services import canary_service
+
+    user_id = _resolve_user_id(session, sid)
+    try:
+        created = canary_service.create_canary(
+            session,
+            token_type=token_type,
+            file_path=file_path.strip() or None,
+            machine_id=machine_id.strip() or None,
+            label=label.strip() or None,
+            created_by=user_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    # Ключ — идентификатор сессии (тот же, что читает страница): значение увидит
+    # ровно тот, кто создал приманку, и ровно один раз.
+    _CANARY_FLASH[sid] = {
+        "file_path": created.token.file_path,
+        "file_content": created.file_content,
+        "instructions": created.instructions,
+        "token_type": created.token.token_type,
+    }
+    return RedirectResponse(url="/admin/canaries", status_code=303)
+
+
+@router.post("/admin/canaries/{canary_id}/delete")
+def canary_delete(
+    canary_id: int,
+    request: Request,
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Убрать приманку (перестаёт раздаваться агентам)."""
+    from ccguard.server.services import canary_service
+
+    canary_service.delete_canary(session, canary_id)
+    return RedirectResponse(url="/admin/canaries", status_code=303)
+
+
 @router.get("/admin/mcp-inventory", response_class=HTMLResponse)
 def mcp_inventory_page(
     request: Request,

@@ -165,6 +165,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     from ccguard.server.services.chain_engine import tick as chain_tick
     from ccguard.server.services.drift_service import tick as drift_tick
     from ccguard.server.services.fleet_campaign_service import tick as fleet_campaign_tick
+    from ccguard.server.services.canary_service import tick as canary_tick
     from ccguard.server.services.identity_service import tick as identity_tick
     from ccguard.server.services.risk_service import tick as risk_tick
     from ccguard.server.services.sensor_health_service import tick as sensor_health_tick
@@ -217,6 +218,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     # Опасные действия, выполненные агентом БЕЗ подтверждений
                     # человеком (permission_mode = bypassPermissions/dontAsk).
                     identity_summary = identity_tick(s)
+                    # Обращения к приманкам: ложных срабатываний тут не бывает
+                    # по построению, поэтому сразу critical, без порогов.
+                    canary_summary = canary_tick(s)
                     # The moat correlator runs LAST so it sees every trigger /
                     # ioa.* finding the other engines just emitted this tick.
                     ai_escalation_summary = ai_escalation_tick(s)
@@ -276,6 +280,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     sensor_summary["findings_emitted"],
                     len(sensor_summary["errors"]),
                 )
+                if canary_summary["findings_emitted"]:
+                    logger.warning(
+                        "canary tick: СРАБОТАЛА приманка — findings=%d",
+                        canary_summary["findings_emitted"],
+                    )
                 logger.info(
                     "identity tick: machines=%d findings=%d errors=%d",
                     identity_summary["machines_evaluated"],
