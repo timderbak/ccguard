@@ -1189,6 +1189,25 @@ CATALOG: tuple[Signal, ...] = (
         _p(r">\s*\S|\bdd\b.*\bof=|\bch(mod|own)\s+-\S*[rR]"),
         "Destructive overwrite of a sensitive file (redirect / dd / chmod -R)",
     ),
+    # Уход из-под наблюдения через ВЛОЖЕННУЮ сессию агента. Наш хук встроен в
+    # ТОТ экземпляр Claude Code, что на хосте; агент, запущенный внутри
+    # контейнера/пода, работает в чистой среде без наших хуков — и оттуда может
+    # делать что угодно. Ловим запуск известного CLI AI-агента внутри
+    # docker/podman/kubectl. Локальный `claude ...` НЕ матчится (он-то как раз
+    # под наблюдением) — только явно вложенный. Имена агентов подобраны
+    # специфичными (без коротких/общих слов) ради нуля ложных срабатываний.
+    Signal(
+        "evade.nested_agent",
+        "T1610",
+        _p(
+            r"\b(?:docker|podman)\s+(?:run|exec|compose\s+run)\b[^\n]*"
+            r"\b(?:claude|cursor-agent|aider|codex|cline|opencode)\b"
+            r"|\bkubectl\s+exec\b[^\n]*"
+            r"\b(?:claude|cursor-agent|aider|codex|cline|opencode)\b"
+        ),
+        "Запуск сессии AI-агента внутри контейнера/пода — исполнение вне "
+        "наблюдения ccguard (уход из-под хуков через вложенную среду)",
+    ),
 )
 
 # Action signals (see note above): excluded from the generic regex loop in
