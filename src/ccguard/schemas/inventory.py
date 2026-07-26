@@ -188,6 +188,17 @@ class InventoryReport(SchemaBase):
     machine_label: str | None = None
     timestamp: datetime
     agent_version: str
+    # Какой AI-агент инвентаризируется на этой машине. Строка, а не Literal:
+    # новые агенты должны добавляться без изменения схемы (сервер graceful к
+    # незнакомому значению). Известные: claude_code | cursor | copilot |
+    # gemini_cli | codex_cli | aider | windsurf | other. Default — claude_code:
+    # агент v0.1..v0.2 поля не шлёт, а до сих пор существовал только он.
+    #
+    # ВАЖНО: тип агента влияет на ВИДИМОСТЬ (что инвентаризуем), но НЕ на
+    # enforcement. Блокировка <100мс держится на PreToolUse-хуке Claude Code,
+    # которого у других агентов нет; для них ccguard даёт инвентарь и дрейф,
+    # а не поведенческую блокировку. Это ограничение, а не недоработка.
+    agent_kind: str = "claude_code"
     os: Literal["linux", "macos", "windows", "other"]
     settings_sources: list[SettingsSource] = []
     mcp_servers: list[McpServerEntry] = []

@@ -43,6 +43,7 @@ class MachineRow:
     machine_label: str | None
     last_seen: datetime
     agent_version: str | None
+    agent_kind: str | None
     agent_policy_revision: int | None
     warn_count: int
     block_count: int
@@ -86,6 +87,7 @@ def list_machines_with_status(session: Session) -> list[MachineRow]:
                 machine_label=m.machine_label,
                 last_seen=m.last_seen,
                 agent_version=m.agent_version,
+                agent_kind=m.agent_kind,
                 agent_policy_revision=agent_rev,
                 warn_count=warn_count,
                 block_count=block_count,

@@ -114,6 +114,9 @@ _MACHINE_HEARTBEAT_COLUMNS: tuple[tuple[str, str], ...] = (
     ("silent_since", "ALTER TABLE machine ADD COLUMN silent_since TIMESTAMP"),
     ("hooks_hash", "ALTER TABLE machine ADD COLUMN hooks_hash TEXT"),
     ("hooks_hash_baseline", "ALTER TABLE machine ADD COLUMN hooks_hash_baseline TEXT"),
+    # Тип агента. DEFAULT 'claude_code' ставится на существующие строки честно:
+    # до этой колонки другого агента в системе не было.
+    ("agent_kind", "ALTER TABLE machine ADD COLUMN agent_kind TEXT DEFAULT 'claude_code'"),
 )
 _TOOL_USE_SESSION_INDEX_DDL: tuple[str, ...] = (
     "CREATE INDEX IF NOT EXISTS ix_tooluseevent_session_id "

@@ -22,6 +22,12 @@ class Machine(SQLModel, table=True):
     first_seen: datetime = Field(default_factory=_utcnow)
     last_seen: datetime = Field(default_factory=_utcnow)
     agent_version: str | None = None
+    # Тип AI-агента на машине (claude_code | cursor | copilot | …). Фундамент
+    # мультиагентности: флот может содержать машины с разными агентами, и их
+    # надо различать в UI и аналитике. Существующие строки в БД мигрируются в
+    # 'claude_code' — до сих пор другого агента не было. Enforcement остаётся
+    # привилегией Claude Code (см. InventoryReport.agent_kind).
+    agent_kind: str | None = Field(default="claude_code")
     # ТЗ-07 sensor self-protection. ``last_heartbeat_at`` is the explicit "I'm
     # alive" ping (distinct from last_seen, which only moves on inventory/audit)
     # — lets the server tell an idle-but-alive sensor from a dead/suppressed one.

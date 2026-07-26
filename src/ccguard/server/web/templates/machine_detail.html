@@ -13,6 +13,13 @@
         {{ machine.machine_label or machine.machine_id }}
     </h2>
     <p class="text-slate-500 text-sm mb-0 cc-mono">{{ machine.machine_id }} · {{ machine.agent_version or "-" }} · последний sync {{ machine.last_seen.isoformat(timespec="minutes") }}</p>
+    {% set _kind = machine.agent_kind or "claude_code" %}
+    {% set _kind_label = {"claude_code":"Claude Code","cursor":"Cursor","copilot":"Copilot","gemini_cli":"Gemini CLI","codex_cli":"Codex CLI","aider":"Aider","windsurf":"Windsurf"}.get(_kind, _kind) %}
+    <span class="mt-2 inline-flex items-center gap-1.5 cc-mono text-[10px] uppercase rounded-md px-2 py-0.5 ring-1
+        {% if _kind == 'claude_code' %}bg-emerald-50 text-emerald-700 ring-emerald-200{% else %}bg-indigo-50 text-indigo-700 ring-indigo-200{% endif %}">
+        агент: {{ _kind_label }}
+        {% if _kind != 'claude_code' %}<span class="normal-case text-indigo-500">— видимость и дрейф, без поведенческой блокировки</span>{% endif %}
+    </span>
     {% if sync_freshness %}
     <span class="mt-2 inline-flex items-center gap-1.5 cc-mono text-[10px] uppercase rounded-md px-2 py-0.5 ring-1
         {% if sync_freshness.bucket == 'fresh' %}bg-emerald-50 text-emerald-700 ring-emerald-200

@@ -13,10 +13,17 @@
         {% for m in machines %}
         <tr class="border-b last:border-0 group hover:bg-slate-50/80 transition-colors">
             <td class="py-3 px-3">
+                {% set _kind = m.agent_kind or "claude_code" %}
+                {% set _kind_label = {"claude_code":"Claude Code","cursor":"Cursor","copilot":"Copilot","gemini_cli":"Gemini CLI","codex_cli":"Codex CLI","aider":"Aider","windsurf":"Windsurf"}.get(_kind, _kind) %}
                 <a href="/machines/{{ m.machine_id }}" class="font-medium text-slate-800 group-hover:text-emerald-700 hover:underline decoration-emerald-400 underline-offset-2 transition-colors">
                     {{ m.machine_label or m.machine_id[:12] }}
                 </a>
                 {% if not m.machine_label %}<span class="block cc-mono text-[10px] text-slate-400 mt-0.5">{{ m.machine_id[:18] }}</span>{% endif %}
+                <span class="inline-flex items-center gap-1 cc-mono text-[10px] rounded px-1.5 py-0.5 mt-1 ring-1
+                    {% if _kind == 'claude_code' %}bg-emerald-50 text-emerald-700 ring-emerald-200{% else %}bg-indigo-50 text-indigo-700 ring-indigo-200{% endif %}"
+                    title="{% if _kind == 'claude_code' %}Полная защита: инвентарь + поведенческая блокировка{% else %}Видимость и дрейф; поведенческая блокировка недоступна для этого агента{% endif %}">
+                    {{ _kind_label }}{% if _kind != 'claude_code' %} · только видимость{% endif %}
+                </span>
             </td>
             <td class="px-3 cc-mono text-xs text-slate-600">{{ m.agent_version or "—" }}</td>
             <td class="px-3 cc-mono text-xs text-slate-600">{{ m.last_seen.isoformat(timespec="minutes") }}</td>

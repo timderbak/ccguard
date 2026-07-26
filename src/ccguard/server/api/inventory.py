@@ -38,12 +38,14 @@ def post_inventory(
             first_seen=now,
             last_seen=now,
             agent_version=inv.agent_version,
+            agent_kind=inv.agent_kind,
         )
         session.add(machine)
     else:
         machine.last_seen = now
         machine.machine_label = inv.machine_label or machine.machine_label
         machine.agent_version = inv.agent_version
+        machine.agent_kind = inv.agent_kind
         session.add(machine)
 
     snapshot = InventorySnapshot(
