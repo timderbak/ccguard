@@ -59,6 +59,38 @@ def test_enforce_does_not_import_httpx():
     )
 
 
+def test_enforce_does_not_import_pydantic():
+    # Главная регрессия-защита: импорт pydantic (~90мс) + построение его моделей
+    # (~110мс) вдвое превышали весь бюджет проверки (100мс). Горячий путь читает
+    # политику и вход через hot_types/hot_policy/hot_config без pydantic. Если
+    # кто-то вернёт `from ccguard.schemas import ...` в enforce — тест упадёт.
+    loaded = _modules_after_import("ccguard.agent.enforce_main")
+    assert "pydantic" not in loaded, (
+        "горячий путь enforce снова тянет pydantic — латентность вернётся к ~280мс. "
+        "Импортируй типы/политику из hot_types/hot_policy/hot_config, не из ccguard.schemas"
+    )
+    assert "ccguard.schemas" not in loaded, (
+        "enforce импортит пакет ccguard.schemas — его __init__ строит все "
+        "pydantic-модели (~200мс). Используй pydantic-free hot_* модули"
+    )
+
+
+def test_catalog_does_not_compile_all_regexes_on_import():
+    # Каталог ~98 сигналов раньше компилировал все regex при импорте (~50мс).
+    # Теперь компиляция ленивая (Signal.pattern property). Проверяем, что импорт
+    # не наполнил кэш компиляций — то есть compile при импорте не произошёл.
+    code = (
+        "import ccguard.agent.signals.catalog as c;"
+        "print(c._compile.cache_info().currsize)"
+    )
+    out = subprocess.run(  # noqa: S603 — свой же интерпретатор
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True,
+    )
+    assert out.stdout.strip() == "0", (
+        "catalog скомпилировал regex на импорте — компиляция должна быть ленивой"
+    )
+
+
 def test_lazy_import_still_lets_llama_guard_work():
     # Ленивый импорт не должен превратиться в неработающую ветку: если бы
     # httpx не импортировался и внутри функции, проверка моделью падала бы

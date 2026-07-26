@@ -33,7 +33,7 @@ import httpx
 
 from ccguard.agent import read_scan_spool
 from ccguard.agent.masking import mask_content
-from ccguard.schemas.scan import ScanBatchResponse, ScanRequest, ScanRequestItem, ScannerConfig
+from ccguard.schemas.scan import ScanBatchResponse, ScannerConfig, ScanRequest, ScanRequestItem
 
 logger = logging.getLogger("ccguard.agent.inventory_scan")
 

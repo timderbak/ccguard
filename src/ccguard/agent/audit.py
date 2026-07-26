@@ -7,7 +7,13 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from ccguard.schemas import AuditEntry
+# Импорт напрямую из hot_types, НЕ через ccguard.schemas: audit на горячем
+# пути (write_audit зовётся из enforce), а пакет schemas тянет pydantic.
+from ccguard.agent.hot_types import (
+    AuditEntry,
+    audit_entry_from_dict,
+    audit_entry_to_dict,
+)
 
 
 def make_audit_logger(audit_path: Path, max_bytes: int, backup_count: int) -> logging.Logger:
@@ -29,7 +35,7 @@ def make_audit_logger(audit_path: Path, max_bytes: int, backup_count: int) -> lo
 
 
 def write_audit(logger: logging.Logger, entry: AuditEntry) -> None:
-    logger.info(json.dumps(entry.model_dump(mode="json"), ensure_ascii=False))
+    logger.info(json.dumps(audit_entry_to_dict(entry), ensure_ascii=False))
 
 
 def read_audit_entries(audit_path: Path) -> list[AuditEntry]:
@@ -43,7 +49,7 @@ def read_audit_entries(audit_path: Path) -> list[AuditEntry]:
             continue
         try:
             data = json.loads(line)
-            out.append(AuditEntry.model_validate(data))
-        except (json.JSONDecodeError, ValueError):
+            out.append(audit_entry_from_dict(data))
+        except (json.JSONDecodeError, ValueError, KeyError):
             continue
     return out

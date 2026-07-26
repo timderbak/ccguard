@@ -13,7 +13,6 @@ from ccguard.schemas import (
     HookEntry,
     InventoryReport,
     McpServerEntry,
-    PermissionsSnapshot,
     Policy,
     SkillEntry,
 )

@@ -45,12 +45,16 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:  # ``httpx`` импортируется лениво — см. ниже.
     import httpx
 
+    # Только для аннотаций: импорт schemas.policy тянет pydantic (~200мс), а
+    # движок лежит на горячем пути enforce. В рантайме cfg приходит как
+    # FastPolicy-узел (атрибут-доступ) — точно те же поля, что читаются ниже.
+    from ccguard.schemas.policy import LlamaGuardConfig, PromptInjectionConfig
+
 from ccguard.agent.prompt_injection_patterns import get_default_patterns
 from ccguard.agent.prompt_injection_safety import (
     is_structurally_unsafe,
     probe_redos_safe,
 )
-from ccguard.schemas.policy import LlamaGuardConfig, PromptInjectionConfig
 
 log = logging.getLogger(__name__)
 
@@ -176,7 +180,7 @@ def scan(text: str, cfg: PromptInjectionConfig) -> ScanResult | None:
     norm = _normalize(text)
 
     # 1) Allowlist early-exit — admin says "this text is fine, stop checking".
-    for entry in _compiled_allowlist(tuple(cfg.allowlist_patterns)):
+    for entry in _compiled_allowlist(tuple(cfg.allowlist_patterns or ())):
         if isinstance(entry, str):
             if entry and entry in norm:
                 return None
@@ -201,7 +205,7 @@ def scan(text: str, cfg: PromptInjectionConfig) -> ScanResult | None:
     # generic positional placeholder + a stable hash so admins can
     # correlate locally without leaking the source. The default catalog
     # keeps the raw source (it is public).
-    for idx, pattern in enumerate(_compiled_admin(tuple(cfg.regex_patterns)), start=1):
+    for idx, pattern in enumerate(_compiled_admin(tuple(cfg.regex_patterns or ())), start=1):
         if pattern.search(norm):
             pattern_hash = hashlib.sha256(pattern.pattern.encode()).hexdigest()[:12]
             return ScanResult(
@@ -231,7 +235,7 @@ def scan(text: str, cfg: PromptInjectionConfig) -> ScanResult | None:
 
     # 5) Optional LlamaGuard deep-scan — runs uniformly across severities
     #    (D-2: severity=info/warn/block all reach this step).
-    if cfg.llama_guard.enabled:
+    if cfg.llama_guard and cfg.llama_guard.enabled:
         result = _llama_guard_scan(text, cfg.llama_guard)
         if result is not None:
             return result

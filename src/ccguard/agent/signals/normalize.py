@@ -428,9 +428,7 @@ def _extract_urls(fragments: list[str]) -> list[str]:
             continue
         name = toks[0].rsplit("/", 1)[-1].lower()
         for tok in toks[1:]:
-            if _URL_LITERAL.match(tok):
-                out.append(tok)
-            elif (
+            if _URL_LITERAL.match(tok) or (
                 name in {"nc", "netcat"}
                 and ("." in tok or ":" in tok)
                 and not tok.startswith("-")

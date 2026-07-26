@@ -14,7 +14,7 @@
 - **Single-tenant**: один org на инстанс; multi-tenant перенесён в v0.3
 - **Backward compat**: agent v0.1 должен продолжить работать против server v0.2 (graceful degradation новых endpoints)
 - **DB**: SQLite WAL-режим, не Postgres — пока < 100 машин; миграция на Postgres в v0.3 если потребуется
-- **Performance**: PreToolUse hook latency < 100ms (текущий enforce-shim ≈30ms); prompt-injection scan не должен этого ломать
+- **Performance**: PreToolUse hook latency < 100ms (замер: ≈94ms end-to-end через `scripts/measure-hook-latency.sh`; прежняя оценка «≈30ms» была неверной — фактически было ≈277ms, пока pydantic не убрали с горячего пути, см. `hot_types`/`hot_policy`/`hot_config`). Горячий путь enforce НЕ должен импортировать pydantic — регрессию стережёт `tests/unit/test_hot_path_imports.py`
 - **Security**: всё что хранится — хеши или шифрованно (Fernet через `SECRET_KEY` env); никаких plain-text токенов в БД
 - **Schema versioning**: `schema_version` в InventoryReport и Policy — повышаем при breaking changes, агент шлёт свою версию, сервер graceful
 <!-- GSD:project-end -->

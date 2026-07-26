@@ -27,7 +27,9 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ccguard.agent.config import default_config_dir
+# hot_config, не config: buffer на горячем пути enforce (emit_finding), а импорт
+# config строит pydantic-модели конфига (~200мс).
+from ccguard.agent.hot_config import default_config_dir
 from ccguard.agent.masking import mask_secrets
 
 _SCHEMA = """

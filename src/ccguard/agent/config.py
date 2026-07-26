@@ -9,6 +9,11 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
+# Функции путей живут в hot_config (pydantic-free, для горячего пути) и
+# реэкспортируются здесь — прежние импорты
+# ``from ccguard.agent.config import default_config_dir`` продолжают работать.
+from ccguard.agent.hot_config import default_config_dir, default_config_path  # noqa: F401
+
 
 class ServerSection(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -49,18 +54,6 @@ class AgentConfig(BaseModel):
 
     def resolved_cache_path(self) -> Path:
         return Path(os.path.expanduser(self.policy.cache_path))
-
-
-def default_config_dir() -> Path:
-    """~/.ccguard. Можно переопределить через CCGUARD_AGENT_HOME (для тестов)."""
-    override = os.environ.get("CCGUARD_AGENT_HOME")
-    if override:
-        return Path(override)
-    return Path(os.path.expanduser("~/.ccguard"))
-
-
-def default_config_path() -> Path:
-    return default_config_dir() / "config.yaml"
 
 
 def load_or_create(path: Path | None = None) -> tuple[AgentConfig, Path]:

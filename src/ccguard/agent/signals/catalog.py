@@ -13,6 +13,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import cache
+
+
+@cache
+def _compile(rx: str) -> re.Pattern[str]:
+    """Скомпилировать и закэшировать regex. Кэш модульный, поэтому одинаковые
+    паттерны компилируются один раз на весь процесс."""
+    return re.compile(rx, re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -22,16 +30,30 @@ class Signal:
     ``pattern`` is matched (``search``) against the normalized text of a tool
     invocation. ``attack_technique`` is a MITRE ATT&CK id (``T####`` /
     ``T####.###``) or an ATLAS reference (``ATLAS.<name>``).
+
+    Хранится СЫРАЯ строка паттерна (``pattern_src``), а компиляция ленивая —
+    через свойство ``pattern``. Причина: каталог из ~98 сигналов раньше
+    компилировал ВСЕ regex на импорте модуля (~50мс), хотя на любой отдельный
+    вызов инструмента срабатывает лишь часть проверок. Этот импорт лежит на
+    горячем пути enforce (бюджет 100мс), поэтому компилируем по требованию, а
+    не оптом при старте. API (``s.pattern.search(...)``) не меняется.
     """
 
     id: str
     attack_technique: str
-    pattern: re.Pattern[str]
+    pattern_src: str
     description: str
 
+    @property
+    def pattern(self) -> re.Pattern[str]:
+        return _compile(self.pattern_src)
 
-def _p(rx: str) -> re.Pattern[str]:
-    return re.compile(rx, re.IGNORECASE)
+
+def _p(rx: str) -> str:
+    """Раньше компилировала regex; теперь возвращает сырую строку — компиляция
+    отложена в ``Signal.pattern`` (см. докстринг). Оставлена как есть, чтобы не
+    трогать ~98 записей CATALOG."""
+    return rx
 
 
 CATALOG: tuple[Signal, ...] = (

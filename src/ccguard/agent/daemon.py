@@ -23,10 +23,11 @@ import logging
 import signal
 import threading
 import time
-from dataclasses import asdict, dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 log = logging.getLogger("ccguard.agent.daemon")
 
@@ -156,13 +157,14 @@ def _build_real_sync_callable(interval_seconds: float) -> SyncCallable:
     import os as _os
     from pathlib import Path as _Path
 
+    import yaml as _yaml
+
     from ccguard.agent.check import check_inventory
     from ccguard.agent.config import default_config_dir, load_or_create
     from ccguard.agent.machine_id import derive_machine_id
     from ccguard.agent.scan import run_scan
     from ccguard.agent.sync import perform_sync
     from ccguard.schemas import Finding, Policy
-    import yaml as _yaml
 
     def _claude_home() -> _Path:
         return _Path(_os.environ.get("CCGUARD_CLAUDE_HOME", _Path.home() / ".claude"))

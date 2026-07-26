@@ -18,7 +18,6 @@ import platform
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal
 
 _PLIST_LABEL = "com.ccguard.daemon"
 _SYSTEMD_UNIT_NAME = "ccguard-daemon.service"

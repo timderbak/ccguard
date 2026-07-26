@@ -27,6 +27,7 @@ from pydantic import ValidationError
 
 from ccguard.agent.audit import read_audit_entries
 from ccguard.agent.config import AgentConfig
+
 # Re-exported under an alias so tests can monkeypatch the call site without
 # touching the original module-level binding in push_install.
 from ccguard.agent.push_install import apply as push_install_apply

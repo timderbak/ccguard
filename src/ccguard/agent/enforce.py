@@ -14,26 +14,37 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import yaml
-
 from ccguard.agent import read_pi_scan as read_pi_scan_mod
 from ccguard.agent.audit import make_audit_logger, write_audit
 from ccguard.agent.bash_url_parser import extract_urls_from_command
-from ccguard.agent.signals.cred_exfil import detect_cred_exfil
 from ccguard.agent.findings_hook.buffer import emit_finding
-from ccguard.agent.network_utils import detect_ip_as_host, is_private_ip
-from ccguard.agent.prompt_injection_engine import ScanResult
-from ccguard.agent.prompt_injection_engine import scan as pi_scan
-from ccguard.agent.signals.destructive import detect_destructive, detect_total_destruction
-from ccguard.agent.signals.normalize import normalize_command
-from ccguard.schemas import (
+from ccguard.agent.hot_policy import FastPolicy, load_fast_policy
+
+# Типы и политика — из pydantic-free модулей горячего пути. Импорт через пакет
+# ccguard.schemas исполнил бы его __init__ и построил все pydantic-модели
+# (~200мс) — вдвое больше бюджета проверки. hot_types/hot_policy этого не тянут.
+from ccguard.agent.hot_types import (
     AuditEntry,
     EnforceDecision,
     EnforceHookInput,
-    Policy,
+    parse_hook_input,
 )
+from ccguard.agent.network_utils import detect_ip_as_host, is_private_ip
+from ccguard.agent.prompt_injection_engine import ScanResult
+from ccguard.agent.prompt_injection_engine import scan as pi_scan
+from ccguard.agent.signals.cred_exfil import detect_cred_exfil
+from ccguard.agent.signals.destructive import detect_destructive, detect_total_destruction
+from ccguard.agent.signals.normalize import normalize_command
 
 log = logging.getLogger(__name__)
+
+# Пустой узел политики. В проде кэш нормализован сервером (model_dump полной
+# Policy), поэтому под-политики всегда на месте. Но enforce на горячем пути
+# безопасности НЕ должен падать на аномальном/минимальном кэше: краш хука хуже,
+# чем отсутствующее правило (краш = либо блок всего, либо fail-open). Поэтому
+# отсутствующая под-политика подменяется пустым узлом, а списки — ``or ()``.
+# Дополнительно всё заведомо злое режет hard-deny ярус, не зависящий от политики.
+_EMPTY = FastPolicy({})
 
 # Phase 5 / 05-03: fields scanned by prompt_injection step. Order matters —
 # _extract_pi_payload concatenates in this order so callers see deterministic
@@ -64,7 +75,7 @@ def _fingerprint(tool_input: dict) -> str:
 
 
 @lru_cache(maxsize=4)
-def _load_policy_cached(path: str, mtime_ns: int) -> Policy | None:
+def _load_policy_cached(path: str, mtime_ns: int) -> FastPolicy | None:
     """Underlying cached loader keyed on (path, mtime_ns).
 
     WR-08: keying on ``mtime_ns`` is what makes the cache safe across
@@ -73,18 +84,15 @@ def _load_policy_cached(path: str, mtime_ns: int) -> Policy | None:
     call sees a different mtime and re-parses. ``mtime_ns=0`` carries
     the "file does not exist" case so the cache still helps the
     no-policy branch.
+
+    Читается через FastPolicy (без pydantic): кэш нормализован сервером
+    (model_dump полной Policy), поэтому все дефолты уже на месте. Это и есть
+    основной выигрыш по латентности — см. hot_policy.
     """
-    p = Path(path)
-    if not p.exists():
-        return None
-    try:
-        data = yaml.safe_load(p.read_text()) or {}
-        return Policy.model_validate(data)
-    except Exception:
-        return None
+    return load_fast_policy(path)
 
 
-def _load_policy(path: str) -> Policy | None:
+def _load_policy(path: str) -> FastPolicy | None:
     """Загрузить policy из файла.
 
     WR-08: lru_cache по (path, mtime_ns) — кэш инвалидируется при
@@ -101,9 +109,11 @@ def _load_policy(path: str) -> Policy | None:
     return _load_policy_cached(path, mtime_ns)
 
 
-def _compile_regexes(patterns: list[str]) -> list[re.Pattern[str]]:
+def _compile_regexes(patterns: list[str] | None) -> list[re.Pattern[str]]:
     out: list[re.Pattern[str]] = []
-    for p in patterns:
+    # None — поле отсутствует в минимальном/аномальном кэше (в проде кэш
+    # нормализован сервером). Движок безопасности не должен на этом падать.
+    for p in patterns or ():
         try:
             out.append(re.compile(p))
         except re.error:
@@ -402,8 +412,8 @@ def _bash_hard_deny(search_text: str) -> EnforceDecision | None:
     return None
 
 
-def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
-    pol = policy.commands
+def _decide_bash(command: str, policy: FastPolicy) -> EnforceDecision:
+    pol = policy.commands or _EMPTY
 
     # P1: de-obfuscate ONCE. Deny-path matchers (dangerous / destructive /
     # network / always_deny / denylist) search the normalized text so
@@ -426,7 +436,7 @@ def _decide_bash(command: str, policy: Policy) -> EnforceDecision:
     # Severity=warn копится в warning_signals и пробрасывается дальше — НЕ
     # блокирует, но попадает в audit/finding.
     warning_signals: list[str] = []
-    for rule in pol.dangerous_patterns:
+    for rule in (pol.dangerous_patterns or ()):
         compiled = _compile_one(rule.pattern)
         if compiled is None:
             continue
@@ -547,19 +557,19 @@ def _hard_deny_only(payload: EnforceHookInput) -> EnforceDecision | None:
     return None
 
 
-def _decide_mcp(tool_name: str, policy: Policy) -> EnforceDecision:
+def _decide_mcp(tool_name: str, policy: FastPolicy) -> EnforceDecision:
     parts = tool_name.split("__")
     if len(parts) < 2:
         return EnforceDecision(permission="allow", reason="ok")
     server = parts[1]
-    pol = policy.mcp_servers
-    if server in pol.denylist_names:
+    pol = policy.mcp_servers or _EMPTY
+    if server in (pol.denylist_names or ()):
         return EnforceDecision(
             permission="deny",
             reason=f"mcp server '{server}' в denylist",
             rule_id="mcp_servers.denylist",
         )
-    if pol.deny_all_unknown and server not in pol.allowlist_names:
+    if pol.deny_all_unknown and server not in (pol.allowlist_names or ()):
         return EnforceDecision(
             permission="deny",
             reason=f"mcp server '{server}' не в allowlist (whitelist mode)",
@@ -619,7 +629,7 @@ def _suspicious_match(rule: Any, host: str, host_path: str) -> bool:
 
 
 def _check_network_target(
-    url: str, policy: Policy
+    url: str, policy: FastPolicy
 ) -> tuple[EnforceDecision | None, list[str]]:
     """Проверить URL/host против network policy.
 
@@ -635,8 +645,8 @@ def _check_network_target(
     if parsed is None:
         return None, warnings
     host, host_path = parsed
-    pol = policy.network
-    for pat in pol.denylist_hosts:
+    pol = policy.network or _EMPTY
+    for pat in (pol.denylist_hosts or ()):
         if _host_match(host, pat):
             return (
                 EnforceDecision(
@@ -647,7 +657,7 @@ def _check_network_target(
                 warnings,
             )
     if pol.deny_all_unknown:
-        if not any(_host_match(host, pat) for pat in pol.allowlist_hosts):
+        if not any(_host_match(host, pat) for pat in (pol.allowlist_hosts or ())):
             return (
                 EnforceDecision(
                     permission="deny",
@@ -658,9 +668,9 @@ def _check_network_target(
             )
     # Suspicious host catalog.
     # Если host явно в allowlist — пропускаем suspicious checks (admin сказал OK).
-    if any(_host_match(host, pat) for pat in pol.allowlist_hosts):
+    if any(_host_match(host, pat) for pat in (pol.allowlist_hosts or ())):
         return None, warnings
-    for rule in pol.suspicious_host_rules:
+    for rule in (pol.suspicious_host_rules or ()):
         if not _suspicious_match(rule, host, host_path):
             continue
         rid = f"network.suspicious.{rule.id}"
@@ -680,7 +690,7 @@ def _check_network_target(
     return None, warnings
 
 
-def _decide_web(tool_input: dict, policy: Policy) -> EnforceDecision:
+def _decide_web(tool_input: dict, policy: FastPolicy) -> EnforceDecision:
     url = tool_input.get("url")
     if not isinstance(url, str) or not url:
         return EnforceDecision(permission="allow", reason="no url")
@@ -690,7 +700,7 @@ def _decide_web(tool_input: dict, policy: Policy) -> EnforceDecision:
     return EnforceDecision(permission="allow", reason="ok", warning_signals=warnings)
 
 
-def _apply_enforcement_mode(decision: EnforceDecision, policy: Policy) -> EnforceDecision:
+def _apply_enforcement_mode(decision: EnforceDecision, policy: FastPolicy) -> EnforceDecision:
     """Honor ``policy.enforcement_mode`` (Stage 5b).
 
     ``observe`` flips deny → allow while preserving ``rule_id`` and prefixing
@@ -716,7 +726,7 @@ def _apply_enforcement_mode(decision: EnforceDecision, policy: Policy) -> Enforc
     )
 
 
-def decide(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
+def decide(payload: EnforceHookInput, policy: FastPolicy) -> EnforceDecision:
     """Маршрутизация по tool_name на конкретный матчер. Только PreToolUse релевантно.
 
     Stage 5b: после расчёта решения вызывается :func:`_apply_enforcement_mode`,
@@ -725,7 +735,7 @@ def decide(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
     return _apply_enforcement_mode(_decide_inner(payload, policy), policy)
 
 
-def _decide_inner(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
+def _decide_inner(payload: EnforceHookInput, policy: FastPolicy) -> EnforceDecision:
     """Inner dispatch — pre-Stage-5b ``decide`` body, no mode override."""
     if payload.hook_event_name != "PreToolUse":
         return EnforceDecision(permission="allow", reason="not PreToolUse")
@@ -734,7 +744,7 @@ def _decide_inner(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
     # Runs BEFORE existing _decide_* dispatch so a block-severity injection match
     # short-circuits with deny. warn/info severity matches emit a finding and
     # fall through to existing rules (so v0.1 enforcement still applies).
-    pi_cfg = policy.prompt_injection
+    pi_cfg = policy.prompt_injection or _EMPTY
     if pi_cfg.enabled and payload.tool_name not in _WRITE_TOOLS:
         text = _extract_pi_payload(payload.tool_input)
         pi_result: ScanResult | None
@@ -822,7 +832,7 @@ def _decide_inner(payload: EnforceHookInput, policy: Policy) -> EnforceDecision:
     return EnforceDecision(permission="allow", reason="tool not in enforce scope")
 
 
-def _decide_read(tool_input: dict, policy: Policy) -> EnforceDecision:
+def _decide_read(tool_input: dict, policy: FastPolicy) -> EnforceDecision:
     """Read tool — opt-in PreToolUse PI scan of the on-disk file content.
 
     Allow-by-default. Only when both ``prompt_injection.enabled=True`` AND
@@ -832,7 +842,7 @@ def _decide_read(tool_input: dict, policy: Policy) -> EnforceDecision:
     the result in :func:`_apply_enforcement_mode` so observe mode still
     flips this to allow + audit.
     """
-    pi_cfg = policy.prompt_injection
+    pi_cfg = policy.prompt_injection or _EMPTY
     if not pi_cfg.enabled or not pi_cfg.read_pi_block:
         return EnforceDecision(permission="allow", reason="read_pi_block disabled")
     file_path = tool_input.get("file_path")
@@ -898,7 +908,7 @@ def run_enforce(
     # 1. Parse stdin
     try:
         data = json.loads(stdin_text) if stdin_text.strip() else {}
-        payload = EnforceHookInput.model_validate(data)
+        payload = parse_hook_input(data)
     except Exception as e:
         # Битый stdin: fail-open + audit.
         write_audit(
@@ -995,7 +1005,7 @@ def run_enforce(
 def _emit_dangerous_findings(
     decision: EnforceDecision,
     payload: EnforceHookInput,
-    policy: Policy,
+    policy: FastPolicy,
 ) -> None:
     """Pipe dangerous.* блок-решения и warn-сигналы в findings_buffer.
 
@@ -1020,7 +1030,7 @@ def _emit_dangerous_findings(
                 cmd = raw[:200]
 
         by_id: dict[str, Any] = {
-            f"dangerous.{r.id}": r for r in policy.commands.dangerous_patterns
+            f"dangerous.{r.id}": r for r in ((policy.commands or _EMPTY).dangerous_patterns or ())
         }
 
         emitted_ids: set[str] = set()
@@ -1066,10 +1076,15 @@ def main_cli(
     policy_path: Path | None = None,
     stdin_text: str | None = None,
 ) -> int:
-    """CLI-обёртка. Читает stdin и пишет stdout, использует AgentConfig."""
-    from ccguard.agent.config import default_config_dir, load_or_create
+    """CLI-обёртка. Читает stdin и пишет stdout.
 
-    cfg, _ = load_or_create(config_path)
+    Конфиг читается облегчённо (hot_config, без pydantic) — на горячем пути
+    построение pydantic-моделей конфига стоило бы ~200мс. Файл при этом НЕ
+    создаётся: его заводит установка, а не проверка.
+    """
+    from ccguard.agent.hot_config import default_config_dir, load_fast_config
+
+    cfg = load_fast_config(config_path)
     p_path = policy_path or cfg.resolved_cache_path()
     audit_path = default_config_dir() / "audit.log"
     block_fail_mode = cfg.policy.block_fail_mode or "open"

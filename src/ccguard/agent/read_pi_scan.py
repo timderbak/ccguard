@@ -25,10 +25,17 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any
 
-from ccguard.agent.prompt_injection_engine import ScanResult, scan as pi_scan
-from ccguard.schemas.policy import LlamaGuardConfig, PromptInjectionConfig
+from ccguard.agent.prompt_injection_engine import ScanResult
+from ccguard.agent.prompt_injection_engine import scan as pi_scan
+
+if TYPE_CHECKING:
+    # Только для аннотаций — импорт schemas.policy тянет pydantic (~200мс), а
+    # этот модуль на горячем пути enforce. В рантайме cfg приходит как
+    # FastPolicy-узел (атрибут-доступ).
+    from ccguard.schemas.policy import PromptInjectionConfig
 
 # 50 KB cap — large enough for any reasonable README/issue/instruction file,
 # small enough to keep regex on the order of a few ms.
@@ -154,13 +161,15 @@ def _scan_only_default_catalog(text: str, cfg: PromptInjectionConfig) -> ScanRes
     """
     if not cfg.enabled or not text:
         return None
-    # Build a shallow clone with LlamaGuard forcibly off.
-    scan_cfg = PromptInjectionConfig(
+    # Клон cfg с принудительно выключенным LlamaGuard. Лёгкий объект вместо
+    # pydantic-модели: движок читает поля через атрибут-доступ, а конструировать
+    # pydantic на горячем пути — те самые ~200мс, которые мы и убираем.
+    scan_cfg = SimpleNamespace(
         enabled=True,
         severity=cfg.severity,
         regex_patterns=list(cfg.regex_patterns),
         allowlist_patterns=list(cfg.allowlist_patterns),
-        llama_guard=LlamaGuardConfig(enabled=False),
+        llama_guard=SimpleNamespace(enabled=False),
     )
     try:
         return pi_scan(text, scan_cfg)

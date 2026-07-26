@@ -63,16 +63,21 @@ def test_policy_unknown_schema_version_rejected() -> None:
 
 
 def test_enforce_hook_input_ignores_extra() -> None:
-    """В отличие от остальных схем, EnforceHookInput игнорирует чужие поля
-    (Claude Code может прислать больше, чем нам нужно)."""
-    parsed = EnforceHookInput.model_validate(
+    """Вход хука игнорирует чужие поля (Claude Code может прислать больше).
+
+    Теперь это dataclass на горячем пути (без pydantic) — разбор через
+    parse_hook_input, но контракт тот же: лишние поля молча отброшены.
+    """
+    from ccguard.agent.hot_types import parse_hook_input
+
+    parsed = parse_hook_input(
         {
             "hook_event_name": "PreToolUse",
             "tool_name": "Bash",
             "tool_input": {"command": "ls"},
             "cwd": "/tmp",
             "session_id": "abc",
-            "transcript_path": "/some/path",  # не объявлено в схеме
+            "transcript_path": "/some/path",  # не объявлено
             "permission_mode": "default",  # не объявлено
         }
     )
@@ -87,6 +92,10 @@ def test_enforce_decision_basic() -> None:
 
 
 def test_audit_entry_serializes() -> None:
+    # AuditEntry теперь dataclass без pydantic (горячий путь). Сериализация —
+    # через хелперы hot_types; проверяем round-trip через них.
+    from ccguard.agent.hot_types import audit_entry_from_dict, audit_entry_to_dict
+
     entry = AuditEntry(
         timestamp=datetime.now(UTC),
         tool_name="Bash",
@@ -95,8 +104,7 @@ def test_audit_entry_serializes() -> None:
         reason="matched pattern",
         tool_input_fingerprint="abc123def456",
     )
-    raw = entry.model_dump_json()
-    restored = AuditEntry.model_validate_json(raw)
+    restored = audit_entry_from_dict(audit_entry_to_dict(entry))
     assert restored == entry
 
 

@@ -262,13 +262,13 @@ def _build_active_catalog(
         if not all(isinstance(x, str) and x for x in (sid, pat, atk, desc)):
             continue
         try:
-            compiled = re.compile(pat, re.IGNORECASE)
+            re.compile(pat, re.IGNORECASE)  # валидация; компиляция закэшируется лениво
         except re.error:
             continue
         out_by_id[sid] = Signal(  # type: ignore[arg-type]
             id=sid,
             attack_technique=atk,
-            pattern=compiled,
+            pattern_src=pat,
             description=desc,
         )
     return list(out_by_id.values())

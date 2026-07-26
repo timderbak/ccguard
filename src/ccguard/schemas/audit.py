@@ -11,17 +11,11 @@ from typing import Literal
 
 from pydantic import ConfigDict, Field, field_validator
 
+# AuditEntry вынесена в ccguard.agent.hot_types как dataclass без pydantic —
+# она конструируется на горячем пути enforce, где импорт pydantic не по бюджету.
+# Реэкспорт сохраняет прежний путь импорта ``from ccguard.schemas import AuditEntry``.
+from ccguard.agent.hot_types import AuditEntry  # noqa: E402,F401
 from ccguard.schemas._base import SchemaBase
-
-
-class AuditEntry(SchemaBase):
-    timestamp: datetime
-    tool_name: str
-    decision: Literal["allow", "deny"]
-    rule_id: str | None = None
-    reason: str | None = None
-    fail_open: bool = False
-    tool_input_fingerprint: str
 
 
 class PolicyApplyEventPayload(SchemaBase):
