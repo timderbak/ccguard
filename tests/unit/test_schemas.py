@@ -10,11 +10,11 @@ from pydantic import ValidationError
 from ccguard.schemas import (
     AuditEntry,
     EnforceDecision,
-    EnforceHookInput,
     Finding,
     InventoryReport,
     Policy,
     PolicyMeta,
+    SandboxState,
     SyncPayload,
 )
 
@@ -23,6 +23,40 @@ def test_inventory_round_trip(sample_inventory: InventoryReport) -> None:
     raw = sample_inventory.model_dump_json()
     restored = InventoryReport.model_validate_json(raw)
     assert restored == sample_inventory
+
+
+def test_inventory_sandbox_defaults_none() -> None:
+    """Обратная совместимость: отчёт без поля sandbox валиден, sandbox=None.
+
+    Агент v0.1/v0.2 песочницу не собирает — сервер v0.2 обязан принять такой
+    отчёт (graceful degradation), а не падать на отсутствующем поле.
+    """
+    inv = InventoryReport(
+        machine_id="m1", timestamp=datetime.now(UTC), agent_version="0.1.0",
+        os="linux",
+    )
+    assert inv.sandbox is None
+    restored = InventoryReport.model_validate_json(inv.model_dump_json())
+    assert restored.sandbox is None
+
+
+def test_sandbox_state_round_trip() -> None:
+    sb = SandboxState(
+        configured=True, enabled=True, fail_if_unavailable=False,
+        allow_unsandboxed_commands=True,
+        network_allowed_domains=["api.example.com", "pypi.org"],
+        network_allow_managed_domains_only=False,
+        filesystem_allow_write=["/tmp/work"],
+        filesystem_deny_read=["~/.ssh"],
+        weaker_network_isolation=True,
+        excluded_commands=["docker"],
+        default_mode="acceptEdits", source_scope="managed",
+    )
+    restored = SandboxState.model_validate_json(sb.model_dump_json())
+    assert restored == sb
+    # Незаданные булевы поля остаются None (отличимо от False).
+    assert SandboxState().enabled is None
+    assert SandboxState().configured is False
 
 
 def test_policy_round_trip(sample_policy: Policy) -> None:

@@ -652,6 +652,43 @@ class AgentBaseline(SQLModel, table=True):
     accepted_by: str | None = None
 
 
+class SandboxBaseline(SQLModel, table=True):
+    """Эталон состояния песочницы (sandbox — изолированной среды исполнения)
+    Claude Code на машине (ASI03 / ATT&CK T1562).
+
+    В отличие от хуков/скиллов/памяти, песочница — не список объектов, а ЕДИНОЕ
+    эффективное состояние периметра (включена ли, egress-allowlist, ослабляющие
+    флаги), слитое по всем scope'ам. Поэтому строка ровно одна на машину
+    (UNIQUE ``machine_id``), а полный снимок лежит в ``state_json``.
+
+    Здесь нет ручного принятия (pending → active), как у других baseline: сравнение
+    важно НЕ симметрично. Усиление периметра (включили песочницу, сузили allowlist)
+    — это хорошо, его принимаем тихо, двигая эталон вперёд. Ослабление (выключили,
+    расширили allowlist, разрешили команды вне изоляции) — повод для находки
+    ``sandbox.weakened``, которая живёт в общей ленте находок. Эталон при этом всё
+    равно двигается на новое состояние, чтобы следующий sync не спамил тем же.
+
+    ``configured`` / ``enabled`` денормализованы из снимка, чтобы флот-запрос
+    «сколько эндпоинтов без песочницы» был одним GROUP BY, а не разбором JSON.
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+
+    # Полный снимок эффективного состояния (SandboxState.model_dump) — источник
+    # правды для diff и для UI.
+    state_json: str
+
+    # Денормализованные оси для флот-агрегатов.
+    configured: bool = Field(default=False, index=True)
+    enabled: bool | None = Field(default=None, index=True)
+
+    first_seen_at: datetime
+    last_seen_at: datetime
+    # Когда состояние в последний раз ФАКТИЧЕСКИ менялось (не каждый sync).
+    updated_at: datetime
+
+
 class ProtectionIncident(SQLModel, table=True):
     """Эпизод «на машине нет защиты» — вместе с процессом его разбора.
 

@@ -36,6 +36,7 @@ DETECTOR_KEYS = {
     "fleet_campaign",
     "toxic_flow",
     "memory_baseline",
+    "sandbox_baseline",
 }
 
 

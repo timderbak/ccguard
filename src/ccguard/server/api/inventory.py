@@ -15,6 +15,7 @@ from ccguard.server.services import (
     hook_baseline_service,
     mcp_baseline_service,
     memory_baseline_service,
+    sandbox_baseline_service,
     skill_baseline_service,
 )
 
@@ -117,6 +118,16 @@ def post_inventory(
         inventory_id=snapshot.id,
     )
     findings_stored += len(memory_findings)
+
+    # Песочница (sandbox): дрейф периметра и детект его ОСЛАБЛЕНИЯ (ASI03/T1562).
+    # Поле опционально: агент v0.1/v0.2 шлёт None, тогда сервис — no-op.
+    sandbox_findings = sandbox_baseline_service.update_and_detect(
+        session,
+        machine_id=inv.machine_id,
+        sandbox=inv.sandbox,
+        inventory_id=snapshot.id,
+    )
+    findings_stored += len(sandbox_findings)
 
     audit_stored = 0
     for a in payload.audit_events:

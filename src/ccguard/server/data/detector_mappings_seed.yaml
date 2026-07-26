@@ -66,6 +66,11 @@ detectors:
     kind: correlation
     rule_ids: memory.new,memory.external,memory.drift,memory.removed
     description: "memory_baseline_service.update_and_detect — trust-on-first-use over CLAUDE.md at every level and its @import chain. Injected standing instructions ('before any command, first …') execute with the agent's own authority because to the agent they ARE its memory, not input to re-check. Catches a new/changed instruction file, and separately an instruction pulled from OUTSIDE the repo (external @import / ancestor CLAUDE.md) that no code review would see."
+  - detector_key: sandbox_baseline
+    name: Sandbox perimeter weakening (posture drift)
+    kind: correlation
+    rule_ids: sandbox.weakened
+    description: "sandbox_baseline_service.update_and_detect — эффективное состояние песочницы Claude Code (включена ли, egress-allowlist, ослабляющие флаги) сводится с эталоном; асимметрично реагирует только на ОСЛАБЛЕНИЕ периметра (выключили песочницу, расширили egress-allowlist, разрешили команды в обход изоляции, сняли fail-closed). Impair Defenses над самим механизмом изоляции агента — ослабление, которое открывает дорогу exec/egress, наблюдаемое до, а не после инцидента."
 
 # detector_key → technique bindings. framework duplicated for query convenience.
 mappings:
@@ -205,3 +210,16 @@ mappings:
     framework: atlas
     control_type: DETECT
     relevance: secondary
+  # sandbox_baseline: ослабление периметра изоляции агента. Impair Defenses
+  # (ATT&CK T1562) над самим механизмом песочницы; избыточные привилегии агента
+  # после снятия границ — Identity and Privilege Abuse (OWASP ASI03).
+  - detector_key: sandbox_baseline
+    technique_id: ASI03
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: sandbox_baseline
+    technique_id: T1562
+    framework: attack
+    control_type: DETECT
+    relevance: primary

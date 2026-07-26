@@ -164,6 +164,77 @@ class MemoryEntry(SchemaBase):
     imported_by: str | None = None
 
 
+class SandboxState(SchemaBase):
+    """Эффективное состояние песочницы (sandbox — изолированной среды исполнения)
+    Claude Code, слитое по всем scope'ам settings.json.
+
+    Песочница — это периметр вокруг агента: что ему можно писать на диск, куда
+    ходить по сети (egress-allowlist — список разрешённых исходящих доменов),
+    какие команды бегают ВНЕ изоляции. Для ИБ важно не столько «включена ли»,
+    сколько **не ослабили ли** её со временем: добавили домен в allowlist,
+    разрешили команды вне песочницы, сняли fail-closed. Ослабление периметра —
+    это Impair Defenses (ослабление защитного механизма, ATT&CK T1562) и
+    Identity/Privilege Abuse (избыточные привилегии агента, OWASP ASI03).
+
+    Все поля опциональны/с дефолтами: агент v0.1/v0.2 их не шлёт, и сервер
+    принимает такой отчёт без ошибок (graceful degradation — мягкая деградация).
+    Значение ``None`` у булевых полей значит «в конфиге не задано» и отличается
+    от ``False`` («задано и выключено»).
+    """
+
+    # Есть ли ключ ``sandbox`` хоть в одном scope. Отличаем «выключена» от
+    # «вообще не настроена» — это разные позы (posture), и на UI они не должны
+    # выглядеть одинаково.
+    configured: bool = False
+    # sandbox.enabled — фундамент. False = песочницы фактически нет.
+    enabled: bool | None = None
+    # sandbox.failIfUnavailable — fail-closed (отказ в сторону «заблокировать»):
+    # Claude Code откажется работать, если песочница недоступна. False/None =
+    # fail-open (тихо работает БЕЗ песочницы) — слабее.
+    fail_if_unavailable: bool | None = None
+    # sandbox.allowUnsandboxedCommands — разрешить команды в обход изоляции.
+    # True = дыра в периметре.
+    allow_unsandboxed_commands: bool | None = None
+
+    # --- сеть (egress) ---
+    # sandbox.network.allowedDomains — egress-allowlist. Расширение = ослабление.
+    network_allowed_domains: list[str] = []
+    # sandbox.network.deniedDomains — явный чёрный список; снятие = ослабление.
+    network_denied_domains: list[str] = []
+    # sandbox.network.allowManagedDomainsOnly — только домены из managed-конфига;
+    # сильнейшее ограничение egress, снятие = ослабление.
+    network_allow_managed_domains_only: bool | None = None
+
+    # --- файловая система ---
+    # sandbox.filesystem.allowWrite — куда песочница пускает писать. Расширение =
+    # ослабление.
+    filesystem_allow_write: list[str] = []
+    # sandbox.filesystem.denyRead — что скрыто от чтения (.ssh, .aws и т.п.).
+    # Снятие пути = ослабление (агент снова видит секреты).
+    filesystem_deny_read: list[str] = []
+    # sandbox.filesystem.disabled — изоляция ФС выключена целиком.
+    filesystem_disabled: bool | None = None
+
+    # --- явные ослабляющие флаги Claude Code ---
+    # sandbox.enableWeakerNestedSandbox / enableWeakerNetworkIsolation —
+    # документированные «ослабленные» режимы. Включение = ослабление.
+    weaker_nested_sandbox: bool | None = None
+    weaker_network_isolation: bool | None = None
+
+    # sandbox.excludedCommands — команды, исключённые из песочницы (docker и т.п.
+    # по умолчанию). Расширение = больше кода вне наблюдения периметра.
+    excluded_commands: list[str] = []
+
+    # permissions.defaultMode — режим подтверждений по умолчанию. Не из блока
+    # sandbox, но той же оси «сила периметра»: "bypassPermissions" = все
+    # подтверждения выключены на уровне конфига (не CLI-флаг).
+    default_mode: str | None = None
+
+    # На каком scope задан итоговый ``enabled`` (managed важнее project_local
+    # важнее project важнее user) — оператору видно, где «сильное слово».
+    source_scope: str | None = None
+
+
 class PermissionsSnapshot(SchemaBase):
     allow: list[str] = []
     deny: list[str] = []
@@ -212,5 +283,9 @@ class InventoryReport(SchemaBase):
     # Опционально: агент v0.1/v0.2 их не собирает и шлёт отчёт без поля —
     # сервер должен принимать такой отчёт без ошибок (graceful degradation).
     memory_files: list[MemoryEntry] = []
+    # Эффективное состояние песочницы (sandbox on/off, egress-allowlist,
+    # ослабляющие флаги). Опционально: агент v0.1/v0.2 поле не шлёт, сервер
+    # принимает отчёт без него (graceful degradation). None — «не собрано».
+    sandbox: SandboxState | None = None
     env_keys: list[str] = []  # имена переменных из settings.env (без значений)
     claude_code_version: str | None = None

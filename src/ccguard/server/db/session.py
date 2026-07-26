@@ -71,6 +71,14 @@ _SKILL_AGENT_BASELINE_INDEX_DDL: tuple[str, ...] = (
     "ON agentbaseline(machine_id, name, origin, COALESCE(parent_plugin, ''))",
 )
 
+# Composite unique index for SandboxBaseline (sandbox posture drift). Ровно одна
+# строка на машину — состояние песочницы единое, а не список. Same idempotent
+# IF NOT EXISTS pattern as the other baseline tables.
+_SANDBOX_BASELINE_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_sandboxbaseline_machine "
+    "ON sandboxbaseline(machine_id)",
+)
+
 # Additive columns for ScanResult (feat/skills-detailed-rationale).
 # ``create_all`` is a no-op on existing tables, so these explicit ALTERs make
 # the new columns appear on pre-feature DBs. SQLite's ``ADD COLUMN`` is the
@@ -245,6 +253,8 @@ def init_db(engine: Engine) -> None:
         for ddl in _HOOK_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
         for ddl in _SKILL_AGENT_BASELINE_INDEX_DDL:
+            conn.execute(text(ddl))
+        for ddl in _SANDBOX_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
         for ddl in _THREAT_INDICATOR_INDEX_DDL:
             conn.execute(text(ddl))

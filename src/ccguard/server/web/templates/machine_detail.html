@@ -54,6 +54,9 @@
         {% include "components/_memory_baseline_banner.html" %}
         {% include "components/_memory_drift_cards.html" %}
         {% if inventory %}
+            {# --- Песочница (изоляция агента) — headline-факт периметра --- #}
+            {% include "components/_sandbox_state.html" %}
+
             {# --- Источники конфигурации Claude Code --- #}
             {% if inventory.get("settings_sources") %}
             {% set _sources = inventory.get("settings_sources") %}
@@ -190,7 +193,7 @@
 
             {# --- Остальные секции инвентаря (generic loop) --- #}
             {% for section_name, items in inventory.items() %}
-                {% if section_name not in ("settings_sources", "hooks") and items is sequence and items|length > 0 and items[0] is mapping %}
+                {% if section_name not in ("settings_sources", "hooks", "sandbox") and items is sequence and items|length > 0 and items[0] is mapping %}
                 <details class="border-b last:border-0 py-2.5 group">
                     <summary class="cursor-pointer flex items-center justify-between text-sm font-medium text-slate-700 hover:text-emerald-700 transition-colors list-none">
                         <span class="flex items-center gap-2">

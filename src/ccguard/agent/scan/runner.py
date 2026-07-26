@@ -15,6 +15,7 @@ from ccguard.agent.scan import mcp as scan_mcp
 from ccguard.agent.scan import memory as scan_memory
 from ccguard.agent.scan import permissions as scan_perms
 from ccguard.agent.scan import plugins as scan_plugins
+from ccguard.agent.scan import sandbox as scan_sandbox
 from ccguard.agent.scan import settings as scan_settings
 from ccguard.agent.scan import skills as scan_skills
 from ccguard.schemas import InventoryReport
@@ -76,6 +77,7 @@ def run_scan(claude_home: Path, project_dir: Path, machine_id: str, machine_labe
         agents=scan_agents.scan_agents(claude_home),
         commands=scan_commands.scan_commands(claude_home),
         memory_files=scan_memory.scan_memory(claude_home, project_dir),
+        sandbox=scan_sandbox.scan_sandbox(parsed),
         env_keys=_extract_env_keys(parsed),
         claude_code_version=None,
     )
