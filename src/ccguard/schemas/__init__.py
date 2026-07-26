@@ -8,6 +8,7 @@ from ccguard.schemas.enforce import (
 from ccguard.schemas.finding import Finding, Severity
 from ccguard.schemas.inventory import (
     AgentEntry,
+    AutoMemoryStats,
     CommandEntry,
     HookEntry,
     InventoryReport,
@@ -38,6 +39,7 @@ __all__ = [
     "AgentEntry",
     "AgentsPolicy",
     "AuditEntry",
+    "AutoMemoryStats",
     "CommandEntry",
     "CommandsPolicy",
     "DangerousBashRule",

@@ -37,6 +37,7 @@ DETECTOR_KEYS = {
     "toxic_flow",
     "memory_baseline",
     "sandbox_baseline",
+    "automemory_baseline",
 }
 
 

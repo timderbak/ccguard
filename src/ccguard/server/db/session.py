@@ -79,6 +79,14 @@ _SANDBOX_BASELINE_INDEX_DDL: tuple[str, ...] = (
     "ON sandboxbaseline(machine_id)",
 )
 
+# Composite unique index for AutoMemoryBaseline (auto-memory poisoning drift).
+# Слот — (machine_id, path): один файл авто-памяти = одна строка. Same idempotent
+# IF NOT EXISTS pattern as the other baseline tables.
+_AUTO_MEMORY_BASELINE_INDEX_DDL: tuple[str, ...] = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS ux_automemorybaseline_slot "
+    "ON automemorybaseline(machine_id, path)",
+)
+
 # Additive columns for ScanResult (feat/skills-detailed-rationale).
 # ``create_all`` is a no-op on existing tables, so these explicit ALTERs make
 # the new columns appear on pre-feature DBs. SQLite's ``ADD COLUMN`` is the
@@ -255,6 +263,8 @@ def init_db(engine: Engine) -> None:
         for ddl in _SKILL_AGENT_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
         for ddl in _SANDBOX_BASELINE_INDEX_DDL:
+            conn.execute(text(ddl))
+        for ddl in _AUTO_MEMORY_BASELINE_INDEX_DDL:
             conn.execute(text(ddl))
         for ddl in _THREAT_INDICATOR_INDEX_DDL:
             conn.execute(text(ddl))

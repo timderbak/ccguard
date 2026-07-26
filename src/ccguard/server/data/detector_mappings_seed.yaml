@@ -71,6 +71,11 @@ detectors:
     kind: correlation
     rule_ids: sandbox.weakened
     description: "sandbox_baseline_service.update_and_detect — эффективное состояние песочницы Claude Code (включена ли, egress-allowlist, ослабляющие флаги) сводится с эталоном; асимметрично реагирует только на ОСЛАБЛЕНИЕ периметра (выключили песочницу, расширили egress-allowlist, разрешили команды в обход изоляции, сняли fail-closed). Impair Defenses над самим механизмом изоляции агента — ослабление, которое открывает дорогу exec/egress, наблюдаемое до, а не после инцидента."
+  - detector_key: automemory_baseline
+    name: Auto-memory poisoning (feature-delta)
+    kind: correlation
+    rule_ids: automemory.anomaly
+    description: "auto_memory_baseline_service.update_and_detect — АВТО-память Claude Code (MEMORY.md, которую агент переписывает сам) сводится по числовым признакам с предыдущим снимком, потому что hash-дрейф тут бесполезен (меняется каждую сессию). Ловит аномальную дельту: внезапный вброс объёма, новый внешний @import, всплеск атака-маркеров/URL. Отравление собственной памяти агента персистит между сессиями и исполняется с его полномочиями — это Memory & Context Poisoning (ASI06), которое обычный EDR не видит."
 
 # detector_key → technique bindings. framework duplicated for query convenience.
 mappings:
@@ -223,3 +228,16 @@ mappings:
     framework: attack
     control_type: DETECT
     relevance: primary
+  # automemory_baseline: отравление авто-памяти агента — второй детектор ASI06
+  # (Memory & Context Poisoning), рядом с memory_baseline, но по иному механизму
+  # (дельта признаков вместо hash-дрейфа). IPI-адъюнкт → AML.T0051 вторично.
+  - detector_key: automemory_baseline
+    technique_id: ASI06
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: automemory_baseline
+    technique_id: AML.T0051
+    framework: atlas
+    control_type: DETECT
+    relevance: secondary

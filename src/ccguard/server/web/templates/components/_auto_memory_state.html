@@ -1,0 +1,54 @@
+{# Авто-память агента (ASI06) — та, что Claude Code ведёт и переписывает сам.
+
+   Показываем не отпечаток (он меняется каждую сессию — бесполезно), а признаки:
+   размер, внешние @import, атака-маркеры, URL. Сам факт ОТРАВЛЕНИЯ (аномальная
+   дельта между сессиями) приезжает отдельной находкой automemory.anomaly в общей
+   ленте; здесь — текущее состояние для контекста. #}
+{% set _am = inventory.get("auto_memory") if inventory else None %}
+<details class="border-b py-2.5 group" open>
+    <summary class="cursor-pointer flex items-center justify-between text-sm font-medium text-slate-700 hover:text-emerald-700 transition-colors list-none">
+        <span class="flex items-center gap-2">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" class="w-3 h-3 text-slate-400 transition-transform group-open:rotate-90"><path d="m9 18 6-6-6-6"/></svg>
+            <span title="Память, которую агент ведёт и переписывает сам между сессиями (MEMORY.md). Закладка здесь исполняется с полномочиями агента. За отравлением следит детектор automemory.anomaly.">Авто-память агента</span>
+        </span>
+        {% if not _am %}
+        <span class="cc-mono text-[10px] uppercase rounded px-1.5 py-0.5 ring-1 bg-slate-50 text-slate-400 ring-slate-200" title="Агент не прислал признаки авто-памяти (старая версия) либо авто-память выключена/пуста">нет данных</span>
+        {% else %}
+        <span class="cc-mono text-xs rounded-md bg-slate-100 px-1.5 py-0.5 text-slate-500 ring-1 ring-slate-200">{{ _am|length }}</span>
+        {% endif %}
+    </summary>
+
+    {% if not _am %}
+    <p class="ml-6 mt-1.5 text-[11px] text-slate-400">
+        Признаков авто-памяти нет: либо агент их не собирает (старая версия), либо
+        авто-память выключена или пуста.
+    </p>
+    {% else %}
+    <ul class="ml-6 mt-2 space-y-2">
+        {% for f in _am %}
+        <li class="text-xs">
+            <div class="cc-mono text-slate-700 break-all">{{ f.get("path") }}</div>
+            <div class="mt-1 flex flex-wrap gap-1.5 items-center cc-mono text-[10px]">
+                <span class="rounded px-1 py-0.5 ring-1 bg-slate-50 text-slate-500 ring-slate-200">{{ f.get("line_count", 0) }} строк</span>
+                <span class="rounded px-1 py-0.5 ring-1 bg-slate-50 text-slate-500 ring-slate-200">{{ f.get("size_bytes", 0) }} Б</span>
+                {% if f.get("external_import_count", 0) > 0 %}
+                <span class="rounded px-1 py-0.5 ring-1 bg-red-50 text-red-700 ring-red-200" title="Авто-память тянет файл извне проекта">внешних @import: {{ f.get("external_import_count") }}</span>
+                {% elif f.get("import_count", 0) > 0 %}
+                <span class="rounded px-1 py-0.5 ring-1 bg-slate-50 text-slate-500 ring-slate-200" title="@import-ссылки">@import: {{ f.get("import_count") }}</span>
+                {% endif %}
+                {% if f.get("suspicious_marker_count", 0) > 0 %}
+                <span class="rounded px-1 py-0.5 ring-1 bg-amber-50 text-amber-700 ring-amber-200" title="Технические атака-маркеры (ignore previous / curl|base64 / secret-паттерны). Тревога — на их СКАЧОК между сессиями, не на само присутствие.">атака-маркеры: {{ f.get("suspicious_marker_count") }}</span>
+                {% endif %}
+                {% if f.get("url_count", 0) > 0 %}
+                <span class="rounded px-1 py-0.5 ring-1 bg-slate-50 text-slate-500 ring-slate-200">URL: {{ f.get("url_count") }}</span>
+                {% endif %}
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+    <p class="ml-6 mt-2 text-[10px] text-slate-400">
+        Красное/янтарное — не находка сама по себе, а контекст. Тревогу поднимает
+        аномальная дельта между сессиями (карточка automemory.anomaly в находках).
+    </p>
+    {% endif %}
+</details>

@@ -689,6 +689,38 @@ class SandboxBaseline(SQLModel, table=True):
     updated_at: datetime
 
 
+class AutoMemoryBaseline(SQLModel, table=True):
+    """Последний снимок признаков файла АВТО-памяти на машине (ASI06).
+
+    Авто-память Claude Code переписывается агентом каждую сессию, поэтому TOFU по
+    content_hash тут не работает (кричал бы всегда). Слот — (machine_id, path);
+    строка хранит ПОСЛЕДНИЙ снимок числовых признаков, а сервис ловит аномальную
+    ДЕЛЬТУ между соседними sync'ами (резкий вброс, появление внешних @import,
+    всплеск атака-маркеров). Постепенный легитимный рост даёт малые дельты и
+    остаётся тихим — сравнение идёт с предыдущим снимком, а не с древним эталоном.
+
+    Содержимое НЕ хранится — только счётчики и отпечаток (конституция проекта).
+    """
+
+    id: int | None = Field(default=None, primary_key=True)
+    machine_id: str = Field(index=True)
+    path: str = Field(index=True)
+
+    # Последний принятый снимок признаков — база для дельты.
+    size_bytes: int = 0
+    line_count: int = 0
+    import_count: int = 0
+    external_import_count: int = 0
+    url_count: int = 0
+    suspicious_marker_count: int = 0
+    content_hash: str = ""
+
+    first_seen_at: datetime
+    last_seen_at: datetime
+    # Когда признаки в последний раз фактически менялись (не каждый sync).
+    updated_at: datetime
+
+
 class ProtectionIncident(SQLModel, table=True):
     """Эпизод «на машине нет защиты» — вместе с процессом его разбора.
 

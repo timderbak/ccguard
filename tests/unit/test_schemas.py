@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from ccguard.schemas import (
     AuditEntry,
+    AutoMemoryStats,
     EnforceDecision,
     Finding,
     InventoryReport,
@@ -36,8 +37,23 @@ def test_inventory_sandbox_defaults_none() -> None:
         os="linux",
     )
     assert inv.sandbox is None
+    assert inv.auto_memory == []
     restored = InventoryReport.model_validate_json(inv.model_dump_json())
     assert restored.sandbox is None
+    assert restored.auto_memory == []
+
+
+def test_auto_memory_stats_round_trip() -> None:
+    am = AutoMemoryStats(
+        path="/home/u/.claude/projects/-p/memory/MEMORY.md",
+        size_bytes=1234, line_count=42, import_count=2, external_import_count=1,
+        url_count=3, suspicious_marker_count=4, content_hash="abc123",
+    )
+    restored = AutoMemoryStats.model_validate_json(am.model_dump_json())
+    assert restored == am
+    # Дефолты (пустой файл-заглушка).
+    assert AutoMemoryStats(path="/x").size_bytes == 0
+    assert AutoMemoryStats(path="/x").suspicious_marker_count == 0
 
 
 def test_sandbox_state_round_trip() -> None:

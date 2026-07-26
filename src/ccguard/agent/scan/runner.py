@@ -9,6 +9,7 @@ from typing import Literal
 
 from ccguard import __version__
 from ccguard.agent.scan import agents as scan_agents
+from ccguard.agent.scan import auto_memory as scan_auto_memory
 from ccguard.agent.scan import commands as scan_commands
 from ccguard.agent.scan import hooks as scan_hooks
 from ccguard.agent.scan import mcp as scan_mcp
@@ -78,6 +79,7 @@ def run_scan(claude_home: Path, project_dir: Path, machine_id: str, machine_labe
         commands=scan_commands.scan_commands(claude_home),
         memory_files=scan_memory.scan_memory(claude_home, project_dir),
         sandbox=scan_sandbox.scan_sandbox(parsed),
+        auto_memory=scan_auto_memory.scan_auto_memory(claude_home, project_dir, parsed),
         env_keys=_extract_env_keys(parsed),
         claude_code_version=None,
     )
