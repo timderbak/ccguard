@@ -150,6 +150,10 @@ class MemoryEntry(SchemaBase):
     scope: Literal[
         "enterprise", "user", "project", "project_local",
         "subdir", "ancestor", "import",
+        # Прочие носители инструкций той же природы, что CLAUDE.md:
+        "rules",          # .claude/rules/*.md — path-scoped правила
+        "output_style",   # output-styles/*.md — расширяют системный промпт
+        "managed_memory", # ключ claudeMd в managed-settings.json (политика орг.)
     ]
     content_hash: str
     size_bytes: int

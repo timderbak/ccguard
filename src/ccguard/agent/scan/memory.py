@@ -30,6 +30,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -41,6 +42,14 @@ _ENTERPRISE_PATHS: dict[str, str] = {
     "darwin": "/Library/Application Support/ClaudeCode/CLAUDE.md",
     "linux": "/etc/claude-code/CLAUDE.md",
     "win32": "C:\\Program Files\\ClaudeCode\\CLAUDE.md",
+}
+
+# managed-settings.json — там может лежать ключ ``claudeMd`` с прямым текстом
+# инструкций уровня организации (эквивалент managed CLAUDE.md, но внутри JSON).
+_MANAGED_SETTINGS_PATHS: dict[str, str] = {
+    "darwin": "/Library/Application Support/ClaudeCode/managed-settings.json",
+    "linux": "/etc/claude-code/managed-settings.json",
+    "win32": "C:\\Program Files\\ClaudeCode\\managed-settings.json",
 }
 
 # Максимальная глубина @import — ровно столько переходов делает Claude Code.
@@ -169,6 +178,66 @@ def _walk_subdirs(project_dir: Path, seen: set[str], out: list[MemoryEntry]) -> 
             out.append(ent)
 
 
+def _scan_md_tree(
+    root: Path, scope: str, seen: set[str], out: list[MemoryEntry]
+) -> None:
+    """Все *.md в дереве (rules / output-styles) — каждый файл это инструкции."""
+    if not root.exists() or not root.is_dir():
+        return
+    for md in sorted(root.rglob("*.md")):
+        try:
+            rp = md.resolve()
+        except OSError:
+            continue
+        if any(d in _SKIP_DIRS for d in rp.parts):
+            continue
+        key = str(rp)
+        if key in seen:
+            continue
+        seen.add(key)
+        ent = _entry(rp, scope)
+        if ent is not None:
+            out.append(ent)
+
+
+def _scan_managed_memory(
+    platform: str, seen: set[str], out: list[MemoryEntry]
+) -> None:
+    """Ключ ``claudeMd`` из managed-settings.json — текст политики организации.
+
+    Он лежит в файле под правами администратора и не редактируется
+    пользователем — именно поэтому его подмена особенно интересна. Хешируем
+    само значение ключа (не весь файл): settings меняются по многим причинам,
+    а нам важен дрейф именно инструкции.
+    """
+    p = _MANAGED_SETTINGS_PATHS.get(platform)
+    if not p:
+        return
+    path = Path(p)
+    try:
+        if not path.is_file():
+            return
+        data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(data, dict):
+        return
+    claude_md = data.get("claudeMd")
+    if not isinstance(claude_md, str) or not claude_md:
+        return
+    # Виртуальный путь: файл + якорь на ключ, чтобы слот не столкнулся с самим
+    # managed CLAUDE.md и было видно, откуда инструкция.
+    virt = f"{p}#claudeMd"
+    if virt in seen:
+        return
+    seen.add(virt)
+    out.append(MemoryEntry(
+        path=virt, scope="managed_memory",
+        content_hash=hashlib.sha256(claude_md.encode("utf-8")).hexdigest(),
+        size_bytes=len(claude_md.encode("utf-8")), imported_by=None,
+    ))
+
+
 def scan_memory(
     claude_home: Path, project_dir: Path, *, platform: str | None = None
 ) -> list[MemoryEntry]:
@@ -213,6 +282,14 @@ def scan_memory(
 
     # 3. Вложенные CLAUDE.md внутри проекта.
     _walk_subdirs(project_dir, seen, out)
+
+    # 3b. Прочие носители инструкций той же природы. Правила и стили вывода
+    # человек редактирует так же, как CLAUDE.md, — дрейф здесь осмыслен.
+    _scan_md_tree(project_dir / ".claude" / "rules", "rules", seen, out)
+    _scan_md_tree(claude_home / "rules", "rules", seen, out)
+    _scan_md_tree(project_dir / ".claude" / "output-styles", "output_style", seen, out)
+    _scan_md_tree(claude_home / "output-styles", "output_style", seen, out)
+    _scan_managed_memory(platform, seen, out)
 
     # 4. @import из всего найденного — рекурсивно, как Claude Code.
     #    Обходим копию: _collect_imports дописывает в out, а не в цикл по нему.

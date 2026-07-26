@@ -29,7 +29,7 @@ from ccguard.server.db.models import FindingRecord, MemoryBaseline
 # Появление нового файла на этих уровнях примечательнее рядовой правки: он вне
 # того, что команда ревьюит в репозитории (родительские каталоги на машине,
 # внешний @import из home / по абсолютному пути).
-_OFF_REPO_SCOPES = frozenset({"import", "ancestor", "enterprise"})
+_OFF_REPO_SCOPES = frozenset({"import", "ancestor", "enterprise", "managed_memory"})
 
 # Массовое исчезновение группируем в одну находку (анти-шум) — как у скиллов.
 _REMOVAL_GROUP_THRESHOLD = 3
@@ -48,6 +48,9 @@ def _human_scope(scope: str) -> str:
         "subdir": "CLAUDE.md во вложенном каталоге",
         "ancestor": "CLAUDE.md выше корня проекта (вне репозитория)",
         "import": "файл, притянутый через @import",
+        "rules": "правило в .claude/rules/",
+        "output_style": "стиль вывода (расширяет системный промпт)",
+        "managed_memory": "инструкция в managed-settings.json (политика организации)",
     }.get(scope, scope)
 
 

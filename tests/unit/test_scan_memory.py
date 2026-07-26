@@ -162,3 +162,84 @@ def test_missing_files_are_silent(tmp_path: Path):
     # Ничего нет — пустой список, а не падение.
     entries = m.scan_memory(tmp_path / "home", tmp_path / "proj", platform="linux")
     assert entries == []
+
+
+# --- прочие носители инструкций ---------------------------------------------
+
+
+def test_project_and_user_rules_are_scanned(tmp_path: Path):
+    home = tmp_path / "home"
+    (home / "rules").mkdir(parents=True)
+    (home / "rules" / "global.md").write_text("user rule")
+    proj = tmp_path / "proj"
+    (proj / ".claude" / "rules" / "sub").mkdir(parents=True)
+    (proj / ".claude" / "rules" / "testing.md").write_text("test rule")
+    (proj / ".claude" / "rules" / "sub" / "nested.md").write_text("nested rule")
+
+    entries = m.scan_memory(home, proj, platform="linux")
+    rules = {Path(e.path).name for e in entries if e.scope == "rules"}
+    assert {"global.md", "testing.md", "nested.md"} <= rules
+
+
+def test_output_styles_are_scanned(tmp_path: Path):
+    home = tmp_path / "home"
+    (home / "output-styles").mkdir(parents=True)
+    (home / "output-styles" / "teaching.md").write_text("append to system prompt")
+    proj = tmp_path / "proj"
+    (proj / ".claude" / "output-styles").mkdir(parents=True)
+    (proj / ".claude" / "output-styles" / "terse.md").write_text("be terse")
+
+    entries = m.scan_memory(home, proj, platform="linux")
+    styles = {Path(e.path).name for e in entries if e.scope == "output_style"}
+    assert {"teaching.md", "terse.md"} <= styles
+
+
+def test_managed_claude_md_key_is_hashed(tmp_path: Path):
+    # claudeMd внутри managed-settings.json — прямой текст политики организации.
+    managed_dir = tmp_path / "mc"
+    managed_dir.mkdir()
+    settings = managed_dir / "managed-settings.json"
+    settings.write_text('{"claudeMd": "Always run make lint before commit."}')
+
+    # Подменяем путь managed-settings на наш временный.
+    orig = dict(m._MANAGED_SETTINGS_PATHS)
+    m._MANAGED_SETTINGS_PATHS["linux"] = str(settings)
+    try:
+        entries = m.scan_memory(tmp_path / "home", tmp_path / "proj", platform="linux")
+    finally:
+        m._MANAGED_SETTINGS_PATHS.clear()
+        m._MANAGED_SETTINGS_PATHS.update(orig)
+
+    managed = [e for e in entries if e.scope == "managed_memory"]
+    assert len(managed) == 1
+    assert managed[0].path.endswith("#claudeMd")
+    # Хешируется значение ключа, не весь файл.
+    import hashlib
+    expected = hashlib.sha256(b"Always run make lint before commit.").hexdigest()
+    assert managed[0].content_hash == expected
+
+
+def test_managed_settings_without_claude_md_key_is_silent(tmp_path: Path):
+    managed_dir = tmp_path / "mc"
+    managed_dir.mkdir()
+    settings = managed_dir / "managed-settings.json"
+    settings.write_text('{"permissions": {"deny": []}}')  # нет claudeMd
+    orig = dict(m._MANAGED_SETTINGS_PATHS)
+    m._MANAGED_SETTINGS_PATHS["linux"] = str(settings)
+    try:
+        entries = m.scan_memory(tmp_path / "home", tmp_path / "proj", platform="linux")
+    finally:
+        m._MANAGED_SETTINGS_PATHS.clear()
+        m._MANAGED_SETTINGS_PATHS.update(orig)
+    assert not any(e.scope == "managed_memory" for e in entries)
+
+
+def test_rules_do_not_pull_at_imports(tmp_path: Path):
+    # @import — механизм CLAUDE.md, не правил. Из правила его тянуть не должны,
+    # иначе выдумаем покрытие, которого у Claude Code нет.
+    proj = tmp_path / "proj"
+    (proj / ".claude" / "rules").mkdir(parents=True)
+    (proj / ".claude" / "rules" / "r.md").write_text("@secret.md")
+    (proj / "secret.md").write_text("should not be pulled from a rule")
+    entries = m.scan_memory(tmp_path / "home", proj, platform="linux")
+    assert not any(Path(e.path).name == "secret.md" for e in entries)
