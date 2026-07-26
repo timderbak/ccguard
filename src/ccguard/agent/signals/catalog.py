@@ -1208,6 +1208,27 @@ CATALOG: tuple[Signal, ...] = (
         "Запуск сессии AI-агента внутри контейнера/пода — исполнение вне "
         "наблюдения ccguard (уход из-под хуков через вложенную среду)",
     ),
+    # ASI07 (небезопасная межагентная коммуникация): агент открывает исходящий
+    # канал к ДРУГОМУ агенту/модели/серверу. Два явных вектора: регистрация
+    # удалённого MCP-канала (--transport sse/http или URL) и прямой вызов чужого
+    # LLM/agent-API из shell. Гейт по сетевому клиенту (curl|wget|xh|httpie|nc) +
+    # конкретный список хостов моделей держит ложные срабатывания у нуля: обычный
+    # `curl https://docs...`, `pip install openai`, локальный `mcp add -- node ...`
+    # (stdio, без url) не срабатывают.
+    Signal(
+        "intercomm.remote_agent",
+        "T1071",
+        _p(
+            r"\bmcp\s+add\b[^\n]*(?:--transport\s+(?:sse|http)\b|https?://)"
+            r"|\b(?:curl|wget|xh|httpie|nc)\b[^\n]*"
+            r"\b(?:api\.openai\.com|api\.mistral\.ai|generativelanguage\.googleapis\.com"
+            r"|api\.cohere\.(?:ai|com)|openrouter\.ai|api\.groq\.com"
+            r"|api\.together\.(?:ai|xyz)|api\.perplexity\.ai|api\.deepseek\.com|api\.x\.ai)\b"
+        ),
+        "Агент открывает канал к другому агенту/модели: регистрация удалённого "
+        "MCP (sse/http) или прямой вызов чужого LLM-API — межагентная "
+        "коммуникация вне наблюдения (ASI07)",
+    ),
 )
 
 # Action signals (see note above): excluded from the generic regex loop in

@@ -67,6 +67,13 @@ RULE_UPDATE_EXPECTED = "mcp.update.expected"
 # Hidden/invisible Unicode in an MCP description — an injection hidden from human
 # review but read by the LLM. Deterministic, zero-false-positive → critical.
 RULE_HIDDEN_UNICODE = "mcp.hidden_unicode"
+# ASI07 (небезопасная межагентная коммуникация): появился НОВЫЙ удалённый
+# MCP-канал (transport http/sse). Это канал доверия агент→сервер поверх сети —
+# удалённая сторона кормит агента инструментами и их описаниями. Отдельно от
+# rug-pull (та про ПОДМЕНУ компонента = ASI04); здесь — сам факт появления
+# внешнего канала. warn: канал может быть санкционированным, но должен быть виден.
+RULE_INTERCOMM = "intercomm.remote_channel"
+SEVERITY_INTERCOMM = "warn"
 
 SEVERITY_DESCRIPTION = "critical"
 SEVERITY_DEFINITION = "warn"  # cautious default; the classifier may raise/lower it
@@ -124,6 +131,49 @@ def _hidden_unicode_finding(
             "hidden_samples": [
                 {"hex": h.hex, "name": h.name, "pos": h.position} for h in result.samples
             ],
+        },
+    )
+
+
+def _intercomm_channel_finding(
+    machine_id: str, inventory_id: int | None, entry: McpServerEntry
+) -> FindingRecord | None:
+    """ASI07: новый УДАЛЁННЫЙ MCP-сервер = межагентный канал агент→сервер.
+
+    Только для transport http/sse: stdio-сервер живёт локальным процессом, а
+    http/sse — сетевой канал к удалённой стороне, которая доставляет агенту
+    инструменты и их описания (то, что уходит в LLM как авторитетные данные).
+    Вызывать только ПОСЛЕ bootstrap машины — иначе первое подключение машины с
+    уже настроенными удалёнными MCP породило бы находки на пустом месте.
+    """
+    if entry.transport not in ("http", "sse"):
+        return None
+    return _make_finding(
+        machine_id=machine_id,
+        inventory_id=inventory_id,
+        rule_id=RULE_INTERCOMM,
+        severity=SEVERITY_INTERCOMM,
+        title=f"Новый удалённый MCP-канал '{entry.name}' ({entry.transport})",
+        description=(
+            f"Агент получил новый межагентный канал: удалённый MCP-сервер "
+            f"'{entry.name}' по {entry.transport.upper()} ({entry.url or 'адрес не указан'}). "
+            "Удалённая сторона доставляет агенту инструменты и их описания — они "
+            "уходят в LLM как авторитетные инструкции, а канал живёт вне наблюдения "
+            "хука. Небезопасная межагентная коммуникация (ASI07)."
+        ),
+        source=entry.source,
+        recommendation=(
+            "Проверь, что этот удалённый MCP санкционирован: кто владелец адреса, "
+            "по TLS ли канал, ограничен ли egress песочницей. Если канал не нужен — "
+            "убери сервер; если нужен — прими baseline и, по возможности, добавь "
+            "его домен в egress-allowlist песочницы."
+        ),
+        matched_value=entry.name,
+        extra_payload={
+            "mcp_name": entry.name,
+            "transport": entry.transport,
+            "url": entry.url,
+            "scope": getattr(entry, "scope", None),
         },
     )
 
@@ -251,6 +301,14 @@ def update_and_detect(
             hidden = _hidden_unicode_finding(machine_id, inventory_id, entry)
             if hidden is not None:
                 findings.append(hidden)
+            # ASI07: новый удалённый MCP-канал (http/sse). Молчим на bootstrap
+            # машины (existing_rows пуст) — иначе первое подключение с уже
+            # настроенными удалёнными MCP шумело бы; после bootstrap появление
+            # нового внешнего канала это находка.
+            if existing_rows:
+                channel = _intercomm_channel_finding(machine_id, inventory_id, entry)
+                if channel is not None:
+                    findings.append(channel)
             continue
 
         # Existing baseline — diff.

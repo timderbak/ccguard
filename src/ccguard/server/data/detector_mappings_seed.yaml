@@ -76,6 +76,11 @@ detectors:
     kind: correlation
     rule_ids: automemory.anomaly
     description: "auto_memory_baseline_service.update_and_detect — АВТО-память Claude Code (MEMORY.md, которую агент переписывает сам) сводится по числовым признакам с предыдущим снимком, потому что hash-дрейф тут бесполезен (меняется каждую сессию). Ловит аномальную дельту: внезапный вброс объёма, новый внешний @import, всплеск атака-маркеров/URL. Отравление собственной памяти агента персистит между сессиями и исполняется с его полномочиями — это Memory & Context Poisoning (ASI06), которое обычный EDR не видит."
+  - detector_key: intercomm_channel
+    name: Inter-agent channel (remote MCP + agent-to-model egress)
+    kind: correlation
+    rule_ids: intercomm.remote_channel
+    description: "mcp_baseline_service — появление НОВОГО удалённого MCP-канала (transport http/sse) после bootstrap машины: канал доверия агент→сервер поверх сети, где удалённая сторона доставляет агенту инструменты и их описания (уходят в LLM как авторитетные). Дополняется поведенческим сигналом intercomm.remote_agent (агент регистрирует remote-MCP или зовёт чужой LLM-API из shell — межагентный egress). Небезопасная межагентная коммуникация (ASI07): канал вне наблюдения хука, отдельный от подмены компонента (rug-pull=ASI04)."
 
 # detector_key → technique bindings. framework duplicated for query convenience.
 mappings:
@@ -239,5 +244,18 @@ mappings:
   - detector_key: automemory_baseline
     technique_id: AML.T0051
     framework: atlas
+    control_type: DETECT
+    relevance: secondary
+  # intercomm_channel: закрывает ASI07 (Insecure Inter-Agent Communication) —
+  # ранее честный пробел. Удалённый MCP-канал / вызов чужой модели идёт по
+  # прикладному протоколу поверх сети → ATT&CK T1071 (Application Layer Protocol).
+  - detector_key: intercomm_channel
+    technique_id: ASI07
+    framework: owasp
+    control_type: DETECT
+    relevance: primary
+  - detector_key: intercomm_channel
+    technique_id: T1071
+    framework: attack
     control_type: DETECT
     relevance: secondary

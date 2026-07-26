@@ -217,6 +217,12 @@
                                       {% elif _bs == 'amber' %}bg-amber-500
                                       {% else %}bg-emerald-500{% endif %}"></span>
                             {% endif %}
+                            {# Удалённый MCP (http/sse) = межагентный канал агент→сервер (ASI07). #}
+                            {% if section_name == "mcp_servers" and item.get("transport") in ("http", "sse") %}
+                            <span class="cc-mono text-[10px] rounded px-1 py-0.5 ring-1 bg-indigo-50 text-indigo-700 ring-indigo-200"
+                                  title="Удалённый MCP по {{ item.get('transport')|upper }} ({{ item.get('url') or 'адрес не указан' }}) — межагентный канал доверия поверх сети, вне наблюдения хука (ASI07)">
+                                удалённый канал: {{ item.get("transport") }}</span>
+                            {% endif %}
                             {# Source label + TOFU baseline status for skills/agents (spec 2026-06-02). #}
                             {% if section_name in ("skills", "agents") %}
                                 {% if item.get("parent_plugin") %}

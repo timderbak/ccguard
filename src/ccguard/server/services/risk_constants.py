@@ -106,6 +106,7 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     # ATT&CK coverage-gap batch 2
     "container.privileged": 4.0,  # container escape / host takeover
     "evade.nested_agent": 4.0,  # запуск сессии агента вне наблюдения ccguard
+    "intercomm.remote_agent": 3.0,  # ASI07: канал к чужому агенту/модели (egress)
     "collection.kubectl_cp": 4.0,
     "persist.cloud_iam": 4.0,
     "defense.disable_firewall": 4.0,

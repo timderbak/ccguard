@@ -38,6 +38,7 @@ DETECTOR_KEYS = {
     "memory_baseline",
     "sandbox_baseline",
     "automemory_baseline",
+    "intercomm_channel",
 }
 
 
@@ -85,7 +86,11 @@ def test_out_of_scope_not_in_gaps(tmp_path) -> None:
     # ASI06 (Memory & Context Poisoning) БЫЛ честным пробелом; теперь его
     # закрывает detector_key=memory_baseline (TOFU над CLAUDE.md + @import).
     assert "ASI06" not in uncovered  # closed by the memory-baseline detector
-    assert "ASI07" in uncovered  # a still-open in-scope agentic gap, shown honestly
+    # ASI07 (Insecure Inter-Agent Communication) тоже БЫЛ пробелом; теперь его
+    # закрывает detector_key=intercomm_channel (новый удалённый MCP-канал +
+    # поведенческий сигнал межагентного egress).
+    assert "ASI07" not in uncovered  # closed by the inter-agent-channel detector
+    assert "ASI08" in uncovered  # a still-open in-scope agentic gap, shown honestly
 
 
 # --- AC3: crosswalk works both directions ------------------------------------
