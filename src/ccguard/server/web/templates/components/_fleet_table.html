@@ -38,6 +38,7 @@
                 {% elif m.status == "policy-old" %}<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-amber-50 ring-1 ring-amber-600/20 text-amber-600">◎ устаревшая политика</span>
                 {% elif m.status == "stale" %}<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-slate-100 ring-1 ring-slate-300 text-slate-400">○ молчит</span>
                 {% elif m.status == "blocking" %}<span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-red-50 ring-1 ring-red-600/20 text-red-600">■ блокирует</span>
+                {% elif m.status == "visibility-only" %}<span title="Агент без энфорсера: инвентарь и дрейф видим, но поведенческой блокировки нет — статус НЕ означает «защищён»" class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium bg-indigo-50 ring-1 ring-indigo-600/20 text-indigo-600">◐ только видимость</span>
                 {% endif %}
             </td>
         </tr>

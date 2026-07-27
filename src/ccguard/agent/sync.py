@@ -179,6 +179,80 @@ def perform_sync(
     )
 
 
+def post_inventory_only(
+    config: AgentConfig, inventory: InventoryReport, timeout_sec: float = 5.0
+) -> SyncResult:
+    """Отправить ТОЛЬКО инвентарь (без audit/findings и без забора policy).
+
+    Честная форма для агентов-без-энфорсера (Cursor и т.п.): у них нет
+    PreToolUse-хука → нет audit-потока, и policy ccguard они не исполняют →
+    тянуть её бессмысленно. Тот же эндпоинт и аутентификация, что у perform_sync.
+    Не бросает: сетевые ошибки пишутся в SyncResult.error.
+    """
+    server_url = config.server.url.rstrip("/")
+    headers = {
+        "X-CCGuard-Token": config.server.token,
+        "Content-Type": "application/json",
+    }
+    payload = SyncPayload(inventory=inventory, findings=[], audit_events=[])
+    try:
+        with httpx.Client(timeout=timeout_sec) as client:
+            r = client.post(
+                f"{server_url}/api/v1/inventory",
+                content=payload.model_dump_json(),
+                headers=headers,
+            )
+            r.raise_for_status()
+            body = r.json()
+    except httpx.HTTPError as e:
+        return SyncResult(
+            inventory_posted=False, policy_updated=False, new_policy_revision=None,
+            server_response=None, error=f"cursor inventory post failed: {e}",
+        )
+    return SyncResult(
+        inventory_posted=True, policy_updated=False, new_policy_revision=None,
+        server_response=body,
+    )
+
+
+def _cursor_present(cursor_home: Path, project_dir: Path) -> bool:
+    """Есть ли на этой машине следы Cursor, которые стоит инвентаризовать."""
+    return (
+        (cursor_home / "mcp.json").exists()
+        or (project_dir / ".cursor").is_dir()
+        or (project_dir / ".cursorrules").exists()
+        or (project_dir / "AGENTS.md").exists()
+    )
+
+
+def sync_cursor_inventory(
+    config: AgentConfig,
+    cursor_home: Path,
+    project_dir: Path,
+    timeout_sec: float = 5.0,
+) -> SyncResult | None:
+    """Если на машине есть Cursor — собрать его инвентарь и отправить отдельно.
+
+    Возвращает None, когда Cursor не обнаружен (тогда это полный no-op). Cursor
+    едет ОТДЕЛЬНЫМ machine_id (agent_kind подмешан в деривацию), поэтому его
+    строка флота не смешивается с Claude Code на том же хосте. Лучшее усилие:
+    вызывающая сторона не должна дать этому уронить основной sync.
+    """
+    if not _cursor_present(cursor_home, project_dir):
+        return None
+    from ccguard.agent.machine_id import derive_machine_id
+    from ccguard.agent.scan import run_scan_cursor
+
+    mid = derive_machine_id(config.install_salt, agent_kind="cursor")
+    inv = run_scan_cursor(
+        cursor_home=cursor_home,
+        project_dir=project_dir,
+        machine_id=mid,
+        machine_label=config.machine_label,
+    )
+    return post_inventory_only(config, inv, timeout_sec=timeout_sec)
+
+
 def _read_cached_revision(cache_path: Path) -> int | None:
     if not cache_path.exists():
         return None

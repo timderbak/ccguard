@@ -34,7 +34,22 @@
     {% endif %}
 </header>
 
+{% if _kind != 'claude_code' %}
+<div class="mb-6 rounded-xl bg-indigo-50 ring-1 ring-indigo-200 p-4 text-sm text-indigo-900">
+    <p class="font-semibold mb-1">Агент только для видимости ({{ _kind_label }})</p>
+    <p class="text-[13px] text-indigo-800">
+        ccguard видит инвентарь этого агента (MCP-серверы, файлы-правила) и его
+        дрейф, но НЕ блокирует поведение: блокировка держится на PreToolUse-хуке
+        Claude Code, которого у этого агента нет. Поэтому разделы защиты, аудита
+        вызовов и диагностики сенсора здесь не показываются — их пустота НЕ
+        означает «нарушений нет / эндпоинт защищён». Ниже — инвентарь и дрейф.
+    </p>
+</div>
+{% endif %}
+
+{% if _kind == 'claude_code' %}
 {% include "components/_protection_diagnosis.html" %}
+{% endif %}
 
 <div class="grid grid-cols-2 gap-6">
     <section class="bg-white rounded-xl shadow p-5">

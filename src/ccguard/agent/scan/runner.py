@@ -11,6 +11,7 @@ from ccguard import __version__
 from ccguard.agent.scan import agents as scan_agents
 from ccguard.agent.scan import auto_memory as scan_auto_memory
 from ccguard.agent.scan import commands as scan_commands
+from ccguard.agent.scan import cursor_rules as scan_cursor_rules
 from ccguard.agent.scan import hooks as scan_hooks
 from ccguard.agent.scan import mcp as scan_mcp
 from ccguard.agent.scan import memory as scan_memory
@@ -81,5 +82,31 @@ def run_scan(claude_home: Path, project_dir: Path, machine_id: str, machine_labe
         sandbox=scan_sandbox.scan_sandbox(parsed),
         auto_memory=scan_auto_memory.scan_auto_memory(claude_home, project_dir, parsed),
         env_keys=_extract_env_keys(parsed),
+        claude_code_version=None,
+    )
+
+
+def run_scan_cursor(
+    cursor_home: Path, project_dir: Path, machine_id: str, machine_label: str | None
+) -> InventoryReport:
+    """Инвентарь для Cursor (agent_kind=cursor) — ТОЛЬКО видимость.
+
+    Собираем ровно то, что ложится на существующие схемы и несёт ИБ-сигнал:
+    MCP-серверы Cursor (→ mcp_baseline: rug-pull + intercomm.remote_channel/ASI07)
+    и файлы-правила (→ memory_baseline: дрейф инструкций/ASI06). Всё остальное —
+    хуки/скиллы/плагины/агенты/команды/песочница/авто-память/permissions —
+    осознанно ПУСТОЕ: у Cursor нет PreToolUse-хука ccguard, поэтому enforcement и
+    аудит-поток к нему неприменимы (сервер трактует пустые поля как graceful
+    degradation и соответствующие сервисы делают no-op).
+    """
+    return InventoryReport(
+        machine_id=machine_id,
+        machine_label=machine_label,
+        timestamp=datetime.now(UTC),
+        agent_version=__version__,
+        agent_kind="cursor",
+        os=_detect_os(),
+        mcp_servers=scan_mcp.extract_from_cursor_mcp_json(project_dir, cursor_home),
+        memory_files=scan_cursor_rules.scan_cursor_rules(project_dir),
         claude_code_version=None,
     )

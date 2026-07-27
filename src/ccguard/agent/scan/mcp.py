@@ -213,6 +213,25 @@ def extract_from_user_mcp_json(claude_home: Path) -> list[McpServerEntry]:
     return _extract_from_mcp_json_file(claude_home / ".mcp.json", scope="user")
 
 
+def extract_from_cursor_mcp_json(
+    project_dir: Path, cursor_home: Path
+) -> list[McpServerEntry]:
+    """MCP-серверы Cursor: ``.cursor/mcp.json`` (проект) + ``~/.cursor/mcp.json`` (user).
+
+    Формат идентичен ``.mcp.json`` Claude Code (``{"mcpServers": {...}}``), поэтому
+    разбираем тем же ``_extract_from_mcp_json_file``: ``_classify_transport`` даёт
+    url→http для remote-серверов даже без поля ``type`` (у Cursor оно
+    необязательно), маскирование секретов и хеши работают как есть.
+
+    Оба файла сканируем НЕЗАВИСИМО (каждый — свой ``McpServerEntry`` со своим
+    scope), сознательно обходя нестабильную между версиями merge/precedence-
+    семантику Cursor: рассуждать об «эффективном конфиге» здесь нельзя.
+    """
+    out = _extract_from_mcp_json_file(project_dir / ".cursor" / "mcp.json", scope="project")
+    out.extend(_extract_from_mcp_json_file(cursor_home / "mcp.json", scope="user"))
+    return out
+
+
 def extract_from_claude_json(claude_json_path: Path) -> list[McpServerEntry]:
     """`~/.claude.json` — основной конфиг Claude Code.
 

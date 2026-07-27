@@ -16,7 +16,7 @@ from ccguard.agent.enforce import main_cli as enforce_main_cli
 from ccguard.agent.machine_id import derive_machine_id
 from ccguard.agent.report import build_text_report
 from ccguard.agent.scan import run_scan
-from ccguard.agent.sync import _apply_and_report, perform_sync
+from ccguard.agent.sync import _apply_and_report, perform_sync, sync_cursor_inventory
 from ccguard.schemas import Finding, InventoryReport, Policy
 
 app = typer.Typer(
@@ -30,6 +30,11 @@ app = typer.Typer(
 def _claude_home() -> Path:
     import os
     return Path(os.environ.get("CLAUDE_HOME") or os.path.expanduser("~/.claude"))
+
+
+def _cursor_home() -> Path:
+    import os
+    return Path(os.environ.get("CCGUARD_CURSOR_HOME") or os.path.expanduser("~/.cursor"))
 
 
 def _apply_and_report_safe(
@@ -260,6 +265,23 @@ def sync() -> None:
         except Exception as exc:  # noqa: BLE001 — never fail sync because of scan
             scan_summary = {"error": f"scan_unexpected: {exc.__class__.__name__}"}
 
+    # Мультиагентность: если на машине есть Cursor — отправить его инвентарь
+    # отдельным machine_id. Best-effort: сбой (или отсутствие Cursor) не влияет
+    # на код возврата основного sync.
+    cursor_summary: dict[str, object] = {"detected": False}
+    try:
+        cursor_result = sync_cursor_inventory(
+            config=cfg, cursor_home=_cursor_home(), project_dir=Path.cwd()
+        )
+        if cursor_result is not None:
+            cursor_summary = {
+                "detected": True,
+                "inventory_posted": cursor_result.inventory_posted,
+                "error": cursor_result.error,
+            }
+    except Exception as exc:  # noqa: BLE001 — never fail sync because of cursor
+        cursor_summary = {"detected": True, "error": f"cursor_unexpected: {exc.__class__.__name__}"}
+
     typer.echo(
         json.dumps(
             {
@@ -268,6 +290,7 @@ def sync() -> None:
                 "new_policy_revision": result.new_policy_revision,
                 "error": result.error,
                 "scan": scan_summary,
+                "cursor": cursor_summary,
             },
             indent=2,
         )

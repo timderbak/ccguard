@@ -154,6 +154,12 @@ class MemoryEntry(SchemaBase):
         "rules",          # .claude/rules/*.md — path-scoped правила
         "output_style",   # output-styles/*.md — расширяют системный промпт
         "managed_memory", # ключ claudeMd в managed-settings.json (политика орг.)
+        # Носители инструкций ДРУГИХ агентов (agent_kind != claude_code). Та же
+        # модель угрозы (файл-инструкция → в контекст агента), поэтому едут через
+        # тот же MemoryEntry и memory_baseline_service.
+        "cursor_rules",   # .cursor/rules/**/*.mdc и RULE.md — правила Cursor
+        "cursor_legacy",  # legacy .cursorrules в корне проекта
+        "agents_md",      # AGENTS.md — кросс-инструментальный файл инструкций
     ]
     content_hash: str
     size_bytes: int

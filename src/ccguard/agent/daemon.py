@@ -163,11 +163,14 @@ def _build_real_sync_callable(interval_seconds: float) -> SyncCallable:
     from ccguard.agent.config import default_config_dir, load_or_create
     from ccguard.agent.machine_id import derive_machine_id
     from ccguard.agent.scan import run_scan
-    from ccguard.agent.sync import perform_sync
+    from ccguard.agent.sync import perform_sync, sync_cursor_inventory
     from ccguard.schemas import Finding, Policy
 
     def _claude_home() -> _Path:
         return _Path(_os.environ.get("CCGUARD_CLAUDE_HOME", _Path.home() / ".claude"))
+
+    def _cursor_home() -> _Path:
+        return _Path(_os.environ.get("CCGUARD_CURSOR_HOME", _Path.home() / ".cursor"))
 
     def do_sync() -> DaemonResult:
         t0 = time.monotonic()
@@ -207,6 +210,15 @@ def _build_real_sync_callable(interval_seconds: float) -> SyncCallable:
             # default install (no cron/systemd timer). Best-effort: a flush
             # failure never affects the sync result.
             _flush_findings_best_effort()
+            # Мультиагентность: если на машине есть Cursor — отправить его
+            # инвентарь отдельным machine_id. Best-effort и полностью изолирован:
+            # ни отсутствие Cursor, ни сбой его sync не влияют на основной цикл.
+            try:
+                sync_cursor_inventory(
+                    config=cfg, cursor_home=_cursor_home(), project_dir=_Path.cwd()
+                )
+            except Exception:  # noqa: BLE001
+                pass
             dur_ms = (time.monotonic() - t0) * 1000.0
             if getattr(result, "error", None):
                 return DaemonResult(ok=False, error=str(result.error), duration_ms=dur_ms)

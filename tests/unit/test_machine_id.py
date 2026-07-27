@@ -29,3 +29,25 @@ def test_id_format_is_base32_lowercase() -> None:
     assert mid.islower()
     assert all(c in "abcdefghijklmnopqrstuvwxyz234567" for c in mid)
     assert 25 <= len(mid) <= 26
+
+
+def test_claude_code_id_is_byte_identical_to_no_agent_kind() -> None:
+    # Критично: default agent_kind=claude_code НЕ должен менять материал хеша,
+    # иначе весь существующий флот перерегистрировался бы под новыми id.
+    without = derive_machine_id("salt-abc", uid=1000)
+    explicit = derive_machine_id("salt-abc", uid=1000, agent_kind="claude_code")
+    assert without == explicit
+
+
+def test_cursor_id_differs_from_claude_on_same_host() -> None:
+    # (host, user, agent) — отдельная строка флота: Cursor не «прыгает» поверх
+    # Claude-строки на том же хосте/пользователе.
+    claude = derive_machine_id("salt-abc", uid=1000)
+    cursor = derive_machine_id("salt-abc", uid=1000, agent_kind="cursor")
+    assert cursor != claude
+
+
+def test_distinct_agent_kinds_distinct_ids() -> None:
+    cursor = derive_machine_id("s", uid=1, agent_kind="cursor")
+    copilot = derive_machine_id("s", uid=1, agent_kind="copilot")
+    assert cursor != copilot

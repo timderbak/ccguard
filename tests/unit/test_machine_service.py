@@ -89,6 +89,50 @@ def test_blocking_overrides_other() -> None:
     )
 
 
+def test_non_claude_agent_is_visibility_only_not_compliant() -> None:
+    # Свежий Cursor-агент НЕ должен показываться зелёным «соответствует»
+    # (переобещание защиты) — только «видимость». Enforcement-лесенка к нему
+    # неприменима: нет ни блокировки, ни ccguard-policy.
+    assert (
+        compliance_status(
+            last_seen=_ts(1),
+            agent_policy_revision=None,
+            current_published_revision=10,
+            block_findings_count=0,
+            agent_kind="cursor",
+        )
+        == "visibility-only"
+    )
+
+
+def test_non_claude_agent_stale_when_silent() -> None:
+    # Молчащий Cursor честно показывается «молчит», а не «видимость».
+    assert (
+        compliance_status(
+            last_seen=_ts(24 * 30),
+            agent_policy_revision=None,
+            current_published_revision=10,
+            block_findings_count=0,
+            agent_kind="cursor",
+        )
+        == "stale"
+    )
+
+
+def test_claude_code_default_unchanged() -> None:
+    # Явный agent_kind=claude_code — прежнее поведение, регрессия-страховка.
+    assert (
+        compliance_status(
+            last_seen=_ts(1),
+            agent_policy_revision=5,
+            current_published_revision=5,
+            block_findings_count=0,
+            agent_kind="claude_code",
+        )
+        == "compliant"
+    )
+
+
 def test_naive_datetime_treated_as_utc() -> None:
     # SQLite roundtrips can strip tzinfo.
     naive = (datetime.now(UTC) - timedelta(hours=1)).replace(tzinfo=None)

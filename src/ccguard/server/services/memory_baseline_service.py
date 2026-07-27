@@ -51,6 +51,10 @@ def _human_scope(scope: str) -> str:
         "rules": "правило в .claude/rules/",
         "output_style": "стиль вывода (расширяет системный промпт)",
         "managed_memory": "инструкция в managed-settings.json (политика организации)",
+        # Носители инструкций Cursor (agent_kind=cursor).
+        "cursor_rules": "правило Cursor (.cursor/rules)",
+        "cursor_legacy": "legacy .cursorrules (Cursor)",
+        "agents_md": "AGENTS.md (кросс-инструментальные инструкции агенту)",
     }.get(scope, scope)
 
 

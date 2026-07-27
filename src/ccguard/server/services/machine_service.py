@@ -12,7 +12,9 @@ from sqlmodel import Session, select
 from ccguard.server.db.models import FindingRecord, InventorySnapshot, Machine
 from ccguard.server.services.policy_service import get_current_published
 
-ComplianceStatus = Literal["compliant", "policy-old", "stale", "blocking"]
+ComplianceStatus = Literal[
+    "compliant", "policy-old", "stale", "blocking", "visibility-only"
+]
 
 _STALE_THRESHOLD = timedelta(days=7)
 
@@ -23,13 +25,23 @@ def compliance_status(
     agent_policy_revision: int | None,
     current_published_revision: int,
     block_findings_count: int,
+    agent_kind: str | None = "claude_code",
 ) -> ComplianceStatus:
-    if block_findings_count > 0:
-        return "blocking"
     # Make `last_seen` UTC-aware if naive (SQLite strips tz on roundtrip).
     if last_seen.tzinfo is None:
         last_seen = last_seen.replace(tzinfo=UTC)
     age = datetime.now(UTC) - last_seen
+
+    # Агенты без энфорсера (agent_kind != claude_code): вся enforcement-лесенка
+    # (blocking / policy-old / compliant) для них ЛОЖНА — у них нет ни блокировки,
+    # ни ccguard-policy. Честно показываем либо «молчит» (перестал слать
+    # инвентарь), либо «видимость» — НЕ зелёное «соответствует», которое читалось
+    # бы как «эндпоинт защищён». См. review-заметку про переобещание статуса.
+    if (agent_kind or "claude_code") != "claude_code":
+        return "stale" if age > _STALE_THRESHOLD else "visibility-only"
+
+    if block_findings_count > 0:
+        return "blocking"
     if age > _STALE_THRESHOLD:
         return "stale"
     if agent_policy_revision is None or agent_policy_revision < current_published_revision:
@@ -96,6 +108,7 @@ def list_machines_with_status(session: Session) -> list[MachineRow]:
                     agent_policy_revision=agent_rev,
                     current_published_revision=current_rev,
                     block_findings_count=block_count,
+                    agent_kind=m.agent_kind,
                 ),
             )
         )
