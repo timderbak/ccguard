@@ -95,6 +95,28 @@ def test_lock_sandbox_false_is_hooks_only_backcompat() -> None:
     assert "hooks" in data  # хуки на месте
 
 
+def test_linux_gets_bubblewrap_preflight_before_writing_lock() -> None:
+    # fail-closed песочница без bwrap = несносимый кирпич; script обязан
+    # проверить bwrap ДО записи managed-settings и выйти, если его нет.
+    plan = harden.harden_plan(
+        platform="linux", enforce_shim=Path("/opt/ccguard/bin/ccguard-enforce"),
+        audit_shim=Path("/opt/ccguard/bin/ccguard-audit"), policy_path=Path("/etc/ccguard/policy.yaml"),
+    )
+    script = harden.render_script(plan)
+    assert "bwrap" in script
+    assert script.index("bwrap") < script.index("managed-settings.json")  # префлайт раньше записи
+    assert "exit 2" in script
+
+
+def test_macos_has_no_bubblewrap_preflight() -> None:
+    # macOS Seatbelt встроен — проверка не нужна и не должна появляться.
+    plan = harden.harden_plan(
+        platform="darwin", enforce_shim=Path("/opt/ccguard/bin/ccguard-enforce"),
+        audit_shim=Path("/opt/ccguard/bin/ccguard-audit"), policy_path=Path("/etc/ccguard/policy.yaml"),
+    )
+    assert "bwrap" not in harden.render_script(plan)
+
+
 def test_proxy_port_off_by_default_and_wired_when_set() -> None:
     # По умолчанию httpProxyPort НЕ прописан: указать порт без слушающего прокси
     # обрубило бы egress. Задаётся только осознанно (после field-test прокси).

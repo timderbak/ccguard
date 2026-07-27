@@ -85,6 +85,20 @@ def test_bundle_egress_default_deny_when_org_sets_allowlist():
     assert "pypi.org" in bundle["install_script"]
 
 
+def test_linux_install_script_preflights_bubblewrap():
+    eng = _engine()
+    with Session(eng) as s:
+        b = dcs.build_bundle(s, platform="linux")
+    assert "bwrap" in b["install_script"]  # префлайт до fail-closed lock
+
+
+def test_macos_install_script_has_no_bubblewrap_preflight():
+    eng = _engine()
+    with Session(eng) as s:
+        b = dcs.build_bundle(s, platform="darwin")
+    assert "bwrap" not in (b["install_script"] or "")
+
+
 def test_bundle_egress_not_narrowed_by_default():
     eng = _engine()
     with Session(eng) as s:

@@ -168,6 +168,33 @@ def test_bypass_permissions_default_mode_is_weakening():
 # --- усиление / нейтральное → тихо -----------------------------------------
 
 
+def test_enabling_egress_default_deny_is_not_weakening():
+    # empty→allowlist+managedOnly — это УСИЛЕНИЕ (раскатка egress default-deny),
+    # НЕ ослабление. Регрессия из security-review: раньше давало ложный
+    # sandbox.weakened на усиливающем rollout.
+    n, _, _ = _transition(
+        SandboxState(configured=True, enabled=True),  # egress не ограничен
+        SandboxState(configured=True, enabled=True,
+                     network_allowed_domains=["api.anthropic.com", "pypi.org"],
+                     network_allow_managed_domains_only=True),
+    )
+    assert n == 0
+
+
+def test_expanding_active_allowlist_is_still_weakening():
+    # А расширение УЖЕ активного default-deny (новый домен разрешён) — ослабление.
+    n, sev, reasons = _transition(
+        SandboxState(configured=True, enabled=True,
+                     network_allowed_domains=["pypi.org"],
+                     network_allow_managed_domains_only=True),
+        SandboxState(configured=True, enabled=True,
+                     network_allowed_domains=["pypi.org", "evil.com"],
+                     network_allow_managed_domains_only=True),
+    )
+    assert n == 1
+    assert any("evil.com" in r for r in reasons)
+
+
 def test_strengthening_is_silent():
     eng = _engine()
     with Session(eng) as s:

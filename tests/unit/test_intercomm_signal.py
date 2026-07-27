@@ -53,6 +53,18 @@ def test_local_stdio_mcp_add_is_quiet():
     assert "intercomm.remote_agent" not in _bash("claude mcp add localfs -- node server.js")
 
 
+def test_local_stdio_mcp_with_url_in_args_is_quiet():
+    # Регрессия из security-review: локальный stdio-MCP, у которого URL в
+    # АРГУМЕНТАХ команды (после ` -- `), — частый паттерн, НЕ регистрация
+    # удалённого канала. Не должен срабатывать.
+    assert "intercomm.remote_agent" not in _bash(
+        "claude mcp add localfs -- node server.js --base-url https://internal.api.corp"
+    )
+    assert "intercomm.remote_agent" not in _bash(
+        "claude mcp add gh -- docker run -e GH_URL=https://api.github.com ghmcp"
+    )
+
+
 def test_local_agent_and_ordinary_curl_quiet():
     assert "intercomm.remote_agent" not in _bash("claude --print 'fix the bug'")
     assert "intercomm.remote_agent" not in _bash("curl https://docs.example.com/guide")

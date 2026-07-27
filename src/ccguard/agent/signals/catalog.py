@@ -1219,7 +1219,11 @@ CATALOG: tuple[Signal, ...] = (
         "intercomm.remote_agent",
         "T1071",
         _p(
-            r"\bmcp\s+add\b[^\n]*(?:--transport\s+(?:sse|http)\b|https?://)"
+            # mcp add УДАЛЁННОГО сервера: --transport sse/http или голый URL. Но
+            # НЕ через ` -- ` (разделитель локальной команды): `mcp add x -- node
+            # s.js --url https://…` — это stdio-сервер, URL в его аргументах, не
+            # регистрация удалённого канала. Умеренный токен обрывается на ` -- `.
+            r"\bmcp\s+add\b(?:(?!\s--\s)[^\n])*?(?:--transport\s+(?:sse|http)\b|https?://)"
             r"|\b(?:curl|wget|xh|httpie|nc)\b[^\n]*"
             r"\b(?:api\.openai\.com|api\.mistral\.ai|generativelanguage\.googleapis\.com"
             r"|api\.cohere\.(?:ai|com)|openrouter\.ai|api\.groq\.com"

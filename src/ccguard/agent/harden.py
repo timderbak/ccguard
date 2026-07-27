@@ -237,7 +237,25 @@ def harden_plan(
         build_managed_settings(enforce_shim, audit_shim, platform=platform), indent=2
     )
 
-    steps: list[HardenStep] = [
+    steps: list[HardenStep] = []
+    # PREFLIGHT (Linux): fail-closed песочница без рабочего бэкенда bubblewrap
+    # заблокирует запуск Claude Code — а managed-файл ещё и делается immutable,
+    # то есть кирпич будет несносимым. Поэтому ДО записи lock'а проверяем, что
+    # bwrap есть; если нет — script аварийно выходит, ничего не записав. macOS
+    # (Seatbelt) встроен, проверка не нужна. Срабатывает только когда lock реально
+    # fail-closed (иначе брикнуть нечем).
+    if platform == "linux" and '"failIfUnavailable": true' in content:
+        steps.append(HardenStep(
+            desc="preflight: bubblewrap доступен (иначе fail-closed sandbox заблокирует Claude Code)",
+            kind="run",
+            argv=[
+                "sh", "-c",
+                "command -v bwrap >/dev/null 2>&1 || { echo 'ccguard: bubblewrap "
+                "(bwrap) не найден — sandbox fail-closed заблокирует Claude Code. "
+                "Установите bubblewrap и повторите.' >&2; exit 2; }",
+            ],
+        ))
+    steps += [
         HardenStep(desc=f"create managed-settings dir {managed_dir}", kind="run",
                    argv=["mkdir", "-p", managed_dir]),
         HardenStep(desc="pin ccguard hooks in root-owned managed-settings.json",

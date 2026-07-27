@@ -130,3 +130,24 @@ def test_non_connect_method_rejected():
     handle_connection(conn, EgressPolicy([]), None, dial=lambda h, p: None)
     assert conn.sent.startswith(b"HTTP/1.1 405")
     assert conn.closed is True
+
+
+def test_pipelined_bytes_after_headers_are_forwarded_not_dropped():
+    # Клиент сконвейерил ранний TLS ClientHello сразу за CONNECT-заголовками:
+    # эти байты нельзя терять, иначе upstream не увидит начало рукопожатия.
+    conn = _FakeConn(b"CONNECT pypi.org:443 HTTP/1.1\r\n\r\n\x16\x03\x01EARLY")
+
+    class _Upstream:
+        def __init__(self) -> None:
+            self.got = b""
+        def recv(self, n: int) -> bytes:
+            return b""
+        def sendall(self, b: bytes) -> None:
+            self.got += b
+        def close(self) -> None:
+            pass
+
+    up = _Upstream()
+    handle_connection(conn, EgressPolicy(["pypi.org"]), None, dial=lambda h, p: up)
+    assert b"HTTP/1.1 200" in conn.sent
+    assert up.got == b"\x16\x03\x01EARLY"   # ранние байты досланы в upstream

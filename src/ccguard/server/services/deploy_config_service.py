@@ -174,6 +174,17 @@ def _install_script(
     group = "wheel" if platform == "darwin" else "root"
     q_managed = shlex.quote(managed)
     q_cfg = shlex.quote(cfg)
+    # Preflight (Linux): fail-closed песочница без bubblewrap заблокирует запуск
+    # Claude Code — проверяем ДО записи lock'а, чтобы не окирпичить парк машин.
+    # macOS (Seatbelt) встроен. Только когда lock реально fail-closed.
+    preflight = ""
+    if platform == "linux" and '"failIfUnavailable": true' in managed_body:
+        preflight = (
+            "\n# Preflight: без bubblewrap fail-closed песочница заблокирует Claude Code.\n"
+            'command -v bwrap >/dev/null 2>&1 || { echo "ccguard: bubblewrap (bwrap) '
+            'не найден — sandbox fail-closed заблокирует Claude Code. Установите '
+            'bubblewrap и повторите." >&2; exit 2; }\n'
+        )
     return f"""#!/usr/bin/env bash
 # ccguard — установка агента на рабочую машину. Запускать с правами root.
 #
@@ -186,7 +197,7 @@ if [ "$(id -u)" -ne 0 ]; then echo "нужны права root" >&2; exit 1; fi
 # Токен берётся из окружения — вшивать его в образ нельзя: утечка одного
 # значения дала бы право писать данные за любую машину флота.
 : "${{CCGUARD_AGENT_TOKEN:?задайте CCGUARD_AGENT_TOKEN перед запуском}}"
-
+{preflight}
 install -d -m 0755 {shlex.quote(root)}/bin
 install -d -m 0755 {shlex.quote(str(Path(cfg).parent))}
 install -d -m 0755 {shlex.quote(str(Path(managed).parent))}

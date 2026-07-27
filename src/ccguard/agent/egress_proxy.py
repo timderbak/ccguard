@@ -101,12 +101,14 @@ def parse_connect(request_line: str) -> tuple[str, int] | None:
     return host, port
 
 
-def _read_headers(conn: object) -> str:
-    """Прочитать блок заголовков до пустой строки; вернуть ПЕРВУЮ строку запроса.
+def _read_headers(conn: object) -> tuple[str, bytes]:
+    """Прочитать блок заголовков до пустой строки.
 
-    CONNECT-клиент шлёт ``CONNECT ...\\r\\nHost: ...\\r\\n\\r\\n`` и ждёт ответа
-    перед TLS, поэтому вычитываем весь блок, чтобы туннель начался с чистого
-    места.
+    Возвращает ``(первая_строка, остаток)``. CONNECT-клиент обычно шлёт
+    ``CONNECT ...\\r\\nHost: ...\\r\\n\\r\\n`` и ЖДЁТ 200 перед TLS, но если он
+    сконвейерил байты сразу за ``\\r\\n\\r\\n`` (ранний ClientHello), их НЕЛЬЗЯ
+    терять — иначе туннель зависнет. Поэтому возвращаем всё, что пришло после
+    терминатора, и вызывающий досылает это в upstream перед туннелем.
     """
     buf = b""
     while b"\r\n\r\n" not in buf and len(buf) < _MAX_HEADER_BYTES:
@@ -114,7 +116,16 @@ def _read_headers(conn: object) -> str:
         if not chunk:
             break
         buf += chunk
-    return buf.split(b"\r\n", 1)[0].decode("latin-1", "replace")
+    head, _, rest = buf.partition(b"\r\n\r\n")
+    first_line = head.split(b"\r\n", 1)[0].decode("latin-1", "replace")
+    return first_line, rest
+
+
+def _clear_timeout(sock: object) -> None:
+    """Снять таймаут перед туннелем: TLS-сессия долгоживущая, таймаут на чтение
+    оборвал бы её на первой паузе. На фейках в тестах settimeout нет — глушим."""
+    with contextlib.suppress(AttributeError, OSError):
+        sock.settimeout(None)  # type: ignore[attr-defined]
 
 
 def _default_dial(host: str, port: int, timeout: float = 10.0) -> socket.socket:
@@ -160,8 +171,10 @@ def handle_connection(
     """
     dial = dial or _default_dial
     try:
-        first_line = _read_headers(conn)
+        first_line, leftover = _read_headers(conn)
     except OSError:
+        # молчащий клиент (таймаут) или обрыв — закрываем, не висим.
+        _close(conn)
         return
     parsed = parse_connect(first_line)
     if parsed is None:
@@ -186,6 +199,17 @@ def handle_connection(
         _close(conn)
         return
     conn.sendall(b"HTTP/1.1 200 Connection established\r\n\r\n")  # type: ignore[attr-defined]
+    # Туннель долгоживущий — снимаем таймаут чтения с обеих сторон.
+    _clear_timeout(conn)
+    _clear_timeout(upstream)
+    # Досылаем байты, сконвейеренные клиентом сразу за заголовками (ранний TLS).
+    if leftover:
+        try:
+            upstream.sendall(leftover)  # type: ignore[attr-defined]
+        except OSError:
+            _close(conn)
+            _close(upstream)
+            return
     _tunnel(conn, upstream)
 
 
@@ -212,6 +236,9 @@ def serve(
     srv.listen(64)
     while True:
         conn, _ = srv.accept()
+        # Таймаут на фазу чтения заголовков: молчащий клиент иначе держал бы
+        # поток+сокет вечно. Перед туннелем таймаут снимается (_clear_timeout).
+        conn.settimeout(30.0)
         threading.Thread(
             target=handle_connection, args=(conn, policy, on_event), daemon=True
         ).start()

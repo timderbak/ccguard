@@ -98,8 +98,17 @@ def detect_weakenings(old: dict, new: dict) -> list[str]:
     if _lost_true(old, new, "network_allow_managed_domains_only"):
         reasons.append("снято ограничение egress «только домены из managed-конфига»")
 
+    # Расширение egress-allowlist — ослабление ТОЛЬКО если default-deny уже был
+    # активен (список непустой ИЛИ allowManagedDomainsOnly=true). Переход же от
+    # «egress не ограничен» к «allowlist + managed-only» — это УСИЛЕНИЕ (именно
+    # его даёт раскатка egress default-deny), и мечать его как ослабление значило
+    # бы спамить ложным «периметр ослаблен» на усиливающем rollout.
+    old_egress_gated = (
+        old.get("network_allow_managed_domains_only") is True
+        or bool(old.get("network_allowed_domains"))
+    )
     added_domains = _added(old, new, "network_allowed_domains")
-    if added_domains:
+    if added_domains and old_egress_gated:
         reasons.append("egress-allowlist расширен: +" + ", ".join(added_domains))
     removed_denies = _removed(old, new, "network_denied_domains")
     if removed_denies:
