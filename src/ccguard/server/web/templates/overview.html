@@ -116,6 +116,37 @@
         </div>
     </div>
     {% endif %}
+
+    {# Поза флота по агентам: сколько эндпоинтов мы ВИДИМ, но не БЛОКИРУЕМ —
+       прямой выхлоп мультиагентности. Показываем только когда есть агенты без
+       enforcement; иначе нулевая плитка только шумела бы. #}
+    {% if posture is defined and posture.visibility_only > 0 %}
+    <div class="cc-card-2 p-4 mt-4" data-testid="agent-posture"
+         style="border:1px solid #6366f147">
+        <div class="flex items-center gap-3 flex-wrap">
+            <span class="cc-num text-2xl" style="color:#818cf8">{{ posture.visibility_only }}</span>
+            <div class="min-w-0">
+                <div class="text-sm text-slate-200">
+                    из {{ posture.total }} эндпоинтов — только под наблюдением
+                </div>
+                <div class="text-xs text-slate-500 mt-0.5">
+                    агенты без PreToolUse-хука (Cursor и пр.): ccguard видит их
+                    инвентарь и дрейф, но НЕ блокирует поведение. Под enforcement
+                    (Claude Code): <span class="cc-mono">{{ posture.enforced }}</span>.
+                </div>
+            </div>
+            <a href="/machines" class="ml-auto text-xs text-indigo-300 hover:underline whitespace-nowrap">машины →</a>
+        </div>
+        <div class="mt-2.5 flex flex-wrap gap-1.5">
+            {% for kind, n in posture.by_kind.items() %}
+            <span class="cc-mono text-[11px] px-2 py-0.5 rounded border
+                {% if kind == 'claude_code' %}border-emerald-400/30 text-emerald-200/90{% else %}border-indigo-400/30 text-indigo-200/90{% endif %}">
+                {{ kind }}: {{ n }}
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 {% if active_threats %}

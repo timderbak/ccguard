@@ -205,6 +205,10 @@ def overview_page(
     # человеком. Первый вопрос руководителя ИБ, поэтому место — на главной.
     from ccguard.server.services.identity_service import fleet_permission_summary
     identity = fleet_permission_summary(session)
+    # Поза флота по типам агентов: сколько под enforcement (Claude Code) vs
+    # только под наблюдением (Cursor и пр.) — «что видим, но не блокируем».
+    from ccguard.server.services.machine_service import fleet_agent_posture
+    posture = fleet_agent_posture(machines)
     return templates.TemplateResponse(
         request,
         "overview.html",
@@ -220,6 +224,7 @@ def overview_page(
             "active_threats": active_threats,
             "pending_feeds": pending_feeds,
             "identity": identity,
+            "posture": posture,
             "csrf_token": _csrf_for(request),
         },
     )

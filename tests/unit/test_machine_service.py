@@ -133,6 +133,32 @@ def test_claude_code_default_unchanged() -> None:
     )
 
 
+def test_fleet_agent_posture_counts_enforced_and_visibility_only() -> None:
+    from types import SimpleNamespace
+
+    from ccguard.server.services.machine_service import fleet_agent_posture
+
+    machines = [
+        SimpleNamespace(agent_kind="claude_code"),
+        SimpleNamespace(agent_kind="claude_code"),
+        SimpleNamespace(agent_kind="cursor"),
+        SimpleNamespace(agent_kind=None),  # None трактуется как claude_code
+    ]
+    p = fleet_agent_posture(machines)  # type: ignore[arg-type]
+    assert p["total"] == 4
+    assert p["enforced"] == 3          # 2 claude + 1 None
+    assert p["visibility_only"] == 1   # cursor
+    assert p["by_kind"]["claude_code"] == 3
+    assert p["by_kind"]["cursor"] == 1
+
+
+def test_fleet_agent_posture_empty() -> None:
+    from ccguard.server.services.machine_service import fleet_agent_posture
+
+    p = fleet_agent_posture([])
+    assert p == {"total": 0, "enforced": 0, "visibility_only": 0, "by_kind": {}}
+
+
 def test_naive_datetime_treated_as_utc() -> None:
     # SQLite roundtrips can strip tzinfo.
     naive = (datetime.now(UTC) - timedelta(hours=1)).replace(tzinfo=None)

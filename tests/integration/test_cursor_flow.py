@@ -114,6 +114,21 @@ def test_machine_page_shows_visibility_banner_and_cursor_inventory(monkeypatch, 
     assert "Агент только для видимости" in page.text        # честный баннер
     assert "без поведенческой блокировки" in page.text      # header-бейдж
     assert "удалённый канал" in page.text                   # remote MCP как ASI07-канал
+    # Разделы, питаемые хуками/аудитом Claude Code, для Cursor скрыты — их
+    # ложно-успокаивающая пустота («защита активна») не должна появляться.
+    assert 'data-testid="enforce-blocks"' not in page.text
+    assert "защита активна" not in page.text
+
+
+def test_overview_shows_visibility_only_posture(monkeypatch, tmp_path):
+    with _client(monkeypatch, tmp_path) as client:
+        eng = client.app.state.engine  # type: ignore[attr-defined]
+        client.post("/api/v1/inventory", headers=_hdr(),
+                    json=_payload("m-cursor-5", [], [_mem("/p/.cursorrules", "h1", scope="cursor_legacy")]))
+        page = client.get("/", cookies={"ccg_session": _sid(eng)})
+    assert page.status_code == 200
+    assert 'data-testid="agent-posture"' in page.text
+    assert "только под наблюдением" in page.text
 
 
 # --- агентная детекция Cursor ---------------------------------------------

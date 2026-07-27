@@ -115,6 +115,30 @@ def list_machines_with_status(session: Session) -> list[MachineRow]:
     return out
 
 
+def fleet_agent_posture(machines: list[MachineRow]) -> dict[str, object]:
+    """Поза флота по типам агентов: сколько под enforcement, сколько только под
+    наблюдением. Отвечает на вопрос ИБ-руководителя «какие эндпоинты мы ВИДИМ,
+    но не БЛОКИРУЕМ» — прямой выхлоп мультиагентности.
+
+    Чистая функция над уже загруженным списком (без запросов к БД). enforced =
+    claude_code (единственный с PreToolUse-хуком); visibility_only = все прочие
+    (Cursor и т.п.) — их мы инвентаризуем и следим за дрейфом, но не блокируем.
+    """
+    by_kind: dict[str, int] = {}
+    visibility_only = 0
+    for m in machines:
+        kind = m.agent_kind or "claude_code"
+        by_kind[kind] = by_kind.get(kind, 0) + 1
+        if kind != "claude_code":
+            visibility_only += 1
+    return {
+        "total": len(machines),
+        "enforced": by_kind.get("claude_code", 0),
+        "visibility_only": visibility_only,
+        "by_kind": by_kind,
+    }
+
+
 def get_latest_inventory_json(session: Session, machine_id: str) -> dict[str, object] | None:
     inv = session.exec(
         select(InventorySnapshot)

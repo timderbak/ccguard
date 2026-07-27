@@ -509,6 +509,12 @@
 </section>
 {% endif %}
 
+{# Разделы ниже питаются ТОЛЬКО хуками/аудитом Claude Code (enforce-блокировки,
+   сетевые вызовы, PI в прочитанных файлах, пользователи, заглушённые сигналы).
+   У агентов без PreToolUse-хука (Cursor и пр.) этого потока нет — скрываем,
+   чтобы пустота («защита активна, ничего не поймано») не читалась как реальная
+   защита. Инвентарь, дрейф правил/MCP и изменения MCP выше — остаются. #}
+{% if _kind == 'claude_code' %}
 <section data-testid="enforce-blocks" class="bg-white rounded-xl shadow p-5 mt-6 ring-1 ring-red-200">
     <h3 class="font-semibold mb-3 flex items-center gap-2 text-red-700">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" class="w-4 h-4"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>
@@ -678,6 +684,7 @@
     </ul>
 </section>
 {% endif %}
+{% endif %}{# конец блока «только Claude Code» (хуки/аудит) #}
 
 <form method="POST" action="/machines/{{ machine.machine_id }}/revoke" class="mt-6">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
