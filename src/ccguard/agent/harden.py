@@ -47,17 +47,81 @@ _MANAGED_PATHS: dict[str, str] = {
 # Owning group for root-owned assets differs by OS.
 _ROOT_GROUP: dict[str, str] = {"darwin": "wheel", "linux": "root"}
 
+# Платформы, где у Claude Code есть OS-песочница (Seatbelt / bubblewrap). На
+# нативном Windows её нет, и там forceful failIfUnavailable=true заблокировал бы
+# запуск самого Claude Code — поэтому sandbox-lock туда не кладём.
+_SANDBOX_PLATFORMS: frozenset[str] = frozenset({"darwin", "linux"})
+
+# Домен, без которого Claude Code не работает: LLM-API + preflight WebFetch
+# (docs: data-usage). Всегда добавляется в egress-allowlist, чтобы default-deny
+# не «окирпичил» сам инструмент.
+_REQUIRED_EGRESS_DOMAIN = "api.anthropic.com"
+
 
 def managed_settings_path(platform: str) -> str | None:
     """OS path of Claude Code's root-owned managed/policy settings file."""
     return _MANAGED_PATHS.get(platform)
 
 
-def build_managed_settings(enforce_shim: Path, audit_shim: Path) -> dict:
+def _apply_sandbox_lock(
+    data: dict, *, platform: str, egress_allowlist: list[str] | None
+) -> None:
+    """Прошить в managed-settings несносимую песочницу (владеем периметром).
+
+    Managed-настройки выигрывают у user/project/env И командной строки (docs:
+    server-managed-settings — «No other settings level can override them, including
+    command line arguments»), поэтому агент под тем же пользователем не может ни
+    выключить песочницу, ни воспользоваться ``--dangerously-skip-permissions``.
+
+    Ключевое, что делает это НАДЁЖНЫМ, а не косметикой: OS-песочница — жёсткая
+    граница, которую bypassPermissions НЕ снимает (docs: sandboxing / permission-
+    modes — он лишь пропускает подтверждения, а Seatbelt/bubblewrap остаётся). Плюс
+    ``disableBypassPermissionsMode: "disable"`` в managed-настройках вообще
+    запрещает этот флаг. ``failIfUnavailable: true`` — fail-closed: нет песочницы →
+    Claude Code не запускается (осознанный выбор threat-model).
+
+    Против злонамеренного человека С sudo это НЕ несносимо (он владеет root) —
+    там работает tamper-evidence: снятие lock следующий скан увидит как выключенную
+    песочницу, и ``sandbox_baseline`` выдаст ``sandbox.weakened`` (critical).
+
+    ``disableBypassPermissionsMode`` кладём на ВСЕХ платформах (защищает хуки даже
+    там, где песочницы нет). Сам sandbox-блок — только где Claude Code его
+    поддерживает: на win32 forceful failIfUnavailable заблокировал бы инструмент.
+    """
+    # Запрет bypass-режима работает и без песочницы — защищает хуки на любой ОС.
+    data.setdefault("permissions", {})["disableBypassPermissionsMode"] = "disable"
+    if platform not in _SANDBOX_PLATFORMS:
+        return
+    sandbox: dict = {
+        "enabled": True,
+        "failIfUnavailable": True,        # fail-closed security gate
+        "allowUnsandboxedCommands": False,  # без лазейки «выполнить вне изоляции»
+    }
+    # Egress-allowlist сужаем ТОЛЬКО если оператор задал свой список — тогда это
+    # default-deny с гарантированно добавленным Anthropic API (иначе окирпичим).
+    # Пустой список → egress не трогаем (день-в-день не ломаем npm/git/pip).
+    if egress_allowlist:
+        domains = list(dict.fromkeys([_REQUIRED_EGRESS_DOMAIN, *egress_allowlist]))
+        sandbox["network"] = {"allowedDomains": domains, "allowManagedDomainsOnly": True}
+    data["sandbox"] = sandbox
+
+
+def build_managed_settings(
+    enforce_shim: Path,
+    audit_shim: Path,
+    *,
+    platform: str = "linux",
+    lock_sandbox: bool = True,
+    egress_allowlist: list[str] | None = None,
+) -> dict:
     """The managed-settings.json content pinning the ccguard hooks.
 
     Reuses the SAME hook-builder as a normal install (:func:`install._install_event`)
     so the managed and user installs can never drift in structure.
+
+    При ``lock_sandbox`` (по умолчанию) дополнительно прошивает несносимую
+    OS-песочницу + запрет bypass-режима — «владеем периметром», а не только
+    инвентаризуем его. См. :func:`_apply_sandbox_lock`.
     """
     data: dict = {}
     marker = Path("managed-settings.json")
@@ -77,6 +141,8 @@ def build_managed_settings(enforce_shim: Path, audit_shim: Path) -> dict:
         shim=audit_shim,
         timeout=_install.AUDIT_HOOK_TIMEOUT,
     )
+    if lock_sandbox:
+        _apply_sandbox_lock(data, platform=platform, egress_allowlist=egress_allowlist)
     return data
 
 
@@ -151,7 +217,9 @@ def harden_plan(
     group = _ROOT_GROUP.get(platform, "root")
     owner = f"root:{group}"
     managed_dir = str(Path(managed).parent)
-    content = json.dumps(build_managed_settings(enforce_shim, audit_shim), indent=2)
+    content = json.dumps(
+        build_managed_settings(enforce_shim, audit_shim, platform=platform), indent=2
+    )
 
     steps: list[HardenStep] = [
         HardenStep(desc=f"create managed-settings dir {managed_dir}", kind="run",

@@ -110,7 +110,7 @@ def build_managed_settings(platform: str) -> dict[str, Any]:
     и отпечатки перестали бы совпадать без всякой атаки.
     """
     enforce_shim, audit_shim = shim_paths(platform)
-    return _harden.build_managed_settings(enforce_shim, audit_shim)
+    return _harden.build_managed_settings(enforce_shim, audit_shim, platform=platform)
 
 
 def expected_hooks_hash(platform: str) -> str | None:

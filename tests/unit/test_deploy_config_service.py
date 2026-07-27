@@ -44,6 +44,22 @@ def test_managed_settings_contain_both_hooks():
     assert any("ccguard-audit" in c for c in commands)
 
 
+def test_deployed_config_locks_the_sandbox():
+    # Раскатываемый managed-конфиг теперь не только прошивает хуки, но и ВЛАДЕЕТ
+    # песочницей: форсит изоляцию + запрещает bypass — «пустышку» не снести.
+    linux = dcs.build_managed_settings("linux")
+    assert linux["sandbox"]["enabled"] is True
+    assert linux["sandbox"]["failIfUnavailable"] is True
+    assert linux["permissions"]["disableBypassPermissionsMode"] == "disable"
+    # macOS (platform=darwin) тоже под sandbox-lock.
+    assert dcs.build_managed_settings("darwin")["sandbox"]["enabled"] is True
+    # Windows: песочницы у Claude Code нет → sandbox-блок не кладём (иначе кирпич),
+    # но запрет bypass остаётся.
+    win = dcs.build_managed_settings("win32")
+    assert "sandbox" not in win
+    assert win["permissions"]["disableBypassPermissionsMode"] == "disable"
+
+
 def test_shim_paths_match_the_path_baked_into_the_shim():
     # Шимы сами ищут самостоятельный бинарник в /opt/ccguard/bin — раскатка
     # обязана класть файлы туда же, иначе бинарник не подхватится.

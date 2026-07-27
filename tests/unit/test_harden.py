@@ -42,6 +42,69 @@ def test_build_managed_settings_pins_both_hooks() -> None:
     assert post_cmds == ["/opt/ccguard/bin/ccguard-audit"]
 
 
+def _managed(platform="linux", **kw):
+    return harden.build_managed_settings(
+        Path("/opt/ccguard/bin/ccguard-enforce"),
+        Path("/opt/ccguard/bin/ccguard-audit"),
+        platform=platform,
+        **kw,
+    )
+
+
+def test_sandbox_lock_forced_on_supported_platforms() -> None:
+    # «Владеем песочницей»: managed-settings форсит несносимую изоляцию.
+    for plat in ("linux", "darwin"):
+        sb = _managed(plat)["sandbox"]
+        assert sb["enabled"] is True
+        assert sb["failIfUnavailable"] is True          # fail-closed
+        assert sb["allowUnsandboxedCommands"] is False   # без лазейки
+
+
+def test_bypass_permissions_disabled_on_all_platforms() -> None:
+    # Запрет --dangerously-skip-permissions защищает хуки даже без песочницы.
+    for plat in ("linux", "darwin", "win32"):
+        perms = _managed(plat)["permissions"]
+        assert perms["disableBypassPermissionsMode"] == "disable"
+
+
+def test_no_sandbox_block_on_windows() -> None:
+    # На нативном Windows песочницы нет; forceful failIfUnavailable окирпичил бы
+    # Claude Code — поэтому sandbox-блок туда НЕ кладём (только запрет bypass).
+    win = _managed("win32")
+    assert "sandbox" not in win
+    assert win["permissions"]["disableBypassPermissionsMode"] == "disable"
+
+
+def test_egress_allowlist_unions_in_anthropic_api() -> None:
+    sb = _managed("linux", egress_allowlist=["pypi.org", "github.com"])["sandbox"]
+    net = sb["network"]
+    assert net["allowedDomains"][0] == "api.anthropic.com"  # обязательный, всегда есть
+    assert "pypi.org" in net["allowedDomains"] and "github.com" in net["allowedDomains"]
+    assert net["allowManagedDomainsOnly"] is True           # default-deny
+
+
+def test_no_egress_narrowing_without_allowlist() -> None:
+    # Пустой список → egress не сужаем (день-в-день не ломаем npm/git/pip).
+    sb = _managed("linux")["sandbox"]
+    assert "network" not in sb
+
+
+def test_lock_sandbox_false_is_hooks_only_backcompat() -> None:
+    data = _managed("linux", lock_sandbox=False)
+    assert "sandbox" not in data and "permissions" not in data
+    assert "hooks" in data  # хуки на месте
+
+
+def test_sandbox_lock_does_not_change_hooks_hash() -> None:
+    # Регрессия-страховка: блок sandbox не должен трогать отпечаток хуков —
+    # иначе детект дрейфа хуков давал бы ложные расхождения.
+    from ccguard.agent.heartbeat import hooks_hash_of_settings
+
+    assert hooks_hash_of_settings(_managed("linux")) == hooks_hash_of_settings(
+        _managed("linux", lock_sandbox=False)
+    )
+
+
 def test_immutability_argv_per_os() -> None:
     assert harden.immutability_argv("/p", "linux") == ["chattr", "+i", "/p"]
     assert harden.immutability_argv("/p", "darwin") == ["chflags", "schg", "/p"]
