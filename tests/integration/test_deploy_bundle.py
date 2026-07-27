@@ -115,6 +115,28 @@ def test_saving_the_url_puts_it_into_the_config(monkeypatch, tmp_path) -> None:
     assert "Адрес не задан" not in after.text
 
 
+def test_saving_egress_allowlist_puts_default_deny_into_the_config(monkeypatch, tmp_path) -> None:
+    with _client(monkeypatch, tmp_path) as client:
+        client.cookies.set("ccg_session", _sid(client.app.state.engine))  # type: ignore[attr-defined]
+        page = client.get("/admin/deploy")
+        marker = 'name="csrf_token" value="'
+        i = page.text.index(marker) + len(marker)
+        token = page.text[i:page.text.index('"', i)]
+
+        r = client.post(
+            "/admin/deploy/egress-allowlist",
+            data={"csrf_token": token, "allowlist": "pypi.org, github.com",
+                  "platform": "linux"},
+            follow_redirects=False,
+        )
+        assert r.status_code == 303
+        after = client.get("/admin/deploy")
+    # Раскатанный конфиг теперь несёт default-deny egress с этими доменами.
+    assert "pypi.org" in after.text and "github.com" in after.text
+    assert "allowManagedDomainsOnly" in after.text
+    assert "Egress ограничен" in after.text
+
+
 def test_page_flags_a_machine_running_a_different_config(monkeypatch, tmp_path) -> None:
     with _client(monkeypatch, tmp_path) as client:
         eng = client.app.state.engine  # type: ignore[attr-defined]

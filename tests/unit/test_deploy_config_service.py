@@ -60,6 +60,39 @@ def test_deployed_config_locks_the_sandbox():
     assert win["permissions"]["disableBypassPermissionsMode"] == "disable"
 
 
+def test_resolve_egress_allowlist_parses_and_dedupes():
+    eng = _engine()
+    with Session(eng) as s:
+        assert dcs.resolve_egress_allowlist(s) == []  # не задано → пусто
+        settings_service.set_setting(
+            s, dcs.EGRESS_ALLOWLIST_KEY, "pypi.org, github.com\nregistry.npmjs.org pypi.org/",
+        )
+        got = dcs.resolve_egress_allowlist(s)
+    assert got == ["pypi.org", "github.com", "registry.npmjs.org"]  # dedupe + чистка
+
+
+def test_bundle_egress_default_deny_when_org_sets_allowlist():
+    eng = _engine()
+    with Session(eng) as s:
+        settings_service.set_setting(s, dcs.EGRESS_ALLOWLIST_KEY, "pypi.org, github.com")
+        bundle = dcs.build_bundle(s, platform="linux")
+    net = bundle["managed_settings"]["sandbox"]["network"]
+    assert net["allowManagedDomainsOnly"] is True
+    assert net["allowedDomains"][0] == "api.anthropic.com"  # вшит всегда
+    assert {"pypi.org", "github.com"} <= set(net["allowedDomains"])
+    assert bundle["egress_allowlist"] == ["pypi.org", "github.com"]
+    # Список попал и в скрипт установки (иначе на машине был бы другой конфиг).
+    assert "pypi.org" in bundle["install_script"]
+
+
+def test_bundle_egress_not_narrowed_by_default():
+    eng = _engine()
+    with Session(eng) as s:
+        bundle = dcs.build_bundle(s, platform="linux")
+    assert "network" not in bundle["managed_settings"]["sandbox"]  # день-в-день не ломаем
+    assert bundle["egress_allowlist"] == []
+
+
 def test_shim_paths_match_the_path_baked_into_the_shim():
     # Шимы сами ищут самостоятельный бинарник в /opt/ccguard/bin — раскатка
     # обязана класть файлы туда же, иначе бинарник не подхватится.

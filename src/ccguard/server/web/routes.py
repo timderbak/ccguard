@@ -1459,6 +1459,28 @@ def deploy_set_server_url(
     return RedirectResponse(url=f"/admin/deploy?platform={platform}", status_code=303)
 
 
+@router.post("/admin/deploy/egress-allowlist")
+def deploy_set_egress_allowlist(
+    request: Request,
+    allowlist: str = Form(""),
+    platform: str = Form("linux"),
+    _user: str = Depends(require_session),
+    _csrf: None = Depends(require_csrf),
+    session: Session = Depends(get_session),
+) -> RedirectResponse:
+    """Задать egress-allowlist организации: домены, куда песочница пускает агента.
+
+    Пустое поле снимает сужение (egress не трогаем). Непустое — раскатанный
+    managed-конфиг получает default-deny с этим списком (+ вшитый api.anthropic.com).
+    """
+    from ccguard.server.services import deploy_config_service, settings_service
+
+    settings_service.set_setting(
+        session, deploy_config_service.EGRESS_ALLOWLIST_KEY, allowlist.strip(),
+    )
+    return RedirectResponse(url=f"/admin/deploy?platform={platform}", status_code=303)
+
+
 @router.get("/admin/protection", response_class=HTMLResponse)
 def protection_page(
     request: Request,

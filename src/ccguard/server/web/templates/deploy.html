@@ -86,6 +86,30 @@
         Windows OS-песочницы нет, поэтому блок туда не кладётся (остаются хуки + фиксация).
       </p>
     </div>
+
+    <form method="POST" action="/admin/deploy/egress-allowlist" class="mt-4">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}" />
+      <input type="hidden" name="platform" value="{{ platform }}" />
+      <label class="text-xs text-slate-400 block mb-1">
+        Egress-allowlist — домены, куда песочница пускает агента (через запятую).
+        Пусто → сеть не сужаем (день-в-день ничего не ломаем). Список → default-deny:
+        всё кроме этих доменов и <span class="cc-mono">api.anthropic.com</span> блокирует сама песочница.
+      </label>
+      <div class="flex gap-2 items-center flex-wrap">
+        <input type="text" name="allowlist" value="{{ b.egress_allowlist|join(', ') }}" class="inp flex-1 min-w-[320px]"
+               placeholder="pypi.org, registry.npmjs.org, github.com" />
+        <button type="submit" class="text-sm px-3 py-2 rounded-md bg-white/10 text-slate-200 hover:bg-white/15">Сохранить</button>
+      </div>
+      {% if b.egress_allowlist %}
+      <p class="text-xs text-emerald-300/80 mt-2">
+        Egress ограничен ({{ b.egress_allowlist|length }} доменов + api.anthropic.com) — исходящий трафик агента вне списка блокируется.
+      </p>
+      {% else %}
+      <p class="text-xs text-slate-500 mt-2">
+        Egress пока не сужается. Задайте домены, чтобы включить default-deny исходящей сети.
+      </p>
+      {% endif %}
+    </form>
   </section>
 
   {# --- конфиг агента: и объяснение, почему токена здесь нет --- #}

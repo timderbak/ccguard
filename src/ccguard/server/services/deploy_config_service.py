@@ -50,6 +50,10 @@ log = logging.getLogger(__name__)
 # запроса — но за обратным прокси это часто внутренний адрес, поэтому в выдаче
 # такой случай помечается явно, а не выдаётся за истину.
 SERVER_URL_KEY = "deploy.server_url"
+# Egress-allowlist, который организация задаёт в админке: домены, куда песочница
+# ПУСКАЕТ исходящий трафик агента. Пусто → egress не сужаем (не ломаем день-в-день
+# npm/git/pip). Непусто → default-deny с гарантированно вшитым api.anthropic.com.
+EGRESS_ALLOWLIST_KEY = "deploy.egress_allowlist"
 
 # Подстановочное значение вместо токена — см. докстринг модуля.
 TOKEN_PLACEHOLDER = "__CCGUARD_AGENT_TOKEN__"
@@ -102,15 +106,40 @@ def resolve_server_url(session: Session, *, fallback: str | None = None) -> tupl
     return (fallback or "http://localhost:8000").rstrip("/"), True
 
 
-def build_managed_settings(platform: str) -> dict[str, Any]:
+def resolve_egress_allowlist(session: Session) -> list[str]:
+    """Список egress-доменов из настройки организации (может быть пустым).
+
+    Разбираем по запятым/пробелам/переносам строк, чистим и убираем дубликаты —
+    оператор задаёт список как ему удобно, а не строгим форматом.
+    """
+    raw = settings_service.get_setting(session, EGRESS_ALLOWLIST_KEY)
+    if not raw:
+        return []
+    parts = raw.replace(",", " ").replace("\n", " ").split()
+    seen: dict[str, None] = {}
+    for p in parts:
+        d = p.strip().strip("/")
+        if d and d not in seen:
+            seen[d] = None
+    return list(seen)
+
+
+def build_managed_settings(
+    platform: str, egress_allowlist: list[str] | None = None
+) -> dict[str, Any]:
     """Содержимое ``managed-settings.json`` для этой платформы.
 
     Собирается тем же построителем, что и обычная установка, — иначе
     корпоративный и локальный варианты со временем разошлись бы по структуре,
     и отпечатки перестали бы совпадать без всякой атаки.
+
+    ``egress_allowlist`` (если задан оператором) сужает исходящую сеть песочницы
+    до default-deny; пусто → egress не трогаем.
     """
     enforce_shim, audit_shim = shim_paths(platform)
-    return _harden.build_managed_settings(enforce_shim, audit_shim, platform=platform)
+    return _harden.build_managed_settings(
+        enforce_shim, audit_shim, platform=platform, egress_allowlist=egress_allowlist,
+    )
 
 
 def expected_hooks_hash(platform: str) -> str | None:
@@ -130,7 +159,9 @@ def build_agent_config(server_url: str) -> str:
     )
 
 
-def _install_script(platform: str, server_url: str) -> str | None:
+def _install_script(
+    platform: str, server_url: str, egress_allowlist: list[str] | None = None
+) -> str | None:
     """Скрипт установки для Ansible / образа рабочей станции."""
     if platform not in _SCRIPT_PLATFORMS:
         return None
@@ -139,7 +170,7 @@ def _install_script(platform: str, server_url: str) -> str | None:
         return None
     root = INSTALL_ROOTS[platform]
     cfg = AGENT_CONFIG_PATHS[platform]
-    managed_body = json.dumps(build_managed_settings(platform), indent=2)
+    managed_body = json.dumps(build_managed_settings(platform, egress_allowlist), indent=2)
     group = "wheel" if platform == "darwin" else "root"
     q_managed = shlex.quote(managed)
     q_cfg = shlex.quote(cfg)
@@ -199,7 +230,8 @@ def build_bundle(
     if platform not in SUPPORTED_PLATFORMS:
         raise ValueError(f"платформа не поддерживается: {platform!r}")
     server_url, guessed = resolve_server_url(session, fallback=fallback_url)
-    managed = build_managed_settings(platform)
+    egress_allowlist = resolve_egress_allowlist(session)
+    managed = build_managed_settings(platform, egress_allowlist)
     enforce_shim, audit_shim = shim_paths(platform)
     return {
         "platform": platform,
@@ -220,8 +252,10 @@ def build_bundle(
         # Отпечаток, который должны докладывать машины с этим конфигом. По нему
         # видно, что на машине лежит именно то, что раскатывали.
         "expected_hooks_hash": _heartbeat.hooks_hash_of_settings(managed),
-        "install_script": _install_script(platform, server_url),
+        "install_script": _install_script(platform, server_url, egress_allowlist),
         "token_placeholder": TOKEN_PLACEHOLDER,
+        # Текущий egress-allowlist организации (для показа на странице раскатки).
+        "egress_allowlist": egress_allowlist,
     }
 
 
