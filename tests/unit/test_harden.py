@@ -95,6 +95,14 @@ def test_lock_sandbox_false_is_hooks_only_backcompat() -> None:
     assert "hooks" in data  # хуки на месте
 
 
+def test_proxy_port_off_by_default_and_wired_when_set() -> None:
+    # По умолчанию httpProxyPort НЕ прописан: указать порт без слушающего прокси
+    # обрубило бы egress. Задаётся только осознанно (после field-test прокси).
+    assert "network" not in _managed("linux").get("sandbox", {})
+    net = _managed("linux", proxy_port=8888)["sandbox"]["network"]
+    assert net["httpProxyPort"] == 8888
+
+
 def test_sandbox_lock_does_not_change_hooks_hash() -> None:
     # Регрессия-страховка: блок sandbox не должен трогать отпечаток хуков —
     # иначе детект дрейфа хуков давал бы ложные расхождения.

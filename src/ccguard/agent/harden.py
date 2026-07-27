@@ -64,7 +64,11 @@ def managed_settings_path(platform: str) -> str | None:
 
 
 def _apply_sandbox_lock(
-    data: dict, *, platform: str, egress_allowlist: list[str] | None
+    data: dict,
+    *,
+    platform: str,
+    egress_allowlist: list[str] | None,
+    proxy_port: int | None = None,
 ) -> None:
     """Прошить в managed-settings несносимую песочницу (владеем периметром).
 
@@ -103,6 +107,12 @@ def _apply_sandbox_lock(
     if egress_allowlist:
         domains = list(dict.fromkeys([_REQUIRED_EGRESS_DOMAIN, *egress_allowlist]))
         sandbox["network"] = {"allowedDomains": domains, "allowManagedDomainsOnly": True}
+    # Направить egress песочницы на локальный ccguard-прокси (наблюдаемость).
+    # По умолчанию OFF: указать порт, где прокси не слушает, обрубило бы весь
+    # egress — включается только когда оператор field-test'ом убедился, что
+    # прокси работает (см. egress_proxy.serve). См. `ccguard egress-proxy`.
+    if proxy_port is not None:
+        sandbox.setdefault("network", {})["httpProxyPort"] = proxy_port
     data["sandbox"] = sandbox
 
 
@@ -113,6 +123,7 @@ def build_managed_settings(
     platform: str = "linux",
     lock_sandbox: bool = True,
     egress_allowlist: list[str] | None = None,
+    proxy_port: int | None = None,
 ) -> dict:
     """The managed-settings.json content pinning the ccguard hooks.
 
@@ -121,7 +132,9 @@ def build_managed_settings(
 
     При ``lock_sandbox`` (по умолчанию) дополнительно прошивает несносимую
     OS-песочницу + запрет bypass-режима — «владеем периметром», а не только
-    инвентаризуем его. См. :func:`_apply_sandbox_lock`.
+    инвентаризуем его. См. :func:`_apply_sandbox_lock`. ``proxy_port`` (по
+    умолчанию None = не задан) направляет egress песочницы на локальный
+    ccguard-прокси — включать только после field-test прокси.
     """
     data: dict = {}
     marker = Path("managed-settings.json")
@@ -142,7 +155,10 @@ def build_managed_settings(
         timeout=_install.AUDIT_HOOK_TIMEOUT,
     )
     if lock_sandbox:
-        _apply_sandbox_lock(data, platform=platform, egress_allowlist=egress_allowlist)
+        _apply_sandbox_lock(
+            data, platform=platform, egress_allowlist=egress_allowlist,
+            proxy_port=proxy_port,
+        )
     return data
 
 

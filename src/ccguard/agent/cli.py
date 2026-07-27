@@ -327,6 +327,46 @@ def report(
         typer.echo(build_text_report(inv, findings))
 
 
+@app.command("egress-proxy")
+def egress_proxy_cmd(
+    port: int = typer.Option(..., "--port", help="локальный порт прокси (loopback)"),
+    allow: str = typer.Option("", "--allow", help="доп. домены через запятую"),
+) -> None:
+    """Локальный egress-прокси: наблюдаемость поверх enforce песочницы.
+
+    Пускает/блокирует по тому же allowlist, что и песочница (читает его из
+    локального managed-settings), И логирует КАЖДУЮ попытку исходящего
+    соединения — включая заблокированные. FIELD-TEST: направляй на него
+    sandbox.network.httpProxyPort ТОЛЬКО убедившись, что он слушает, — иначе
+    обрубишь агенту весь egress.
+    """
+    import sys as _sys
+
+    from ccguard.agent import egress_proxy, harden
+
+    extra = [d.strip() for d in allow.split(",") if d.strip()]
+    domains = list(extra)
+    mp = harden.managed_settings_path(_sys.platform)
+    if mp:
+        try:
+            data = json.loads(Path(mp).read_text())
+            domains += list(egress_proxy.policy_from_managed_settings(data).domains)
+        except (OSError, ValueError):
+            pass
+    policy = egress_proxy.EgressPolicy(domains)
+
+    def _log(ev: egress_proxy.EgressEvent) -> None:
+        typer.echo(
+            f"egress {'ALLOW' if ev.allowed else 'DENY '} {ev.host}:{ev.port}", err=True
+        )
+
+    typer.echo(
+        f"ccguard egress-proxy 127.0.0.1:{port} · allowlist: {sorted(policy.domains)}",
+        err=True,
+    )
+    egress_proxy.serve(port, policy, _log)
+
+
 @app.command("seed-demo")
 def seed_demo(
     server_url: str = typer.Option(
